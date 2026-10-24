@@ -23,6 +23,14 @@ passes. Patch releases (`0.1.1`, …) are corrections to an already-tagged phase
 ## [Unreleased] — 0.2.0-dev (Phase 1)
 
 ### Added
+- Repository hygiene (`P1-REPO-06`): `.env.example` (32 documented variables, `*_FILE` secret
+  variants commented out), `.dockerignore` (secrets and build junk out, build inputs explicitly kept),
+  and `bun run check:hygiene` — 40 assertions covering the git ignore matrix, "nothing ignored is
+  tracked", `.env.example` ↔ `docs/09` §5 parity in both directions, and `.dockerignore` safe-listing.
+  It is now stage 2 of `bun run check`, so a leaked secret or a template that forgot a variable fails
+  the gate instead of surviving review. Verified by probe: dropping `.env` from `.gitignore`, deleting
+  `WORKER_CONCURRENCY` from the template, adding `packages` to `.dockerignore`, and force-adding a
+  tracked `.env` each exit 1 with a named `FAIL` line; the clean tree exits 0.
 - Bun workspace skeleton (`P1-REPO-01`): root `package.json` (`0.2.0-dev`, `packageManager bun@1.4.4`),
   `apps/api`, `apps/web`, `packages/shared`, `bun.lock`, `.gitignore`.
 - `bun run check:workspaces` — 12 assertions covering workspace declaration, privacy, naming,

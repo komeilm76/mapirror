@@ -112,7 +112,9 @@ mapirror/
 │     │  └─ index.ts
 │     └─ tests/                    # Schema contract tests
 │
-├─ scripts/                        # Operator-facing CLI (bun run …)
+├─ scripts/                        # Operator-facing CLI + repo checks (bun run …)
+│  ├─ check-hygiene.ts             # Gate stage 2: ignore matrix, env-doc parity, .dockerignore safelist
+│  ├─ check-workspaces.ts          # Gate stage 1: workspace wiring assertions
 │  ├─ init-admin.ts                # Launch script: create admin from ADMIN_PASSWORD*
 │  ├─ reset-admin-password.ts      # Reset + revoke tokens (D: AUTH-4)
 │  ├─ migrate.ts                   # Run Kysely migrations (also run on boot)

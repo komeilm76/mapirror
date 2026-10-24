@@ -14,7 +14,8 @@
     "packages/*"
   ],
   "scripts": {
-    "check": "bun run check:workspaces && bun run typecheck && bun run lint && bun run format:check && bun run test",
+    "check": "bun run check:workspaces && bun run check:hygiene && bun run typecheck && bun run lint && bun run format:check && bun run test",
+    "check:hygiene": "bun run scripts/check-hygiene.ts",
     "check:full": "bun run check && bun run test:coverage",
     "check:workspaces": "bun run scripts/check-workspaces.ts",
     "typecheck": "tsc -p tsconfig.json && bun run --filter './packages/*' typecheck && bun run --filter './apps/*' typecheck",

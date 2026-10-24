@@ -63,10 +63,11 @@ Scripts marked ✅ exist today; ⬜ are created by the task named in `08-tasks.m
 |---|---|---|
 | `bun run typecheck` | `tsc --noEmit` for `scripts/` plus every workspace (`P1-REPO-02`) | ✅ |
 | `bun run check:workspaces` | 20 assertions on the workspace wiring (`P1-REPO-01`) | ✅ |
+| `bun run check:hygiene` | 40 assertions: ignore matrix, nothing ignored is tracked, env-doc parity, `.dockerignore` safelist (`P1-REPO-06`) | ✅ |
 | `bun run dev` | API + web in watch mode | ⬜ P1-API-01 / P1-WEB-01 |
 | `bun run dev:api` / `dev:web` | One side only | ⬜ P1-API-01 / P1-WEB-01 |
 | `bun run build` | Build web bundle | ⬜ P1-DOCK-02 |
-| `bun run check` | **The gate**: workspaces → typecheck → lint → format:check → test, fail-fast | ✅ P1-REPO-05 |
+| `bun run check` | **The gate**: workspaces → hygiene → typecheck → lint → format:check → test, fail-fast | ✅ P1-REPO-05/06 |
 | `bun run check:full` | `check` + coverage with thresholds (slower; used before a phase gate) | ✅ P1-REPO-05 |
 | `bun run lint` | ESLint over the whole repo (`--max-warnings=0`) | ✅ P1-REPO-03 |
 | `bun run lint:fix` | ESLint with `--fix` | ✅ P1-REPO-03 |
@@ -84,8 +85,13 @@ Scripts marked ✅ exist today; ⬜ are created by the task named in `08-tasks.m
 
 ## 5. Environment variables
 
-`.env.example` is the canonical list. Every variable is validated at boot with Zod; a missing required
-value fails fast with a readable message.
+`.env.example` is the canonical list and this table is its documentation; `bun run check:hygiene`
+asserts the two stay in sync in **both** directions, so adding a variable in one place only fails the
+gate. Every variable is validated at boot with Zod; a missing required value fails fast with a
+readable message.
+
+Alternatives such as `ADMIN_PASSWORD_FILE` are shipped **commented out** — a value and its `_FILE`
+sibling are mutually exclusive, and the hygiene check counts commented declarations as documented.
 
 | Variable | Default | Required | Purpose |
 |---|---|---|---|
@@ -123,6 +129,11 @@ value fails fast with a readable message.
 | `BRANDING_DISPLAY_NAME` | `MapMirror` | — | Default display name |
 
 **Never** commit `.env`. In production prefer `ADMIN_PASSWORD_FILE` mounted as a Docker secret.
+
+Two guard rails back that sentence up: `.env` and `.env.*` are ignored while `.env.example` is
+negated back in (`.gitignore`, `.dockerignore` both do this — get the negation order wrong and the
+template either vanishes from git or leaks into the image), and `check:hygiene` fails if any ignored
+path is *tracked*, because an ignore rule never untracks a file added earlier.
 
 ## 6. Working with the database
 
@@ -171,18 +182,24 @@ bun run test:coverage   # v8 coverage + thresholds
 
 ### The gate
 
-`bun run check` is the single command every task and phase gate uses (L13). It runs five stages in
+`bun run check` is the single command every task and phase gate uses (L13). It runs six stages in
 order and stops at the first failure, so the output always names the stage that broke:
 
 ```
-check:workspaces → typecheck → lint → format:check → test
+check:workspaces → check:hygiene → typecheck → lint → format:check → test
 ```
+
+Hygiene sits second on purpose: it is the cheapest stage (~0.2 s) and a leaked secret or a broken
+`.dockerignore` invalidates everything after it.
 
 Behaviour verified by deliberately breaking one stage at a time:
 
 | Broken stage | Result |
 |---|---|
 | workspace wiring | exit 1, `FAIL …` lines |
+| hygiene (dropped env var) | exit 1, `every documented variable is in .env.example …` |
+| hygiene (`.dockerignore` exclusion) | exit 1, `.dockerignore keeps … in the build context` |
+| hygiene (ignored file tracked) | exit 1, `no ignored artefacts are tracked: .env` |
 | TypeScript | exit 2, `error TS####` |
 | ESLint | exit 1 — warnings also fail, because lint runs with `--max-warnings=0` |
 | Prettier | exit 1, `Code style issues found` |

@@ -1,0 +1,52 @@
+# Docker build context exclusions.
+#
+# Two jobs:
+# 1. SECURITY — never let secrets or runtime data into an image layer. `.env` is the important one.
+# 2. SPEED/SIZE — keep the context small so `docker compose build` is fast on a small VPS.
+#
+# Anything the images DO need must stay out of this list: `package.json`, `bun.lock`, `tsconfig*.json`,
+# `apps/`, `packages/`, `scripts/`, `docker/`. Removing one of those breaks the build (or worse, the
+# image builds but fails at runtime) — `bun run check:hygiene` guards the critical ones.
+
+# ── secrets and local config ──────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── version control and editor noise ──────────────────────────────────────
+.git
+.gitignore
+.github
+.vscode
+.idea
+*.swp
+*~
+
+# ── dependencies: installed inside the image from the lockfile ────────────
+node_modules
+**/node_modules
+.bun
+
+# ── build/test output: produced inside the image ──────────────────────────
+dist
+**/dist
+coverage
+**/coverage
+*.tsbuildinfo
+
+# ── runtime data: belongs on volumes, never in an image ───────────────────
+data
+backups
+*.log
+
+# ── documentation and tooling not needed at runtime ──────────────────────
+docs
+CHANGELOG.md
+PROMPT.md
+README.md
+.editorconfig
+.prettierignore
+prettier.config.js
+eslint.config.js
