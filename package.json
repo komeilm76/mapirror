@@ -1,0 +1,19 @@
+{
+  "name": "mapirror",
+  "version": "0.2.0-dev",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted cache and download mirror for OpenStreetMap country extracts (Geofabrik).",
+  "license": "MIT",
+  "packageManager": "bun@1.4.4",
+  "engines": {
+    "bun": ">=1.2.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "check:workspaces": "bun run scripts/check-workspaces.ts"
+  }
+}

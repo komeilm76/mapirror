@@ -1,0 +1,34 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "mapirror",
+    },
+    "apps/api": {
+      "name": "@mapirror/api",
+      "version": "0.0.0",
+      "dependencies": {
+        "@mapirror/shared": "workspace:*",
+      },
+    },
+    "apps/web": {
+      "name": "@mapirror/web",
+      "version": "0.0.0",
+      "dependencies": {
+        "@mapirror/shared": "workspace:*",
+      },
+    },
+    "packages/shared": {
+      "name": "@mapirror/shared",
+      "version": "0.0.0",
+    },
+  },
+  "packages": {
+    "@mapirror/api": ["@mapirror/api@workspace:apps/api"],
+
+    "@mapirror/shared": ["@mapirror/shared@workspace:packages/shared"],
+
+    "@mapirror/web": ["@mapirror/web@workspace:apps/web"],
+  }
+}

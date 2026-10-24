@@ -13,7 +13,12 @@ Public  →  /_site/*       ·  /_public/api/*  (anonymous)
 
 ## Status
 
-**Phase 0 — documentation.** No application code yet; the build starts after the docs are approved.
+| | |
+|---|---|
+| **Phase 0 — documentation** | ✅ released as [`v0.1.0`](https://github.com/komeilm76/mapirror/releases/tag/v0.1.0) |
+| **Phase 1 — foundation** | 🟨 in progress (`0.2.0-dev`) |
+
+There is no running application yet: Phase 1 builds the workspace, Docker stack, database and auth.
 
 | | |
 |---|---|
@@ -22,6 +27,25 @@ Public  →  /_site/*       ·  /_public/api/*  (anonymous)
 | Roadmap | [`docs/07-roadmap.md`](docs/07-roadmap.md) |
 | Tasks | [`docs/08-tasks.md`](docs/08-tasks.md) |
 | API contract | [`docs/04-api.md`](docs/04-api.md) |
+| Changelog | [`CHANGELOG.md`](CHANGELOG.md) |
+
+## Repository layout
+
+```
+apps/api        Fastify API, job worker and interval scheduler
+apps/web        Vue 3 + Vuetify SPA (public site + admin panel)
+packages/shared Zod schemas, DTO types and constants shared by both
+scripts         operator CLI (admin bootstrap/reset, migrate, catalog sync)
+docs            the specification set
+```
+
+Bun workspaces; the root `package.json` holds the release version (`0.2.0-dev`), the workspaces are
+private and versionless. Dependency graph: `apps/* → packages/shared` (no other edges yet).
+
+```bash
+bun install                 # links the three workspaces
+bun run check:workspaces    # verifies the workspace wiring (12 checks)
+```
 
 ## What it will do
 

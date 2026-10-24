@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+.bun/
+
+# Build output
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data (map artifacts, database, uploads) — volumes in production
+data/
+backups/
+
+# Logs and OS noise
+*.log
+.DS_Store

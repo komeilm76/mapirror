@@ -1,0 +1,11 @@
+{
+  "name": "@mapirror/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Zod schemas, DTO types and constants shared by the API and the web app.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {}
+}

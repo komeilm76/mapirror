@@ -23,7 +23,11 @@ passes. Patch releases (`0.1.1`, …) are corrections to an already-tagged phase
 ## [Unreleased] — 0.2.0-dev (Phase 1)
 
 ### Added
-- Bun workspace skeleton: `apps/api`, `apps/web`, `packages/shared` (`P1-REPO-01`)
+- Bun workspace skeleton (`P1-REPO-01`): root `package.json` (`0.2.0-dev`, `packageManager bun@1.4.4`),
+  `apps/api`, `apps/web`, `packages/shared`, `bun.lock`, `.gitignore`.
+- `bun run check:workspaces` — 12 assertions covering workspace declaration, privacy, naming,
+  `workspace:*` wiring and real package resolution from a consumer.
+- `README.md` gains a repository-layout section and the current phase status.
 
 ---
 

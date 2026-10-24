@@ -1,0 +1,10 @@
+{
+  "name": "@mapirror/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MapMirror web app: Vue 3 + Vuetify SPA for the public site and the admin panel.",
+  "dependencies": {
+    "@mapirror/shared": "workspace:*"
+  }
+}

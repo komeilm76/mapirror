@@ -1,0 +1,10 @@
+{
+  "name": "@mapirror/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MapMirror API: Fastify routes, PostgreSQL-backed job worker and interval scheduler.",
+  "dependencies": {
+    "@mapirror/shared": "workspace:*"
+  }
+}
