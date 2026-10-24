@@ -2,14 +2,13 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "src",
     /* The SPA runs in a browser: add DOM libs and drop the Bun type surface. */
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": []
   },
   /* `.vue` files are deliberately NOT listed here: plain `tsc` silently ignores them, which would
-     make this script report success on a broken SFC. Add `src/**\/*.vue` in `P1-WEB-01`, in the same
-     commit that switches this script to `vue-tsc`. */
-  "include": ["src/**/*.ts"],
+     make the typecheck script report success on a broken SFC. Add `src/**\/*.vue` in `P1-WEB-01`, in
+     the same commit that switches this script to `vue-tsc`. */
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

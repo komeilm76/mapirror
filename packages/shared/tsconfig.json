@@ -2,12 +2,11 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "src",
     /* `packages/shared` is imported by both the API (Bun/Node) and the web bundle (browser), so it
        must not see either runtime's globals. With no `types`, a stray `Bun.*` or `process.*` here is
        a compile error instead of a browser runtime crash. */
     "types": []
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

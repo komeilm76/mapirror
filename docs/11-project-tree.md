@@ -11,7 +11,7 @@ mapirror/
 ├─ eslint.config.js                # Flat ESLint config (JS + type-aware TS + Vue)
 ├─ prettier.config.js              # Formatting (code only)
 ├─ .prettierignore / .editorconfig # Formatting scope + editor defaults
-├─ vitest.workspace.ts             # Multi-project Vitest (api, web, shared)
+├─ vitest.config.ts                # One config, three projects (shared, api, web)
 ├─ compose.yaml                    # db + api + web (+ backup profile)
 ├─ compose.override.yaml           # Dev-only: hot reload, exposed DB port
 ├─ .env.example                    # Every env var, documented, no real secrets

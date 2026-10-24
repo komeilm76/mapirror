@@ -71,9 +71,9 @@ Scripts marked ✅ exist today; ⬜ are created by the task named in `08-tasks.m
 | `bun run lint:fix` | ESLint with `--fix` | ✅ P1-REPO-03 |
 | `bun run format` | Prettier write | ✅ P1-REPO-03 |
 | `bun run format:check` | Prettier verify (used by `check`) | ✅ P1-REPO-03 |
-| `bun run test` | Vitest (all projects) | ⬜ P1-REPO-04 |
-| `bun run test:watch` / `test:coverage` | Focused runs | ⬜ P1-REPO-04 |
-| `bun run test:api` / `test:web` | Single project | ⬜ P1-REPO-04 |
+| `bun run test` | Vitest, all three projects | ✅ P1-REPO-04 |
+| `bun run test:watch` / `test:coverage` | Watch mode / v8 coverage with thresholds | ✅ P1-REPO-04 |
+| `bun run test:api` / `test:web` / `test:shared` | Single project | ✅ P1-REPO-04 |
 | `bun run db:migrate` | Apply migrations | ⬜ P1-DB-01 |
 | `bun run db:reset` | Drop + recreate + migrate + seed (dev only, refuses when `NODE_ENV=production`) | ⬜ P1-DB-01 |
 | `bun run admin:init` | Create admin from env | ⬜ P1-AUTH-06 |
@@ -148,19 +148,36 @@ bun run db:reset                                              # dev only
 | Component | `apps/web/tests/**` | tables, dialogs, forms, stores (Vitest + jsdom/VTU) |
 | Fixtures | `apps/api/tests/fixtures/**` | saved Geofabrik index + region HTML; a local HTTP server serves pbf/md5 |
 
+### Projects
+
+`vitest.config.ts` defines three projects in one config — no `vitest.workspace.ts` (deprecated in
+Vitest 3.2+):
+
+| Project | Root | Environment | Why |
+|---|---|---|---|
+| `shared` | `packages/shared` | node | Contract tests; must stay DOM-free because it is bundled for the browser |
+| `api` | `apps/api` | node | Services, schedulers, storage, route handler tests |
+| `web` | `apps/web` | jsdom | Stores and components (`sessionStorage`, `document`) |
+
+```bash
+bun run test            # all three projects
+bun run test:api        # one project
+bun run test:web
+bun run test:shared
+bun run test:watch      # watch mode
+bun run test:coverage   # v8 coverage + thresholds
+```
+
 Rules:
 
 - **No live network in tests.** If a test needs Geofabrik, point `GEOFABRIK_BASE_URL` at the fixture
   server.
 - A test database is created per run (`mapirror_test`), migrated, truncated between suites.
-- Coverage target: 80 % on `apps/api/src/modules`, `apps/api/src/lib`, `packages/shared`.
-- Law tests (`law-routes.test.ts`) are non-negotiable and must never be skipped.
-
-```bash
-bun run test                     # all
-bun run test:coverage            # with report
-bun run test -- --filter download # single suite
-```
+- Law tests (`law-routes.test.ts`, `law-router.test.ts`) are non-negotiable and must never be skipped.
+- **Coverage floor:** 20 % today, raised to 80 % on the core modules at `P5-TST-01`. Thresholds are
+  global and *do* fail the run (verified: an uncovered file exits 1).
+- **An empty coverage table is a bug, not a win.** It means the `include` globs missed every file —
+  which is exactly what happened when `**/index.ts` was excluded and nothing else existed yet.
 
 ## 8. Debugging
 
