@@ -1,0 +1,201 @@
+# 09 — Development guide
+
+Target: from a fresh clone to a running stack in **under 10 minutes**, with hot reload.
+
+## 1. Prerequisites
+
+| Tool | Version | Notes |
+|---|---|---|
+| Bun | ≥ 1.2 | runtime + package manager + test host |
+| Docker + Compose plugin | ≥ 27 | PostgreSQL locally (or use native Postgres 16) |
+| Git | any | — |
+| Node.js | *not required* | Bun replaces it; Vite runs through Bun |
+
+```bash
+curl -fsSL https://bun.sh/install | bash
+docker --version && docker compose version
+```
+
+## 2. First run (Docker, production-like)
+
+```bash
+git clone <repo> mapirror && cd mapirror
+cp .env.example .env
+# set a real password (≥ 12 chars)
+sed -i 's/^ADMIN_PASSWORD=.*/ADMIN_PASSWORD=change-me-please-123/' .env
+docker compose up -d --build
+docker compose logs -f api
+# → "migrations applied", "admin 'admin' created", "listening on 3000"
+open http://localhost:8080            # public site
+open http://localhost:8080/_auth/login # admin login
+```
+
+## 3. First run (local dev, hot reload)
+
+```bash
+bun install
+docker compose up -d db                # only PostgreSQL
+cp .env.example .env                   # DATABASE_URL points at localhost:5432
+
+bun run db:migrate                     # apply SQL migrations
+ADMIN_PASSWORD=dev-password-123 bun run admin:init
+
+bun run dev                            # runs API (:3000) + web (:5173) concurrently
+```
+
+- Web dev server on **http://localhost:5173**. Its proxy list must use the API prefixes only —
+  `/_auth/api`, `/_admin/api`, `/_public/api`, `/healthz`, `/readyz` → `http://localhost:3000`.
+  Proxying bare `/_auth` would send the **login page** request to the API and 404 in dev while working
+  in production (where Nginx splits them), which is a classic "works on my machine" trap.
+- The API watches `apps/api/src`; the worker and scheduler run in the same process
+  (`WORKER_ENABLED=true`).
+- Vite HMR for the SPA.
+
+## 4. Repository scripts (root `package.json`)
+
+| Script | Does |
+|---|---|
+| `bun run dev` | API + web in watch mode |
+| `bun run dev:api` / `dev:web` | One side only |
+| `bun run build` | Build web bundle + API type emit |
+| `bun run check` | `typecheck && lint && format:check && test` |
+| `bun run typecheck` | `tsc --noEmit` across workspaces |
+| `bun run lint` / `format` | ESLint / Prettier |
+| `bun run test` | Vitest (all projects) |
+| `bun run test:watch` / `test:coverage` | Focused runs |
+| `bun run test:api` / `test:web` | Single project |
+| `bun run db:migrate` | Apply migrations |
+| `bun run db:reset` | Drop + recreate + migrate + seed (dev only, refuses when `NODE_ENV=production`) |
+| `bun run admin:init` | Create admin from env |
+| `bun run admin:reset` | Reset password (interactive) |
+| `bun run seed:dev` | Dev fixtures: 2 cached countries, 1 published, one interval |
+| `bun run sync:catalog` | Manual Geofabrik catalog sync |
+
+## 5. Environment variables
+
+`.env.example` is the canonical list. Every variable is validated at boot with Zod; a missing required
+value fails fast with a readable message.
+
+| Variable | Default | Required | Purpose |
+|---|---|---|---|
+| `NODE_ENV` | `development` | ✅ | `development` / `production` / `test` |
+| `PORT` | `3000` | — | API port |
+| `HOST` | `0.0.0.0` | — | Bind address |
+| `DATABASE_URL` | `postgres://mapirror:mapirror@localhost:5432/mapirror` | ✅ | Postgres DSN |
+| `DATABASE_URL_TEST` | `postgres://mapirror:mapirror@localhost:5432/mapirror_test` | — | Test DB (integration tests create/truncate) |
+| `DB_POOL_MAX` | `10` | — | Pool size |
+| `CORS_ORIGINS` | *(empty = same-origin)* | — | Comma-separated allow-list; never `*` |
+| `IP_HASH_SALT` | *(generated on first boot, stored in `settings`)* | — | Salt for hashed download IPs |
+| `POSTGRES_PASSWORD` | `mapirror` | ✅ (compose) | Password for the `db` container |
+| `POSTGRES_PASSWORD_FILE` | — | — | Docker-secret alternative to `POSTGRES_PASSWORD` |
+| `CACHE_DIR` | `/data/cache` | ✅ | Artifact storage root |
+| `TMP_DIR` | `/data/tmp` | ✅ | Uploads + `.part` files |
+| `ADMIN_USERNAME` | `admin` | — | Bootstrap username |
+| `ADMIN_PASSWORD` | — | ✅ (first boot) | Bootstrap password (never logged) |
+| `ADMIN_PASSWORD_FILE` | — | — | Alternative to env (Docker secret) |
+| `AUTH_TOKEN_TTL_HOURS` | `12` | — | Bearer token lifetime |
+| `AUTH_MAX_LOGIN_ATTEMPTS` | `10` | — | Before lockout |
+| `AUTH_LOCKOUT_MINUTES` | `15` | — | Lockout window |
+| `WORKER_ENABLED` | `true` | — | Run queue worker + scheduler |
+| `WORKER_CONCURRENCY` | `2` | — | Parallel jobs |
+| `MAX_UPLOAD_BYTES` | `8589934592` (8 GiB) | — | Import limit |
+| `DISK_RESERVE_BYTES` | `2147483648` (2 GiB) | — | Preflight reserve |
+| `PUBLIC_DOWNLOADS_PER_MINUTE` | `10` | — | Per-IP limit |
+| `GEOFABRIK_BASE_URL` | `https://download.geofabrik.de` | — | Source base (test override) |
+| `CATALOG_TTL_MINUTES` | `360` | — | Catalog cache freshness |
+| `METRICS_INTERVAL_SECONDS` | `10` | — | Sampler period |
+| `METRICS_RETENTION_DAYS` | `7` | — | Sample retention |
+| `JOB_RETENTION_DAYS` | `30` | — | Finished job retention |
+| `LOG_LEVEL` | `info` | — | Pino level |
+| `APP_VERSION` | from package | — | Shown in UI |
+| `PUBLIC_BASE_URL` | `http://localhost:8080` | — | Used in generated download links |
+| `BRANDING_DISPLAY_NAME` | `MapMirror` | — | Default display name |
+
+**Never** commit `.env`. In production prefer `ADMIN_PASSWORD_FILE` mounted as a Docker secret.
+
+## 6. Working with the database
+
+```bash
+docker compose exec db psql -U mapirror -d mapirror          # shell
+bun run db:migrate                                            # apply
+bun run db:reset                                              # dev only
+```
+
+- Migrations: `apps/api/src/db/migrations/NNNN_name.sql`, forward-only. Add the Kysely type change in
+  `schema.ts` in the same commit.
+- `0001_init.sql` creates the `pg_trgm` extension (required by the country search index). `unaccent`
+  is created when available; the search works without it (see `03-data-model.md`).
+- Never edit an applied migration; write a new one.
+- Transactions in services, not repositories; repositories accept a `Kysely` instance / `tx`.
+
+## 7. Testing
+
+| Layer | Where | What |
+|---|---|---|
+| Unit | `apps/api/tests/unit/**` | schedule math, slugs, checksum, storage paths, validators |
+| Integration | `apps/api/tests/integration/**` | routes + real Postgres (`DATABASE_URL_TEST`), guards, law tests |
+| Contract | `packages/shared/tests/**` | Zod schemas accept/reject the documented shapes |
+| Component | `apps/web/tests/**` | tables, dialogs, forms, stores (Vitest + jsdom/VTU) |
+| Fixtures | `apps/api/tests/fixtures/**` | saved Geofabrik index + region HTML; a local HTTP server serves pbf/md5 |
+
+Rules:
+
+- **No live network in tests.** If a test needs Geofabrik, point `GEOFABRIK_BASE_URL` at the fixture
+  server.
+- A test database is created per run (`mapirror_test`), migrated, truncated between suites.
+- Coverage target: 80 % on `apps/api/src/modules`, `apps/api/src/lib`, `packages/shared`.
+- Law tests (`law-routes.test.ts`) are non-negotiable and must never be skipped.
+
+```bash
+bun run test                     # all
+bun run test:coverage            # with report
+bun run test -- --filter download # single suite
+```
+
+## 8. Debugging
+
+| Need | How |
+|---|---|
+| Follow a request | `x-request-id` in the response, same id in logs |
+| Inspect a job | `GET /_admin/api/jobs/:jobId` or `docker compose exec db psql -c "select * from jobs order by created_at desc limit 5"` |
+| Simulate a slow/failed source | `GEOFABRIK_BASE_URL=http://localhost:4010` fixture server with fault flags |
+| Check disk math | `GET /_admin/api/system/status` → `storage` |
+| Reset everything | `docker compose down -v && docker compose up -d` (destroys data) |
+| Re-run admin bootstrap | `docker compose exec api bun run scripts/init-admin.ts` (idempotent) |
+| Forgot admin password | `docker compose exec api bun run scripts/reset-admin-password.ts` |
+
+## 9. Code conventions
+
+- **Layering:** route handler → service → repository. No SQL in handlers, no HTTP in services.
+- **Validation:** Zod schema in `packages/shared` → Fastify `schema` → handler receives typed input.
+- **Errors:** throw `AppError` subclasses; never `throw new Error` for expected failures.
+- **Async:** no floating promises; use the shared `withTimeout` helper for network calls.
+- **Logging:** structured fields (`{ countryId, jobId, bytes }`), no string interpolation of user input.
+- **JSDoc:** every exported function/type has a one-line summary + `@throws` where relevant.
+- **Vue:** `<script setup lang="ts">`, composables over mixins, Pinia stores per domain, Vuetify
+  components only (no raw HTML styling beyond layout), tokens from the theme.
+- **Commits:** conventional (`feat:`, `fix:`, `docs:`, `test:`, `chore:`), one logical change each.
+
+## 10. Adding a feature (checklist)
+
+1. Read the relevant requirement IDs in `PROMPT.md` and the task in `08-tasks.md`.
+2. Update `04-api.md` with the endpoint/fields (docs first).
+3. Add/extend the Zod schema in `packages/shared`.
+4. Implement service + repository + route; add the guard-sensitive test.
+5. Update `03-data-model.md` if the schema changes; write a migration.
+6. Build the UI states: loading / empty / error / success.
+7. Add tests (unit + integration + component as applicable).
+8. `bun run check`; update docs; tick the task; commit.
+
+## 11. Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| API exits at boot with `INVALID_ENV` | Missing/invalid env var | Read the message; check `.env` |
+| `401` on every admin call | Token expired (`AUTH_TOKEN_TTL_HOURS`) | Log in again |
+| `503 DISK_FULL` | Free space < reserve | Free space or lower `DISK_RESERVE_BYTES` |
+| Download stalls at 0 bytes | Source unreachable / proxy blocks egress | `curl -I` the Geofabrik URL from the container |
+| Catalog empty | Never synced | `POST /_admin/api/catalog/sync` or `bun run sync:catalog` |
+| Public page shows nothing | No country published | Publish a cached country |
+| `readyz` 503 | DB unreachable | `docker compose ps`, check `db` health |
+| Port 8080 busy | Another service | Change the host port mapping in `compose.yaml` |

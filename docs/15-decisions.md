@@ -1,0 +1,336 @@
+# 15 — Architecture Decision Records
+
+**TL;DR** — 24 ADRs recording *why*. The owner's decision table (D-1…D-19) lives in `PROMPT.md` §24 and
+is the authority on *what*; each ADR below explains the reasoning and consequences. If a doc contradicts
+`PROMPT.md` §24, that table wins; if two docs disagree with each other, the ADR decides.
+
+One entry per decision that constrains the build. `D-n` entries are the owner's resolutions from
+2026-10-24 (`PROMPT.md` §24). Phase 0 additions are marked **ADR (Phase 0)** and need only a glance —
+they are implementation consequences of those decisions, not new product scope.
+
+Format: **Context → Decision → Consequences**.
+
+---
+
+## ADR-001 — JSON APIs stay inside the three required prefixes *(page part superseded: ADR-023, ADR-024)*
+
+**Context.** The requirement fixes the API namespaces: `/_auth/*`, `/_admin/*`, `/_public/*`.
+
+**Decision (still valid).** JSON APIs live exactly there: `/_auth/*` (login/logout/me),
+`/_admin/api/*`, `/_public/api/*`. The reserved segment `api` distinguishes JSON from pages, so a
+`curl` can never accidentally receive HTML.
+
+**Superseded part.** The original version of this ADR also put *pages* under `/_admin/<page>` and
+`/_public/<page>`. The owner has since required all website pages to live under `/_site/*` — see
+**ADR-023**, which is the current rule for pages.
+
+---
+
+## ADR-002 — Geofabrik is the only source, behind a four-method interface (D-1)
+
+**Context.** The owner reads "geofabric" as Geofabrik and wants future providers possible without
+speculative abstraction.
+
+**Decision.** `MapSource` with exactly `listRegions`, `getRegionDetail`, `listSnapshots`,
+`resolveDownload`. One implementation (`geofabrik`). No registry, no plugin system, no provider UI.
+
+**Consequences.** A second provider costs one class + one construction site. Catalog sync, downloads
+and update checks depend on the interface, so they stay provider-agnostic without extra machinery.
+
+---
+
+## ADR-003 — `.osm.pbf` only (D-2)
+
+**Decision.** Accept and store `.osm.pbf` only; other formats are rejected at import and never
+offered by the source adapter.
+
+**Consequences.** Smaller cache, one MIME type, one validation path, simpler checksums. SHP/GPKG would
+multiply storage and add zip-safety concerns; revisit only with a real requirement.
+
+---
+
+## ADR-004 — Opaque bearer tokens in PostgreSQL (D-3)
+
+**Context.** The requirement is Bearer tokens, plus a reset-password script that must cut off existing
+sessions.
+
+**Decision.** 256-bit random token (`mm_…`), SHA-256 hash stored, TTL 12 h, revocable individually or
+in bulk. No JWT, no refresh endpoint.
+
+**Consequences.** Instant revocation and a database round-trip per admin request (negligible at this
+scale). The client cannot introspect claims — it calls `/_auth/api/me`.
+
+---
+
+## ADR-005 — One admin in the UI, multi-admin schema (D-4)
+
+**Decision.** `admins` is a normal table; the UI shows one account and a "coming later" note in
+Settings. Bootstrap and reset scripts act on a username, so adding a second admin later is a UI task.
+
+---
+
+## ADR-006 — Local disk storage at `/data/cache` (D-5)
+
+**Decision.** Files live on a named Docker volume mounted at `/data/cache`, addressed by
+`<slug>/<version>/<filename>`; a thin `storage` module owns every path.
+
+**Consequences.** No S3 credentials, no network latency on public downloads (Nginx sends files at disk
+speed). The storage module is the only place to change for object storage later.
+
+---
+
+## ADR-007 — Schedules are daily/weekly/monthly, UTC (D-6)
+
+**Decision.** `frequency` + `timeOfDay` (default 03:00), `weekday` (Monday) for weekly, `dayOfMonth`
+(default 1) for monthly. `dayOfMonth` is capped at **28** so every month has the day.
+
+**Consequences.** No cron expressions in the API or UI (fewer footguns, better validation messages).
+Timezone is fixed to UTC — schedules are predictable and DST-free; the UI labels times "UTC".
+
+---
+
+## ADR-008 — Retention keeps the newest 3 ready versions (D-7)
+
+**Decision.** After a successful update, prune to `keep_versions` (default 3, per-interval override),
+never deleting the newest ready version. Manual deletion is always allowed and can go below 3.
+
+**Consequences.** Bounded disk growth; the archive of dated snapshots upstream deletes is preserved
+for the last few updates. Pruning is a separate, audited operation.
+
+---
+
+## ADR-009 — Hard delete with typed confirmation (D-7b)
+
+**Decision.** Country deletion requires typing the slug; version deletion requires an explicit confirm.
+Files are unlinked after the DB transaction commits.
+
+**Consequences.** No trash UI or restore path; a failed unlink leaves an orphan that the sweep reports
+(it never becomes a broken download). Simpler code, smaller storage footprint, unambiguous state.
+
+---
+
+## ADR-010 — Public access is opt-in per country, all ready versions exposed (D-9)
+
+**Decision.** `is_public` defaults to false. Publishing requires ≥ 1 ready version. Public pages list
+all ready versions of a published country and default to `latest`.
+
+**Consequences.** One switch per country, no per-version publication (kept simple). Unpublishing never
+deletes data.
+
+---
+
+## ADR-011 — Duplicate versions rejected; replacement explicit (D-10)
+
+**Decision.** `UNIQUE (country_id, version)` for non-deleted rows. A duplicate import returns `409`
+with a hint; the client can retry with `replace: true` after confirmation, which deletes and re-creates
+the version atomically. No merging, no partial diffs.
+
+---
+
+## ADR-012 — PostgreSQL job queue, single worker loop (D-11)
+
+**Context.** Downloads are long-running; the UI needs progress and cancellation; deployment must stay
+three containers.
+
+**Decision.** `jobs` table claimed with `SELECT … FOR UPDATE SKIP LOCKED`, an in-process worker with
+concurrency 2, heartbeats and a reaper, cooperative cancellation. No Redis, no separate worker image.
+
+**Consequences.** One less service to run and monitor; queue throughput is bounded but far above what a
+single mirror needs. Horizontal scaling would need a review (documented as out of scope).
+
+---
+
+## ADR-013 — SQL migrations + Kysely + Zod only (D-12)
+
+**Decision.** Hand-written SQL migrations, Kysely for typed queries/transactions, Zod for all I/O.
+
+**Consequences.** No schema-generation magic, explicit indexes and constraints (which the invariants
+depend on), one validation library shared by API and SPA.
+
+---
+
+## ADR-014 — Token in `sessionStorage`, no `v-html` (D-13)
+
+**Decision.** Pinia holds auth state; the token lives in `sessionStorage`; the API client attaches it;
+any `401` clears state and redirects. Rendering is escape-only (no `v-html`), CSP blocks inline script.
+
+**Consequences.** A refresh in the same tab keeps the session; closing the tab signs out. XSS surface is
+minimized rather than mitigated by storage choice alone.
+
+---
+
+## ADR-015 — Dark admin, light public, self-hosted fonts (D-14)
+
+**Decision.** Two Vuetify themes with shared tokens; Space Grotesk + Inter, **self-hosted subset and
+dropped if they cost > 40 kB or hurt LCP**; teal primary, amber reserved for "update available".
+
+**Consequences.** Strong visual identity at near-zero runtime cost; fallback to system fonts is
+pre-approved and invisible to functionality.
+
+---
+
+## ADR-016 — Nginx on :8080, TLS upstream (D-15)
+
+**Decision.** The `web` container serves the SPA (all pages under `/_site/*`, other paths → 404 shell)
+and proxies `/_auth`, `/_admin/api`, `/_public/api`, `/healthz`, `/readyz` to the API. TLS is the operator's proxy (Caddy/Nginx examples in
+`12-deployment.md`).
+
+**Consequences.** No certificate management inside the stack; `PUBLIC_BASE_URL` must be set so
+generated links match the public hostname.
+
+---
+
+## ADR-017 — English only, centralized strings (D-16)
+
+**Decision.** All UI copy lives in `apps/web/src/locales/en.ts` (a plain object, typed). No vue-i18n
+dependency yet.
+
+**Consequences.** Adding i18n later is mechanical. Docs and code comments are English only.
+
+---
+
+## ADR-018 — Catalog comes from `index-v1-nogeom.json`, snapshots from the region page
+**Phase 0** · implementation detail of GEO-1/GEO-4
+
+**Context.** Geofabrik publishes a stable JSON index with ids, parents, ISO codes and pbf URLs, but it
+contains **no sizes, dates, or dated snapshots**. Those only exist in each region's HTML page.
+
+**Decision.** Two paths:
+
+1. **Catalog sync** (scheduled/TTL/manual): parse `index-v1-nogeom.json` → `countries`.
+2. **Region detail / snapshots** (on demand, cached 10 min): fetch `<region>.html`, extract the file
+   table (`<id>-YYMMDD.osm.pbf` + size + date) and the "contains all OSM data up to" timestamp.
+
+**Consequences.** Search is fast and offline-capable; snapshot lists are inherently point-in-time and
+may age. The parser is isolated with saved HTML fixtures, and a parse failure degrades to
+`sourceReachable: false` / "only latest available" instead of wrong data. HTML changes at Geofabrik are
+an operational risk, mitigated by fixtures + typed parse results + a visible warning.
+
+---
+
+## ADR-019 — Version identity: `YYMMDD`, `latest@<data timestamp>`, or an upload label
+**Phase 0** · implementation detail of CACHE-1/CACHE-4/UPD-1
+
+**Context.** Upstream overwrites `-latest.osm.pbf` and eventually deletes dated snapshots. "A version"
+must mean *what we actually stored*, not a mutable URL.
+
+**Decision.**
+
+| Origin | `version` | Meaning |
+|---|---|---|
+| Dated snapshot | `260101` | The upstream snapshot date |
+| Latest download | `latest@2026-10-23T20:20:51Z` | The source's "data up to" timestamp at fetch time (fallback: fetch time) |
+| Upload | admin text, default `YYYY-MM-DD` | Local artifact |
+
+Every version stores `source_url`, `source_filename`, `file_size_bytes`, `checksum_md5`,
+`data_timestamp` and `origin`, so update comparison and re-verification never depend on upstream state.
+
+**Consequences.** Re-downloading `latest` a day later creates a new immutable version instead of
+mutating one; "check for update" compares data timestamps and reports `unknown` when the source can't be
+read. Public URLs accept `latest` or an explicit version id.
+
+---
+
+## ADR-020 — Synchronous single-country update checks, job-based bulk checks
+**Phase 0** · implementation detail of UPD-1/UPD-3
+
+**Decision.** One country check runs inline with a 5 s budget (returns `unknown` on timeout); bulk
+checks enqueue `update_check` jobs. Per-country results are persisting on `country_cache`.
+
+**Consequences.** The row button feels instant in the common case; the "check all" action never blocks
+a request. Both paths write the same state, so the badge is consistent.
+
+---
+
+## ADR-021 — No OpenAPI generation in v1
+**Phase 0** · implementation detail of ENG-2
+
+**Decision.** `packages/shared` Zod schemas are the contract; `docs/04-api.md` is the human reference;
+the public API docs page renders from the same schema metadata.
+
+**Consequences.** Fewer dependencies and no diverging generated artifacts. If an external consumer
+needs a machine-readable spec later, `@fastify/swagger` + `zod-to-json-schema` can be added in one place.
+
+---
+
+## ADR-022 — Metrics sampled in-process, no cAdvisor
+**Phase 0** · implementation detail of MON-1
+
+**Decision.** Sample `os.cpus()`, `os.loadavg()`, `os.totalmem/freemem`, `statfs(CACHE_DIR)` and the
+cache-size aggregate every 10 s; retention 7 days with server-side downsampling.
+
+**Consequences.** Three containers stay three containers. Numbers describe the container/host as seen
+from the API process; the UI labels the scope explicitly rather than pretending to be host-exact.
+
+---
+
+## ADR-023 — Every non-auth website page lives under `/_site/*` *(login page: see ADR-024)*
+
+**Context.** The owner requires the website to live under `/_site/*`. The API namespaces
+(`/_auth/*`, `/_admin/*`, `/_public/*`) remain fixed by the original requirement. Serving pages and
+JSON on the same URLs would need content negotiation and make `curl` output depend on headers.
+
+**Decision.** Split pages from APIs completely:
+
+| Kind | Path |
+|---|---|
+| Public pages | `/_site/`, `/_site/countries/:slug`, `/_site/api-docs`, `/_site/not-found` |
+| Admin pages | `/_site/admin/`, `/_site/admin/catalog`, `/_site/admin/cache`, `/_site/admin/cache/:slug`, `/_site/admin/intervals`, `/_site/admin/import`, `/_site/admin/jobs`, `/_site/admin/system`, `/_site/admin/settings`, `/_site/admin/audit` |
+| Login page | `/_auth/login` — the single exception, owned by the auth namespace (ADR-024) |
+| APIs | `/_auth/api/*`, `/_admin/api/*`, `/_public/api/*` |
+| Root | `GET /` → `302 /_site/` |
+
+Consequences:
+
+- **One deployable SPA** serves both the public site and the admin panel; the router decides which
+  shell to render. Static assets stay at `/assets/*`.
+- Nginx rewrites any unmatched `/_site/*` to `index.html`; unknown paths render the in-app 404 page.
+- Admin pages are inert HTML — all authorization stays on `/_admin/api/*` (L2). A visitor who types
+  `/_site/admin/` sees the login screen, never data.
+- The route-law tests assert four things: APIs stay in their three prefixes (`/_auth/api/*`,
+  `/_admin/api/*`, `/_public/api/*`), every page is under `/_site/` except `/_auth/login`, API routes
+  never return HTML, and page routes never return JSON.
+- Deep links keep working for both audiences (`/_site/countries/finland` is shareable; the admin URL is
+  bookmarkable).
+
+---
+
+## ADR-024 — Login lives under `/_auth/*` (page and API)
+
+**Context.** The owner requires the login route to live under `/_auth/*` (the auth namespace), and the
+original requirement already put auth APIs there. A page and a JSON API on the same URL would force
+method-or-header sniffing, which is exactly what ADR-023 removed for the other namespaces.
+
+**Decision.** The auth namespace hosts both, split the same way the others are:
+
+| Kind | Path |
+|---|---|
+| Login **page** (HTML shell) | `GET /_auth/login` |
+| Auth **API** (JSON) | `POST /_auth/api/login`, `POST /_auth/api/logout`, `GET /_auth/api/me` |
+
+Everything else follows ADR-023: non-auth pages under `/_site/*`, admin API under `/_admin/api/*`,
+public API under `/_public/api/*`, `/` → `/_site/`.
+
+**Consequences.**
+
+- One exception in the route law: `/_site/*` **plus** `/_auth/login`, and `/_auth/api/*` for JSON.
+- Nginx must match `^~ /_auth/api/` **before** the `= /_auth/login` page rule; the law doc calls this
+  out explicitly and Phase 6 verifies it with `curl`.
+- Session-expiry redirects go to `/_auth/login` (not `/_site/login`), so the redirect target is inside
+  the auth namespace too.
+- The SPA still owns the login screen (same bundle); it just lives at a different prefix.
+
+---
+
+## Deferred decisions (deliberately open)
+
+| Topic | Trigger to revisit |
+|---|---|
+| S3/object storage | > 500 GB or multi-node deployment |
+| Multi-admin UI + roles | A second operator needs access |
+| i18n runtime | A non-English operator |
+| Diff (`.osc.gz`) application | Users ask for incremental updates instead of full files |
+| Vector tiles / other formats | A real downstream requirement |
+| External worker/queue | Job volume exceeds one worker loop |
+| OpenAPI export | An external consumer needs a spec |
+| Trash/soft-delete | An accidental deletion needs recovery |
