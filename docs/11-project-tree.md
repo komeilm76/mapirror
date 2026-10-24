@@ -8,8 +8,9 @@ mapirror/
 ├─ README.md                       # 5-minute pitch, quick start, links into docs/
 ├─ package.json                    # Bun workspaces root; scripts: check, dev, test, build
 ├─ tsconfig.base.json              # Strict TS settings shared by every package
-├─ eslint.config.js                # Flat ESLint config (TS + Vue)
-├─ prettier.config.js              # Formatting
+├─ eslint.config.js                # Flat ESLint config (JS + type-aware TS + Vue)
+├─ prettier.config.js              # Formatting (code only)
+├─ .prettierignore / .editorconfig # Formatting scope + editor defaults
 ├─ vitest.workspace.ts             # Multi-project Vitest (api, web, shared)
 ├─ compose.yaml                    # db + api + web (+ backup profile)
 ├─ compose.override.yaml           # Dev-only: hot reload, exposed DB port

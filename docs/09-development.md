@@ -67,7 +67,10 @@ Scripts marked ✅ exist today; ⬜ are created by the task named in `08-tasks.m
 | `bun run dev:api` / `dev:web` | One side only | ⬜ P1-API-01 / P1-WEB-01 |
 | `bun run build` | Build web bundle | ⬜ P1-DOCK-02 |
 | `bun run check` | `typecheck && lint && format:check && test` | ⬜ P1-REPO-05 |
-| `bun run lint` / `format` | ESLint / Prettier | ⬜ P1-REPO-03 |
+| `bun run lint` | ESLint over the whole repo (`--max-warnings=0`) | ✅ P1-REPO-03 |
+| `bun run lint:fix` | ESLint with `--fix` | ✅ P1-REPO-03 |
+| `bun run format` | Prettier write | ✅ P1-REPO-03 |
+| `bun run format:check` | Prettier verify (used by `check`) | ✅ P1-REPO-03 |
 | `bun run test` | Vitest (all projects) | ⬜ P1-REPO-04 |
 | `bun run test:watch` / `test:coverage` | Focused runs | ⬜ P1-REPO-04 |
 | `bun run test:api` / `test:web` | Single project | ⬜ P1-REPO-04 |
@@ -172,6 +175,23 @@ bun run test -- --filter download # single suite
 | Forgot admin password | `docker compose exec api bun run scripts/reset-admin-password.ts` |
 
 ## 9. Code conventions
+
+Formatting and linting are enforced by configuration, not by review comments:
+
+| Tool | Config | What it enforces |
+|---|---|---|
+| Prettier | `prettier.config.js` | 100 columns, single quotes, trailing commas, LF. Markdown is **excluded** (`.prettierignore`): hand-authored tables would be rewritten into padded columns for no rendering benefit |
+| ESLint | `eslint.config.js` | `js` + `typescript-eslint` type-checked (`projectService`) + `eslint-plugin-vue`, then `eslint-config-prettier` last so the two never disagree |
+| Editor | `.editorconfig` | UTF-8, LF, 2-space indent, final newline |
+
+Project-specific lint rules that encode the laws: `@typescript-eslint/no-floating-promises` and
+`no-misused-promises` (09 §9), `consistent-type-imports`, `switch-exhaustiveness-check`,
+`no-explicit-any` (ENG-2), `vue/no-v-html` (D-13), `vue/component-api-style: script-setup` (09 §9)
+and `vue/define-{props,emits}-declaration: type-based`.
+
+`.vue` files are linted but **not type-checked** until `vue-tsc` replaces the web `typecheck` script in
+`P1-WEB-01`; the reason is in `apps/web/tsconfig.json`.
+
 
 - **Layering:** route handler → service → repository. No SQL in handlers, no HTTP in services.
 - **Validation:** Zod schema in `packages/shared` → Fastify `schema` → handler receives typed input.

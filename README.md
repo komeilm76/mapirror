@@ -45,7 +45,9 @@ private and versionless. Dependency graph: `apps/* → packages/shared` (no othe
 ```bash
 bun install                 # links the three workspaces
 bun run typecheck           # strict tsc across scripts + all workspaces
-bun run check:workspaces    # verifies the workspace wiring (12 checks)
+bun run lint                # ESLint (type-aware, Vue, zero warnings tolerated)
+bun run format:check        # Prettier, code only — markdown stays hand-authored
+bun run check:workspaces    # verifies the workspace wiring (20 checks)
 ```
 
 TypeScript is pinned to 5.9.3 rather than 7.x: the toolchain around it (`vue-tsc`,

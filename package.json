@@ -15,10 +15,22 @@
   ],
   "scripts": {
     "check:workspaces": "bun run scripts/check-workspaces.ts",
-    "typecheck": "tsc -p tsconfig.json && bun run --filter './packages/*' typecheck && bun run --filter './apps/*' typecheck"
+    "typecheck": "tsc -p tsconfig.json && bun run --filter './packages/*' typecheck && bun run --filter './apps/*' typecheck",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
+    "@eslint/js": "9.39.5",
     "@types/bun": "1.4.4",
-    "typescript": "5.9.3"
+    "eslint": "9.39.5",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-vue": "10.11.1",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.0",
+    "vue-eslint-parser": "10.4.1"
   }
 }

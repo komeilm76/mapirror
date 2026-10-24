@@ -103,7 +103,10 @@ async function main(): Promise<void> {
   const root = readManifest(join(ROOT, 'package.json'));
   if (!root) return;
 
-  check(Array.isArray(root.workspaces) && root.workspaces.length > 0, 'root package.json declares workspaces');
+  check(
+    Array.isArray(root.workspaces) && root.workspaces.length > 0,
+    'root package.json declares workspaces',
+  );
   check(root.private === true, 'root package.json is private');
 
   const dirs = expandWorkspaces(root.workspaces ?? []);
@@ -127,7 +130,10 @@ async function main(): Promise<void> {
     if (byName.has(name)) failed.push(`duplicate workspace name "${name}" (${rel})`);
     byName.set(name, dir);
 
-    check(name === `${SCOPE}/${basename(dir)}`, `${rel} is named ${SCOPE}/${basename(dir)} (found "${name}")`);
+    check(
+      name === `${SCOPE}/${basename(dir)}`,
+      `${rel} is named ${SCOPE}/${basename(dir)} (found "${name}")`,
+    );
     check(
       typeof manifest.scripts?.typecheck === 'string',
       `${name} declares a typecheck script (so the root chain covers it)`,

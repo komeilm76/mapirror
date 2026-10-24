@@ -27,6 +27,10 @@ passes. Patch releases (`0.1.1`, …) are corrections to an already-tagged phase
   `apps/api`, `apps/web`, `packages/shared`, `bun.lock`, `.gitignore`.
 - `bun run check:workspaces` — 12 assertions covering workspace declaration, privacy, naming,
   `workspace:*` wiring and real package resolution from a consumer.
+- Code quality toolchain (`P1-REPO-03`): ESLint 9 flat config (JS + type-aware TypeScript via the
+  project service + `eslint-plugin-vue` + `eslint-config-prettier` last), Prettier with markdown
+  excluded, `.prettierignore`, `.editorconfig`; scripts `lint`, `lint:fix`, `format`, `format:check`.
+  Project rules encode the laws: no floating promises, no `any`, `v-html` banned, `script setup` only.
 - Strict TypeScript baseline (`P1-REPO-02`): `tsconfig.base.json` (`strict`, `noUncheckedIndexedAccess`,
   `noImplicitOverride`, `noUnusedLocals/Parameters`, `verbatimModuleSyntax`, `isolatedModules`,
   `module: preserve`, `noEmit`) extended by the root (scripts), `apps/api`, `apps/web` (DOM libs, no Bun

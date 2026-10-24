@@ -1,0 +1,17 @@
+# Generated, vendored or runtime content — never reformatted by hand-tooling.
+node_modules/
+bun.lock
+dist/
+build/
+coverage/
+data/
+backups/
+
+# Markdown is hand-authored with compact tables and Mermaid blocks. Prettier expands tables into
+# padded columns, which rewrites thousands of reviewed lines and adds review noise without changing
+# how anything renders. Prose formatting stays a human decision; code formatting is enforced.
+*.md
+docs/
+
+# GitHub templates and assets
+.github/
