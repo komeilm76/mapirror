@@ -31,8 +31,8 @@ Legend: `Req` maps back to `PROMPT.md` §6–§16 requirement IDs. `Dep` = must 
 
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
-| P1-REPO-01 | Bun workspaces (`apps/api`, `apps/web`, `packages/shared`) | ENG-1 | P0-09 | ✅ | `bun install` links all three; `bun run check:workspaces` asserts private + named + `workspace:*` + real resolution (12 checks, failure path verified) |
-| P1-REPO-02 | `tsconfig.base.json` strict + per-package extends | ENG-2 | P1-REPO-01 | ✅ | `bun run typecheck` passes (root scripts + 3 packages); strictness proved by probes: `noUncheckedIndexedAccess` caught `items[0]`, `noImplicitAny` caught an untyped param, web correctly excludes Bun types, api resolves `@mapirror/shared` |
+| P1-REPO-01 | Bun workspaces (`apps/api`, `apps/web`, `packages/shared`) | ENG-1 | P0-09 | ✅ | `bun install` links all three; `bun run check:workspaces` asserts private + named + naming convention + `workspace:*` + per-workspace typecheck + real resolution (20 checks; failure paths verified) |
+| P1-REPO-02 | `tsconfig.base.json` strict + per-package extends | ENG-2 | P1-REPO-01 | ✅ | `bun run typecheck` passes (root scripts + 3 packages); strictness proved by probes: `noUncheckedIndexedAccess` caught `items[0]`, `noImplicitAny` caught an untyped param, web correctly excludes Bun types, api resolves `@mapirror/shared`, and `packages/shared` has no runtime types so a stray `Bun.*` cannot leak into the browser bundle |
 | P1-REPO-03 | ESLint flat + Prettier + Vue plugin | ENG-3 | P1-REPO-01 | ⬜ | `bun run lint` and `format:check` clean |
 | P1-REPO-04 | Vitest workspace (api/web/shared) | ENG-4 | P1-REPO-01 | ⬜ | `bun run test` runs 3 projects |
 | P1-REPO-05 | `bun run check` aggregate script | ENG-3 | P1-REPO-02/03/04 | ⬜ | One command = typecheck+lint+format+test |

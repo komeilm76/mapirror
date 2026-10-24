@@ -30,6 +30,10 @@ open http://localhost:8080            # public site
 open http://localhost:8080/_auth/login # admin login
 ```
 
+> **Where we are today:** only the workspace and type-check commands exist (see §4). Everything below
+> that starts the API, the database or the SPA lands with `P1-API-01`, `P1-WEB-01` and `P1-DOCK-04`.
+> This section documents the target developer experience; it is not yet runnable end to end.
+
 ## 3. First run (local dev, hot reload)
 
 ```bash
@@ -53,23 +57,26 @@ bun run dev                            # runs API (:3000) + web (:5173) concurre
 
 ## 4. Repository scripts (root `package.json`)
 
-| Script | Does |
-|---|---|
-| `bun run dev` | API + web in watch mode |
-| `bun run dev:api` / `dev:web` | One side only |
-| `bun run build` | Build web bundle + API type emit |
-| `bun run check` | `typecheck && lint && format:check && test` |
-| `bun run typecheck` | `tsc --noEmit` across workspaces |
-| `bun run lint` / `format` | ESLint / Prettier |
-| `bun run test` | Vitest (all projects) |
-| `bun run test:watch` / `test:coverage` | Focused runs |
-| `bun run test:api` / `test:web` | Single project |
-| `bun run db:migrate` | Apply migrations |
-| `bun run db:reset` | Drop + recreate + migrate + seed (dev only, refuses when `NODE_ENV=production`) |
-| `bun run admin:init` | Create admin from env |
-| `bun run admin:reset` | Reset password (interactive) |
-| `bun run seed:dev` | Dev fixtures: 2 cached countries, 1 published, one interval |
-| `bun run sync:catalog` | Manual Geofabrik catalog sync |
+Scripts marked ✅ exist today; ⬜ are created by the task named in `08-tasks.md`.
+
+| Script | Does | Status |
+|---|---|---|
+| `bun run typecheck` | `tsc --noEmit` for `scripts/` plus every workspace (`P1-REPO-02`) | ✅ |
+| `bun run check:workspaces` | 20 assertions on the workspace wiring (`P1-REPO-01`) | ✅ |
+| `bun run dev` | API + web in watch mode | ⬜ P1-API-01 / P1-WEB-01 |
+| `bun run dev:api` / `dev:web` | One side only | ⬜ P1-API-01 / P1-WEB-01 |
+| `bun run build` | Build web bundle | ⬜ P1-DOCK-02 |
+| `bun run check` | `typecheck && lint && format:check && test` | ⬜ P1-REPO-05 |
+| `bun run lint` / `format` | ESLint / Prettier | ⬜ P1-REPO-03 |
+| `bun run test` | Vitest (all projects) | ⬜ P1-REPO-04 |
+| `bun run test:watch` / `test:coverage` | Focused runs | ⬜ P1-REPO-04 |
+| `bun run test:api` / `test:web` | Single project | ⬜ P1-REPO-04 |
+| `bun run db:migrate` | Apply migrations | ⬜ P1-DB-01 |
+| `bun run db:reset` | Drop + recreate + migrate + seed (dev only, refuses when `NODE_ENV=production`) | ⬜ P1-DB-01 |
+| `bun run admin:init` | Create admin from env | ⬜ P1-AUTH-06 |
+| `bun run admin:reset` | Reset password (interactive) | ⬜ P1-AUTH-07 |
+| `bun run seed:dev` | Dev fixtures | ⬜ P1-DB-01 |
+| `bun run sync:catalog` | Manual Geofabrik catalog sync | ⬜ P2-SRC-06 |
 
 ## 5. Environment variables
 

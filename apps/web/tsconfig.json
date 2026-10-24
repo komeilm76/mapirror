@@ -7,6 +7,9 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": []
   },
-  "include": ["src/**/*.ts", "src/**/*.vue"],
+  /* `.vue` files are deliberately NOT listed here: plain `tsc` silently ignores them, which would
+     make this script report success on a broken SFC. Add `src/**\/*.vue` in `P1-WEB-01`, in the same
+     commit that switches this script to `vue-tsc`. */
+  "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

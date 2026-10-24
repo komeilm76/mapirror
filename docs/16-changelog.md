@@ -1,11 +1,29 @@
 # 16 — Documentation changelog
 
-Review passes over `PROMPT.md` + `docs/`. Every entry is a defect that was found and fixed, kept so a
-reviewer can see what changed and why. Nothing here changes the product; it records the corrections.
+Review passes over the repository — documents first, then the code that implements them. Every entry
+is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 3 passes · 54 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16).
+**Totals:** 4 passes · 58 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 4 — 2026-10-24 (code review of P1-REPO-01 / P1-REPO-02)
+
+First pass over code rather than prose. Findings, all verified by probe before and after the fix:
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **`bun run typecheck` reported success on a broken `.vue` file.** `apps/web/tsconfig.json` listed `src/**/*.vue`, but plain `tsc` does not parse SFCs — it silently skips them, so `--listFilesOnly` showed 0 `.vue` files while the command exited 0. A syntax- or type-error in a component would have shipped as "green" | `.vue` removed from the include list until `vue-tsc` replaces the script in `P1-WEB-01` (same commit adds it back); the reason is written into the tsconfig so it is not "helpfully" restored |
+| 2 | **`check-workspaces` crashed with a Bun stack trace** on an unsupported workspace pattern or an unreadable manifest — the exact situation where a CI author needs a readable message | All discovery errors are recorded as `FAIL` lines; the whole run is wrapped so an unexpected throw also prints one line and exits 1 (20 checks now, was 12) |
+| 3 | **`packages/shared` inherited `types: ["bun"]`.** Shared is bundled into the browser; a `Bun.*` or `process.*` reference there would type-check and then crash the SPA at runtime | `types: []` for shared, so the compiler rejects either global; verified with a `Bun.version` probe |
+| 4 | **`09-development.md` presented 15 scripts as available** (`dev`, `check`, `lint`, `db:migrate`, `admin:init`, …) when only two exist | Table gained a status column naming the task that creates each script, and §3 carries a "where we are today" banner |
+
+The review also confirmed three things *are* correct, so they are not silently assumed: a failing
+workspace makes `bun run typecheck` exit non-zero (verified: exit 2), the root project really checks
+`scripts/` (verified with a deliberate type error), and `.gitignore` ignores `.env`/`.env.local` while
+keeping `.env.example` (verified with `git check-ignore`).
 
 ---
 
