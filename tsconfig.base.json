@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    /* Language & runtime — Bun executes TypeScript directly, so nothing is emitted.
+       `module: "preserve"` implies `moduleResolution: "bundler"` and `esModuleInterop: true`;
+       both are required for Vite (web) and Bun (api/scripts) to resolve the same code. */
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "preserve",
+    "moduleDetection": "force",
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noEmit": true,
+
+    /* Strictness — laws L5 (boundary validation) and ENG-2 (no `any` in public surfaces).
+       Everything below is on by default in `strict` plus explicit extras that catch real bugs. */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "useUnknownInCatchVariables": true,
+
+    /* Module hygiene */
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+
+    /* Types: Bun provides `Bun.*` and Node built-ins type surface. The web package narrows this. */
+    "types": ["bun"]
+  }
+}

@@ -27,6 +27,11 @@ passes. Patch releases (`0.1.1`, …) are corrections to an already-tagged phase
   `apps/api`, `apps/web`, `packages/shared`, `bun.lock`, `.gitignore`.
 - `bun run check:workspaces` — 12 assertions covering workspace declaration, privacy, naming,
   `workspace:*` wiring and real package resolution from a consumer.
+- Strict TypeScript baseline (`P1-REPO-02`): `tsconfig.base.json` (`strict`, `noUncheckedIndexedAccess`,
+  `noImplicitOverride`, `noUnusedLocals/Parameters`, `verbatimModuleSyntax`, `isolatedModules`,
+  `module: preserve`, `noEmit`) extended by the root (scripts), `apps/api`, `apps/web` (DOM libs, no Bun
+  types) and `packages/shared`. `bun run typecheck` runs the root project then every workspace.
+- Tooling pinned at the root: `typescript@5.9.3`, `@types/bun@1.4.4`.
 - `README.md` gains a repository-layout section and the current phase status.
 
 ---

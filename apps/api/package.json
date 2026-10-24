@@ -6,5 +6,8 @@
   "description": "MapMirror API: Fastify routes, PostgreSQL-backed job worker and interval scheduler.",
   "dependencies": {
     "@mapirror/shared": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
   }
 }
