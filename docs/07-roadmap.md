@@ -15,7 +15,7 @@ next phase does not start until the gate passes and you have reviewed the report
 
 ---
 
-## Phase 0 — Documentation (current)
+## Phase 0 — Documentation ✅ released `v0.1.0`
 
 **Goal:** agree on the plan before writing code.
 
@@ -26,7 +26,7 @@ diagrams, roadmap, tasks, dev guide, laws, tree, deployment, UI/UX, security, AD
 
 ---
 
-## Phase 1 — Foundation: repo, Docker, auth, admin shell
+## Phase 1 — Foundation: repo, Docker, auth, admin shell 🟨 in progress (`0.2.0-dev`)
 
 **Goal:** `docker compose up` on a clean machine → login page → authenticated empty admin panel.
 

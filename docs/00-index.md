@@ -1,7 +1,8 @@
 # MapMirror — Documentation Index
 
-> **Phase 0 deliverable — awaiting approval.** Documentation only; no application code yet.
-> Source of truth for requirements: [`../PROMPT.md`](../PROMPT.md) (approved v1.1 + D-1…D-19).
+> **Phase 0 released as [`v0.1.0`](../CHANGELOG.md) — docs approved 2026-10-24.** Phase 1 is in
+> progress (`0.2.0-dev`). Source of truth for requirements:
+> [`../PROMPT.md`](../PROMPT.md) (approved v1.1 + D-1…D-19).
 
 MapMirror is a self-hosted **map cache and download mirror** for OpenStreetMap country extracts
 (Geofabrik). An admin caches, versions, publishes, schedules and monitors downloads; visitors download
@@ -64,8 +65,8 @@ The only page outside `/_site/` is the login page, `/_auth/login` (D-19, ADR-024
 | Item | State |
 |---|---|
 | Prompt / requirements | ✅ Approved (v1.1, owner decisions D-1…D-19) |
-| Phase 0 — documentation | ✅ Delivered, **awaiting approval** |
-| Phase 1 — skeleton, Docker, auth, admin shell | ⬜ Blocked on Phase 0 approval |
+| Phase 0 — documentation | ✅ **Released as `v0.1.0`** |
+| Phase 1 — skeleton, Docker, auth, admin shell | 🟨 In progress (`0.2.0-dev`) |
 | Phases 2–6 | ⬜ |
 
 ---

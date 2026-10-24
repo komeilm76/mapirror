@@ -21,7 +21,7 @@ Legend: `Req` maps back to `PROMPT.md` §6–§16 requirement IDs. `Dep` = must 
 | P0-06 | Roadmap + tasks | — | P0-02 | ✅ | `07`, `08` complete |
 | P0-07 | Dev guide, laws, project tree | ENG-1…8 | P0-02 | ✅ | `09`, `10`, `11` complete |
 | P0-08 | Deployment, UI/UX, security, ADRs | DOCK, UX, SEC | P0-04 | ✅ | `12`–`15` complete |
-| P0-09 | Owner approves documentation | — | P0-01…08 | 🟦 | Written approval → Phase 1 |
+| P0-09 | Owner approves documentation | — | P0-01…08 | ✅ | Approved and released as `v0.1.0` — Phase 1 unblocked |
 
 ---
 
