@@ -66,7 +66,8 @@ Scripts marked ✅ exist today; ⬜ are created by the task named in `08-tasks.m
 | `bun run dev` | API + web in watch mode | ⬜ P1-API-01 / P1-WEB-01 |
 | `bun run dev:api` / `dev:web` | One side only | ⬜ P1-API-01 / P1-WEB-01 |
 | `bun run build` | Build web bundle | ⬜ P1-DOCK-02 |
-| `bun run check` | `typecheck && lint && format:check && test` | ⬜ P1-REPO-05 |
+| `bun run check` | **The gate**: workspaces → typecheck → lint → format:check → test, fail-fast | ✅ P1-REPO-05 |
+| `bun run check:full` | `check` + coverage with thresholds (slower; used before a phase gate) | ✅ P1-REPO-05 |
 | `bun run lint` | ESLint over the whole repo (`--max-warnings=0`) | ✅ P1-REPO-03 |
 | `bun run lint:fix` | ESLint with `--fix` | ✅ P1-REPO-03 |
 | `bun run format` | Prettier write | ✅ P1-REPO-03 |
@@ -167,6 +168,27 @@ bun run test:shared
 bun run test:watch      # watch mode
 bun run test:coverage   # v8 coverage + thresholds
 ```
+
+### The gate
+
+`bun run check` is the single command every task and phase gate uses (L13). It runs five stages in
+order and stops at the first failure, so the output always names the stage that broke:
+
+```
+check:workspaces → typecheck → lint → format:check → test
+```
+
+Behaviour verified by deliberately breaking one stage at a time:
+
+| Broken stage | Result |
+|---|---|
+| workspace wiring | exit 1, `FAIL …` lines |
+| TypeScript | exit 2, `error TS####` |
+| ESLint | exit 1 — warnings also fail, because lint runs with `--max-warnings=0` |
+| Prettier | exit 1, `Code style issues found` |
+| a test | exit 1, `FAIL … AssertionError` |
+
+`check:full` adds coverage thresholds. Keep the fast gate fast: it is meant to run on every task.
 
 Rules:
 

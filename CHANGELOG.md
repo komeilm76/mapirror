@@ -27,6 +27,9 @@ passes. Patch releases (`0.1.1`, …) are corrections to an already-tagged phase
   `apps/api`, `apps/web`, `packages/shared`, `bun.lock`, `.gitignore`.
 - `bun run check:workspaces` — 12 assertions covering workspace declaration, privacy, naming,
   `workspace:*` wiring and real package resolution from a consumer.
+- The quality gate (`P1-REPO-05`): `bun run check` runs workspaces → typecheck → lint → format:check →
+  test, fail-fast; `bun run check:full` adds coverage thresholds. Each stage was verified to fail the
+  gate on its own.
 - Test infrastructure (`P1-REPO-04`): one `vitest.config.ts` with three projects (`shared`/`api` in
   node, `web` in jsdom — no deprecated `vitest.workspace.ts`), v8 coverage with thresholds, and
   scripts `test`, `test:watch`, `test:coverage`, `test:api`, `test:web`, `test:shared`.

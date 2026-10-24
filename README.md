@@ -49,6 +49,7 @@ bun run lint                # ESLint (type-aware, Vue, zero warnings tolerated)
 bun run test                # Vitest: shared + api + web projects
 bun run format:check        # Prettier, code only — markdown stays hand-authored
 bun run check:workspaces    # verifies the workspace wiring (20 checks)
+bun run check               # the gate: workspaces + typecheck + lint + format + tests
 ```
 
 TypeScript is pinned to 5.9.3 rather than 7.x: the toolchain around it (`vue-tsc`,
