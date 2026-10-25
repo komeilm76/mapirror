@@ -24,12 +24,7 @@
  * @module modules/auth/routes
  */
 
-import {
-  LoginRateLimitDetailsSchema,
-  LoginRequestSchema,
-  type LoginResponse,
-  type MeResponse,
-} from '@mapirror/shared';
+import { LoginRequestSchema, type LoginResponse, type MeResponse } from '@mapirror/shared';
 import type { FastifyPluginCallback } from 'fastify';
 
 import type { AppConfig } from '../../config/env';
@@ -50,18 +45,6 @@ export interface AuthRouteOptions {
   readonly throttle: LoginThrottle;
 }
 
-/**
- * The `Retry-After` value a `RATE_LIMITED` error implies, or `null` for any other error.
- *
- * The details are parsed with the contract's own schema rather than read with a cast: if this app ever produced a
- * `RATE_LIMITED` whose details did not satisfy the contract, the honest outcome is a loud failure, not a header
- * invented from `undefined` (or, worse, from a string a client would then interpret as seconds).
- */
-function retryAfterFrom(error: unknown): string | null {
-  if (!(error instanceof AppError) || error.code !== 'RATE_LIMITED') return null;
-  return String(LoginRateLimitDetailsSchema.parse(error.details).retryAfterSeconds);
-}
-
 /** `/login`, `/logout`, `/me` land here. */
 export const authRoutes: FastifyPluginCallback<AuthRouteOptions> = (app, options) => {
   const { throttle } = options;
@@ -72,7 +55,7 @@ export const authRoutes: FastifyPluginCallback<AuthRouteOptions> = (app, options
     done();
   });
 
-  app.post('/login', async (request, reply): Promise<LoginResponse> => {
+  app.post('/login', async (request): Promise<LoginResponse> => {
     const parsed = LoginRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       // Thrown rather than replied: the handler in `plugins/error-handlers.ts` owns the envelope, and a body that does
@@ -80,25 +63,19 @@ export const authRoutes: FastifyPluginCallback<AuthRouteOptions> = (app, options
       throw parsed.error;
     }
 
-    try {
-      const result = await login(
-        {
-          database: app.db.db,
-          throttle,
-          tokenTtlHours: options.config.authTokenTtlHours,
-          ip: request.ip,
-          userAgent: request.headers['user-agent'] ?? null,
-          log: request.log,
-        },
-        parsed.data,
-      );
-
-      return result;
-    } catch (error) {
-      const retryAfter = retryAfterFrom(error);
-      if (retryAfter !== null) void reply.header('retry-after', retryAfter);
-      throw error;
-    }
+    // No `try`/`catch` for the `Retry-After` header: a `429` from the service carries its `details`, and the error
+    // handler turns them into the header for every throttled endpoint (`plugins/errors.ts`).
+    return login(
+      {
+        database: app.db.db,
+        throttle,
+        tokenTtlHours: options.config.authTokenTtlHours,
+        ip: request.ip,
+        userAgent: request.headers['user-agent'] ?? null,
+        log: request.log,
+      },
+      parsed.data,
+    );
   });
 
   // The SPA's boot check: is the token in `sessionStorage` still worth holding, and for how long?

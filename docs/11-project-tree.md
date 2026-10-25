@@ -35,7 +35,7 @@ mapirror/
 │  │  │  │  ├─ db.ts               # Kysely instance, healthcheck, shutdown hook
 │  │  │  │  ├─ errors.ts           # Error taxonomy + JSON envelope + 404/500 handlers
 │  │  │  │  ├─ security.ts         # Helmet-style headers, CORS, body limits
-│  │  │  │  ├─ rate-limit.ts       # Login + public download limits
+│  │  │  │  ├─ rate-limit.ts       # Public per-IP and admin per-token limits (onRequest)
 │  │  │  │  ├─ auth-guard.ts       # Bearer guard for /_admin/api/* — onRequest, deny by default (L2)
 │  │  │  │  └─ request-context.ts  # Request id, logger child, timing
 │  │  │  ├─ routes/
@@ -78,6 +78,7 @@ mapirror/
 │  │  │  │     └─ admin-tokens.ts  # Token rows: insert, find-with-admin, touch, revoke, prune
 │  │  │  └─ lib/
 │  │  │     ├─ client-ip.ts        # Untrusted forwarded address → a value `inet` accepts, or null
+│  │  │     ├─ rate-limit.ts       # Sliding-window limiter: bounded, injectable clock, refusal is free
 │  │  │     ├─ housekeeping.ts     # Boot-time token pruning: bounded, off the boot path, never fatal
 │  │  │     ├─ storage.ts          # Path building, .part files, atomic rename, delete
 │  │  │     ├─ download.ts         # Streamed fetch, resume, progress, checksum

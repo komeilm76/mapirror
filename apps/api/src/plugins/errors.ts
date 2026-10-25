@@ -21,7 +21,7 @@
 
 import type { FastifyInstance } from 'fastify';
 
-import { notFoundEnvelope, toErrorEnvelope } from '../lib/errors';
+import { notFoundEnvelope, retryAfterHeaderValue, toErrorEnvelope } from '../lib/errors';
 
 /**
  * Installs the error handler and the not-found handler on the **root** instance.
@@ -39,6 +39,19 @@ export function installErrorHandlers(app: FastifyInstance): void {
       request.log.error({ err: error, code: body.error.code }, 'request failed');
     } else {
       request.log.info({ code: body.error.code, statusCode: status }, 'request rejected');
+    }
+
+    // Every `429` carries `Retry-After`, and nothing else does (`04-api.md` §0.2). Set here rather than in each
+    // handler that can throttle: a second throttling site is then correct by construction, and the header cannot
+    // disagree with the body it is sent with. A `429` whose details do not satisfy the contract is a bug in the
+    // producer; it is logged and answered without the header rather than turned into a 500 by a throwing parse.
+    if (body.error.code === 'RATE_LIMITED') {
+      const retryAfter = retryAfterHeaderValue(body.error.details);
+      if (retryAfter === null) {
+        request.log.warn({ code: body.error.code }, 'RATE_LIMITED without contract details');
+      } else {
+        void reply.header('retry-after', retryAfter);
+      }
     }
 
     return reply.status(status).send(body);

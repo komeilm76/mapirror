@@ -73,6 +73,11 @@ export interface BuildAppOptions {
    */
   loginThrottle?: LoginThrottle;
   /**
+   * Clock for the request limiter. **Tests only**, for the same reason as `loginThrottle`: a test drives the window
+   * instead of waiting a minute for it, and nothing else in production passes one.
+   */
+  rateLimitNow?: () => Date;
+  /**
    * Verifier the Bearer guard uses instead of the database-backed one. **Tests only.**
    *
    * A seam for the *verifier*, not for the policy: it can say who a token belongs to or refuse it with an `AppError`,
@@ -143,6 +148,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       // One throttle for the process, built from `AUTH_MAX_LOGIN_ATTEMPTS` / `AUTH_LOCKOUT_MINUTES`. A supplied one
       // wins so a test can control its clock; nothing else in production passes it.
       loginThrottle: options.loginThrottle ?? loginThrottleFromConfig(config),
+      ...(options.rateLimitNow === undefined ? {} : { rateLimitNow: options.rateLimitNow }),
       ...(options.authVerify === undefined ? {} : { authVerify: options.authVerify }),
     });
 

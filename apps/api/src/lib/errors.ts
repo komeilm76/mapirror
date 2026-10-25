@@ -18,7 +18,13 @@
 import { randomUUID } from 'node:crypto';
 import type { Socket } from 'node:net';
 
-import { ERROR_STATUS, statusFor, type ErrorCode, type ErrorEnvelope } from '@mapirror/shared';
+import {
+  ERROR_STATUS,
+  LoginRateLimitDetailsSchema,
+  statusFor,
+  type ErrorCode,
+  type ErrorEnvelope,
+} from '@mapirror/shared';
 import type { FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
 
@@ -149,6 +155,25 @@ function validationDetails(error: ZodError): { issues: { path: string; message: 
       message: issue.message,
     })),
   };
+}
+
+/**
+ * The `Retry-After` value a `RATE_LIMITED` answer implies, or `null` for any other answer.
+ *
+ * The details are checked against the contract's own schema instead of being read with a cast: a `429` whose details
+ * do not satisfy the contract must not grow a header invented from `undefined`. `safeParse` rather than `parse`,
+ * because this runs **inside** the error handler — a throw there would replace a documented `429` with an undocumented
+ * `500`, and the caller's own logging is the right place to notice the mistake.
+ *
+ * Every `429` in this API carries the same shape: the login throttle and the request limiter both produce
+ * `lockedUntil` + `retryAfterSeconds`, and `04-api.md` §0.2 promises the header on all of them.
+ *
+ * @param details - The `details` of the envelope, of unknown shape.
+ * @returns The header value in whole seconds, or `null` when there is nothing honest to send.
+ */
+export function retryAfterHeaderValue(details: unknown): string | null {
+  const parsed = LoginRateLimitDetailsSchema.safeParse(details);
+  return parsed.success ? String(parsed.data.retryAfterSeconds) : null;
 }
 
 /**

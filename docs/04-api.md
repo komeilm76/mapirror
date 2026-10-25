@@ -583,8 +583,10 @@ curl -r 0-1048575 -o part.bin http://localhost:8080/_public/api/countries/finlan
 md5sum finland.osm.pbf   # verify against the version's checksumMd5
 ```
 
-Rate limit: `public.downloadsPerMinute` (default 10 per IP per minute) **applied per request start**,
-not per byte; large transfers are not interrupted mid-stream.
+Rate limit: `PUBLIC_DOWNLOADS_PER_MINUTE` (default 10 per IP per minute, `Retry-After` on refusal),
+**applied per request start**, not per byte — a large transfer is never interrupted mid-stream. The read
+endpoints have their own allowance (60 per IP per minute), so a client downloading files cannot lock itself out
+of the catalog (`14-security.md` §7).
 
 ### 3.5 `GET /_public/api/stats`
 

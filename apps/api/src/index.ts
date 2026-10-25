@@ -11,6 +11,7 @@
 export * from './app';
 export * from './config/env';
 export * from './lib/errors';
+export * from './lib/rate-limit';
 export * from './lib/logger';
 export * from './config/prefixes';
 export * from './db/client';
@@ -26,6 +27,7 @@ export {
 } from './plugins/order';
 export * from './plugins/db';
 export * from './plugins/errors';
+export * from './plugins/rate-limit';
 export * from './plugins/request-context';
 export * from './plugins/security';
 export * from './routes/probes';

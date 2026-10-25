@@ -149,8 +149,26 @@ download IP is identical, making per-visitor statistics meaningless.
 | `/_admin/api/*` | 600 / min per token (protects against runaway UI loops) |
 | Uploads | 1 concurrent / admin, size cap |
 
-Responses include `Retry-After`. Limits are in-memory per instance (single container by design); the
-in-memory limiter resets on restart, which is acceptable at this scale and documented.
+A refusal is `429 RATE_LIMITED` with `details.lockedUntil`, `details.retryAfterSeconds` and a matching
+`Retry-After` header — the same envelope the login throttle already used, emitted by one place
+(`plugins/errors.ts`) so no route has to remember. Five rules keep the numbers honest:
+
+- **A refused request is not counted.** Charging it would let a client that ignores `Retry-After` extend its own
+  penalty for as long as it keeps knocking, and would make the `Retry-After` it was given a lie.
+- **Download and read are separate windows.** A client downloading files cannot lock itself out of the country
+  list, and a browsing loop cannot block a download.
+- **The admin bucket is keyed on the token digest**, not the address, so one runaway tab cannot lock out another
+  admin behind the same NAT — and it is charged only when a bearer is present: a request without one is refused
+  by the guard for free (`401`), so an unauthenticated flood cannot spend anybody's allowance.
+- **Preflights and probes are not charged.** A CORS `OPTIONS` is answered by the security stage before this hook
+  runs; charging it would halve every browser's real allowance and could answer the preflight itself with `429`,
+  which a browser reports as a CORS failure rather than as a rate limit.
+- **The window slides.** A key's allowance returns as each request ages out (60 s after *that* request), not in a
+  batch at the top of a minute, so a client at the boundary is not punished twice.
+
+Limits are in-memory per instance (single container by design) and reset on restart, which is acceptable at this
+scale and is why the numbers are per minute rather than a quota: they bound a runaway client, not a user.
+`PUBLIC_DOWNLOADS_PER_MINUTE` is the one an operator can move; the table above states the default.
 
 **The probes are the deliberate exception.** `/healthz` and `/readyz` are unauthenticated and unlimited, because
 a container, a load balancer and an uptime monitor cannot supply a token and must not be throttled into reporting

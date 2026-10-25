@@ -34,6 +34,7 @@ import { installAuthGuard } from './auth-guard';
 import { installDb } from './db';
 import { installErrorHandlers } from './errors';
 import { installRequestContext } from './request-context';
+import { installRateLimit } from './rate-limit';
 import { installSecurity } from './security';
 
 /** Stable identifier for a pipeline stage. */
@@ -78,6 +79,11 @@ export interface PipelineContext {
    * only sometimes: a second instance would double every limit while looking correct.
    */
   readonly loginThrottle: LoginThrottle;
+  /**
+   * Clock for the request limiter (`P1-API-09`). **Tests only**: the interesting behaviour is what happens after a
+   * minute, and a test that waited would not run in the gate. Production omits it and gets the system clock.
+   */
+  readonly rateLimitNow?: () => Date;
   /**
    * Verifier for the Bearer guard, when a caller wants to supply one. **Tests only** — `buildApp` forwards it and
    * `server.ts` never sets it; without it the guard uses the database-backed verifier.
@@ -141,9 +147,14 @@ export const PLUGIN_ORDER: readonly PluginSlot[] = [
   {
     id: 'rate-limit',
     rationale:
-      'Runs before the guard so a flood of failed credentials is rejected cheaply, and before handlers so a bulk download loop costs nothing.',
-    task: 'P1-API-09',
-    install: null,
+      'Runs before the guard and the routes: a bulk download loop and a runaway admin client are refused before the file or the handler — and, on the refusal itself, before the token hash and lookup the guard would do. Login is not limited here: it has its own counter (ADR-027) with a longer window, per-username keys and in-flight reservations.',
+    task: null,
+    install: (app, context) => {
+      installRateLimit(app, {
+        config: context.config,
+        ...(context.rateLimitNow === undefined ? {} : { now: context.rateLimitNow }),
+      });
+    },
   },
   {
     id: 'auth',
