@@ -226,6 +226,13 @@ Rules:
   global and *do* fail the run (verified: an uncovered file exits 1).
 - **An empty coverage table is a bug, not a win.** It means the `include` globs missed every file —
   which is exactly what happened when `**/index.ts` was excluded and nothing else existed yet.
+- **Coverage of the primitives is 100 %** (`packages/shared`, `apps/*/src`) as of `P1-REPO-07`. Barrel
+  `index.ts` files report `0 | 0 | 0 | 0` because a re-export has no statements to execute; they are
+  deliberately **not** excluded, since excluding barrels is what emptied the report once already.
+- **Tests read the spec.** `scripts/tests/docs-contract.spec.ts` parses `04-api.md` (error table, route
+  table) and `03-data-model.md` (`CREATE TYPE`/`CHECK`) and compares both directions with
+  `@mapirror/shared`. A code, status, prefix or enum value added on one side alone fails the gate —
+  that is what makes "the document and the code cannot drift silently" a fact rather than a promise.
 
 ## 8. Debugging
 
@@ -238,6 +245,23 @@ Rules:
 | Reset everything | `docker compose down -v && docker compose up -d` (destroys data) |
 | Re-run admin bootstrap | `docker compose exec api bun run scripts/init-admin.ts` (idempotent) |
 | Forgot admin password | `docker compose exec api bun run scripts/reset-admin-password.ts` |
+
+### Shared contracts (`@mapirror/shared`)
+
+The one place a contract is written. **No runtime dependencies and no globals** — it is bundled for the
+browser, so `Bun.*`, `process`, `window` and `node:*` are compile errors there.
+
+| Module | Owns |
+|---|---|
+| `routes` | L1 prefixes, the single login page, probes, segment-aware `isPathUnder`, and the reserved `api` segment (`/_site/api` is not a page; `/_site/api-docs` is) |
+| `errors` | 25 HTTP codes with their statuses + 4 internal (job/startup) codes + `ErrorEnvelope` |
+| `pagination` | `parsePagination` / `buildPageMeta` — page 1, limit 25, ceiling 100, out-of-range clamped |
+| `license` | ODbL 1.0 + "© OpenStreetMap contributors" + Geofabrik, and the list/detail response blocks |
+| `constants` | `mm_` token format, sort fields, and the 9 vocabularies the DB types mirror |
+
+Both apps consume it in real code, not in a re-export: `apps/api/src/config/prefixes.ts` is what
+`requiresAdminToken` will key the L2 guard on, and `apps/web/src/router/paths.ts` is the table the router
+law test walks. Zod schemas are **additive** and arrive with the API contract tasks.
 
 ## 9. Code conventions
 

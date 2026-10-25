@@ -55,7 +55,7 @@ This table is the single normative source for route placement. `00-index.md` sum
 |---|---|
 | 400 | `VALIDATION_ERROR`, `BAD_REQUEST` |
 | 401 | `UNAUTHENTICATED`, `TOKEN_EXPIRED`, `TOKEN_REVOKED`, `INVALID_CREDENTIALS` |
-| 403 | `FORBIDDEN`, `ACCOUNT_LOCKED` |
+| 403 | `FORBIDDEN`, `ACCOUNT_DISABLED` |
 | 404 | `NOT_FOUND` (public paths use it even when the country exists but is unpublished — no existence leak) |
 | 409 | `VERSION_DUPLICATE`, `VERSION_ALREADY_CACHED`, `JOB_ALREADY_RUNNING`, `CONFIRMATION_REQUIRED` |
 | 410 | `VERSION_FILE_MISSING`, `SOURCE_VERSION_GONE` |
@@ -104,7 +104,9 @@ Body: `{ "username": "admin", "password": "…" }` (Zod: username 1–64 chars, 
 
 Errors: `401 INVALID_CREDENTIALS` (generic, no user enumeration), `429 RATE_LIMITED` with
 `details.lockedUntil` after N failures (default 10 attempts / 15 min, per IP + username), and
-`403 ACCOUNT_LOCKED` only when the admin account itself is deactivated (rate limiting is **not** a 403).
+`403 ACCOUNT_DISABLED` only when the admin account itself is deactivated (rate limiting is **not** a 403,
+and the code name says what it means — an earlier `ACCOUNT_LOCKED` read like a lockout and invited emitting
+403 for throttling).
 
 ```bash
 curl -sX POST http://localhost:8080/_auth/api/login \

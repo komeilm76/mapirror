@@ -28,7 +28,8 @@ mapirror/
 │  │  │  ├─ app.ts                 # Fastify instance, plugin order, route registration
 │  │  │  ├─ config/
 │  │  │  │  ├─ env.ts              # Zod-validated process.env → typed config
-│  │  │  │  └─ constants.ts        # Prefixes, limits, defaults (single source)
+│  │  │  │  ├─ prefixes.ts         # API route classification + requiresAdminToken (L2)
+│  │  │  │  └─ constants.ts        # API-only limits/defaults (prefixes come from @mapirror/shared)
 │  │  │  ├─ plugins/
 │  │  │  │  ├─ db.ts               # Kysely instance, healthcheck, shutdown hook
 │  │  │  │  ├─ errors.ts           # Error taxonomy + JSON envelope + 404/500 handlers
@@ -78,6 +79,7 @@ mapirror/
 │     │  ├─ main.ts
 │     │  ├─ App.vue
 │     │  ├─ router/index.ts        # Public + admin + auth route trees, guards
+│     │  ├─ router/paths.ts        # Page path builders, all derived from @mapirror/shared
 │     │  ├─ plugins/vuetify.ts     # Theme tokens (dark admin / light public)
 │     │  ├─ plugins/pinia.ts
 │     │  ├─ stores/                # auth, catalog, cache, versions, intervals, jobs,
@@ -106,12 +108,15 @@ mapirror/
 ├─ packages/
 │  └─ shared/                      # Single source of truth for API contracts
 │     ├─ src/
-│     │  ├─ schemas/               # Zod: auth, catalog, cache, versions, intervals,
-│     │  │                         # jobs, metrics, errors, pagination
+│     │  ├─ routes.ts              # Prefixes + path classification (L1) — no deps, no globals
+│     │  ├─ errors.ts              # 25 HTTP codes → statuses, 4 internal codes, envelope type
+│     │  ├─ pagination.ts          # parsePagination/buildPageMeta, defaults + clamping
+│     │  ├─ license.ts             # ODbL + Geofabrik attribution strings
+│     │  ├─ constants.ts           # Token format, sort fields, 9 DB-mirrored vocabularies
+│     │  ├─ schemas/               # Zod request/response schemas (with the API contract tasks)
 │     │  ├─ types/                 # z.infer exports (no hand-written duplicates)
-│     │  ├─ constants.ts           # Prefixes, error codes, frequency enums, limits
 │     │  └─ index.ts
-│     └─ tests/                    # Schema contract tests
+│     └─ tests/                    # Contract tests (routes, errors, pagination, license, enums)
 │
 ├─ scripts/                        # Operator-facing CLI + repo checks (bun run …)
 │  ├─ check-hygiene.ts             # Gate stage 2: ignore matrix, env-doc parity, .dockerignore safelist

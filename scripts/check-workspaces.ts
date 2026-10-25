@@ -158,21 +158,31 @@ async function main(): Promise<void> {
     );
   }
 
-  // Resolution is proved from a *consumer* (apps/api): the root has no dependency on the package, so
-  // importing it there would test nothing but Node's directory walk.
-  const apiDir = byName.get('@mapirror/api');
-  if (apiDir) {
+  // Resolution is proved from each *consumer*: the root has no dependency on the package, so importing it
+  // there would test nothing but Node's directory walk.
+  //
+  // This cannot replace the declaration check above: Bun leaves a symlink in `apps/web/node_modules` from
+  // the last install, so resolution keeps working for a while after the dependency is deleted — a stale
+  // symlink hides a missing declaration, and only re-installing reveals it. The rule is asserted from both
+  // sides for that reason.
+  let imported = false;
+  for (const name of ['@mapirror/api', '@mapirror/web']) {
+    const dir = byName.get(name);
+    if (!dir) continue;
     try {
-      const requireFromApi = createRequire(join(apiDir, 'package.json'));
-      const resolved = requireFromApi.resolve('@mapirror/shared');
+      const requireFromConsumer = createRequire(join(dir, 'package.json'));
+      const resolved = requireFromConsumer.resolve('@mapirror/shared');
       check(
         resolve(resolved).startsWith(resolve(ROOT, 'packages/shared')),
-        '@mapirror/shared resolves from apps/api into packages/shared (not a registry copy)',
+        `@mapirror/shared resolves from ${name} into packages/shared (not a registry copy)`,
       );
-      const shared = (await import(resolved)) as Record<string, unknown>;
-      check(typeof shared === 'object' && shared !== null, '@mapirror/shared imports cleanly');
+      if (!imported) {
+        const shared = (await import(resolved)) as Record<string, unknown>;
+        check(typeof shared === 'object' && shared !== null, '@mapirror/shared imports cleanly');
+        imported = true;
+      }
     } catch (error) {
-      failed.push(`@mapirror/shared does not resolve from apps/api: ${(error as Error).message}`);
+      failed.push(`@mapirror/shared does not resolve from ${name}: ${(error as Error).message}`);
     }
   }
 }

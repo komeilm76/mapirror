@@ -3,9 +3,31 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 6 passes · 72 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10).
+**Totals:** 7 passes · 80 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 7 — 2026-10-25 (`P1-REPO-07`, shared contracts)
+
+The primitives are the first code both applications depend on, so the review pressure was on *contract*
+mistakes: a name that reads one way and behaves another. All eight were found while writing and probing.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **`ACCOUNT_LOCKED` was documented as the code for a *deactivated account*** (403), while throttling is `429 RATE_LIMITED`. The name says "lockout", so whoever implements the login limiter emits it and returns 403 — reintroducing pass-1 defect 14 in a form no reviewer would spot, because the doc's own table would agree with them | Renamed to `ACCOUNT_DISABLED` in `04` and `14`, with the reason written down; `errors.spec` asserts no `ACCOUNT_LOCKED` key exists and `docs-contract` asserts it never reappears in an error-table row |
+| 2 | **`isPathUnder` matched prefixes as substrings.** `/_auth/apiX` would have counted as inside `/_auth/api`, so the admin guard would treat an unrelated path as protected — or, worse, an attacker-shaped path as an API route | Whole-segment comparison with query stripping and trailing-slash normalisation, plus four tests for the lookalike cases |
+| 3 | **The `api` reserved segment was documented but not implemented.** L1 says "`api` may only appear in API prefixes … the docs page is `/_site/api-docs`, never `/_site/api`", yet `isPagePath('/_site/api')` returned `true` — my own forbidden-path test caught it | Encoded in `isPagePath` (first segment only, so `/_site/api-docs` and `/_site/countries/api` stay legal) with tests either side of the boundary |
+| 4 | **`interval_run_items.status` had no constant.** `03` defines a fourth `status` vocabulary (`queued/skipped/downloaded/failed`) that the interval-run detail page renders; the shared package would have had the UI hard-code it | Added `RUN_ITEM_STATUSES`, and the docs-contract test now parses all four `status` vocabularies and asserts they stay distinct |
+| 5 | **A `status` column exists on three tables with different value sets**, so an unscoped parse silently returns their union — the first version of my docs-contract test asserted against exactly that union and passed for the wrong reason | Parser scoped to `CREATE TABLE <name> (… )`; regression test asserts `jobs.status` (an enum) and `map_versions.status` (a CHECK) are parsed from their own definitions and are not equal |
+| 6 | **`bun run test` stayed green after `@mapirror/shared` was deleted from `apps/web`'s dependencies.** Bun leaves the workspace symlink behind, so resolution "works" on a stale link — the acceptance criterion "consumed by both apps" was not actually being checked by the tests | Declarations are asserted by `check:workspaces` (it does fail: `FAIL @mapirror/web depends on @mapirror/shared …`), and resolution is now proved from **both** consumers instead of only `apps/api`; the stale-symlink hazard is written into the script so nobody trusts resolution alone |
+| 7 | **Two of my own JSDoc blocks were syntactically invalid.** `` `*/api` `` inside a block comment terminates it, so `routes.ts` failed to parse and took six test files down with a `[PARSE_ERROR]` | Rewritten; the quote is gone from the comment and the reason is obvious in hindsight |
+| 8 | **My coverage-driven tests covered nothing.** The first token test asserted `ceil(32 * 4 / 3) - 1 === 43` (it is 42), and the docs-contract test sliced the error table at the first `---`, which is the table's own separator — zero rows parsed, so it compared an empty set and "passed" | Corrected arithmetic (`ceil(32 / 3) * 4 - 1`), and the slice now ends at the next heading. Both now fail loudly when the input is wrong rather than asserting emptiness |
+
+Also removed: two unreachable `?? ''` branches on `split('?')[0]` (impossible under `noUncheckedIndexedAccess`
+to be nullish) — they showed up as permanently uncovered lines in the report and were noise, not coverage to
+chase.
 
 ---
 

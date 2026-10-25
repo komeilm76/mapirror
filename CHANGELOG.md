@@ -22,6 +22,20 @@ passes. Patch releases (`0.1.1`, …) are corrections to an already-tagged phase
 
 ## [Unreleased] — 0.2.0-dev (Phase 1)
 
+### Added
+- **Shared contracts** (`P1-REPO-07`), the first code both apps depend on: `@mapirror/shared` now owns the
+  route law (`routes`), the error vocabulary (`errors`), pagination (`pagination`), the ODbL attribution
+  (`license`) and the shared enums (`constants`). Zero runtime dependencies, no globals, importable by the
+  browser bundle. Consumed in real code by `apps/api/src/config/prefixes.ts` (the deny-by-default guard
+  classification) and `apps/web/src/router/paths.ts` (the page table) — 96 tests over 11 files, 100 %
+  statements/branches/functions/lines on every module that has code.
+- `scripts/tests/docs-contract.spec.ts` parses `04-api.md` and `03-data-model.md` and compares them with the
+  constants in **both** directions, so a code, status, prefix or enum value added on one side only fails the
+  gate. Probes: six injected defects (changed prefix, undocumented code, wrong status, extra enum value, a
+  page mounted under `/_admin/api`, changed token length) each fail the intended test.
+- `check:workspaces` proves `@mapirror/shared` resolves into `packages/shared` from **both** apps (22 checks,
+  was 21).
+
 ### Fixed
 - **Tests could be silently skipped** (review pass 6). Vitest collected only `tests/**/*.spec.ts`, so the
   two route-law tests the specification names `*.test.ts` — and the `scripts/tests/*.spec.ts` promised for

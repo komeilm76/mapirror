@@ -39,7 +39,7 @@ Trust nothing from: HTTP clients, multipart uploads, Geofabrik HTML/JSON respons
 | Password policy | ≥ 12 chars, reject top-1000 weak list, reject username substring |
 | Tokens | 256-bit random, `mm_` prefix, **SHA-256 hash stored**, constant-time compare, TTL 12 h |
 | Revocation | Logout revokes one; password reset revokes all; expired rows pruned |
-| Login throttling | ≤ 10 failures / 15 min per (ip, username) → `429` + `Retry-After` (a disabled account gets `403 ACCOUNT_LOCKED`), generic error messages |
+| Login throttling | ≤ 10 failures / 15 min per (ip, username) → `429` + `Retry-After` (a disabled account gets `403 ACCOUNT_DISABLED` — not `ACCOUNT_LOCKED`, which read like throttling), generic error messages |
 | Transport | Bearer only over HTTPS (TLS terminated by proxy); no cookies, no query tokens |
 | Storage in browser | `sessionStorage` only (D-13) — cleared on tab close |
 | Enumeration | Same response and timing profile for unknown user vs wrong password |
