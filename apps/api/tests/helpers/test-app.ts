@@ -16,7 +16,14 @@
 
 import type { Kysely } from 'kysely';
 
-import { buildApp, type BuildAppOptions, type Database, type SqlDatabase } from '../../src/index';
+import {
+  buildApp,
+  EXPECTED_MIGRATIONS,
+  type BuildAppOptions,
+  type Database,
+  type SchemaCheck,
+  type SqlDatabase,
+} from '../../src/index';
 
 /** What a query does on the stub: fail, and say where to go instead. */
 const STUB_MESSAGE =
@@ -41,11 +48,39 @@ export function stubDatabase(): SqlDatabase {
 }
 
 /**
- * `buildApp` with the stub database filled in.
+ * A schema check that reports an in-sync schema without touching a database.
  *
- * @param options - Anything `buildApp` takes; `database` is replaced unless given.
+ * The `db` stage verifies (and may migrate) the schema at boot, which needs a real server. The specs that use this
+ * helper assert routing, headers, logging and the error envelope — none of which learn anything from a live
+ * connection — so they state "the schema is fine" explicitly instead of satisfying it with a live database. The
+ * real check is covered in `tests/version-check.spec.ts` and `tests/integration/version-check.spec.ts`.
+ *
+ * @returns The check, reporting the expected migrations as already applied.
+ */
+export function schemaInSync(): SchemaCheck {
+  return () =>
+    Promise.resolve({
+      expected: EXPECTED_MIGRATIONS,
+      onDisk: EXPECTED_MIGRATIONS,
+      applied: EXPECTED_MIGRATIONS,
+      pending: [],
+      unknown: [],
+      missingFromDisk: [],
+      unexpectedOnDisk: [],
+      migrated: [],
+    });
+}
+
+/**
+ * `buildApp` with the stub database and an in-sync schema filled in.
+ *
+ * @param options - Anything `buildApp` takes; `database` and `schemaCheck` are replaced unless given.
  * @returns The booted instance.
  */
 export function buildTestApp(options: BuildAppOptions = {}) {
-  return buildApp({ ...options, database: options.database ?? stubDatabase() });
+  return buildApp({
+    schemaCheck: options.schemaCheck ?? schemaInSync(),
+    ...options,
+    database: options.database ?? stubDatabase(),
+  });
 }

@@ -3,9 +3,27 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 18 passes · 111 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2).
+**Totals:** 19 passes · 114 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 19 — 2026-10-25 (adversarial review of `P1-DB-04`)
+
+Three defects: two in the mechanism (found by asking what each check would *not* catch, then by trying to kill the
+tests that were supposed to catch them), one in the way a boot-time query reaches the tests.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The obvious check would have passed an empty image.** Comparing the migration files on disk against the `kysely_migration` rows — the two things a boot check naturally has — reports "in sync" for a database with no rows and a directory with no files. That is exactly what a truncated image or a bad build context produces, and it would have booted happily against a schema missing every table, then failed at the first request. The same two-way comparison also cannot see a database migrated by a **newer** image: the extra row is simply not among the files | Three sources instead of two: on-disk files, the `EXPECTED_MIGRATIONS` constant compiled into the build, and the rows. Files ≠ constant → refuse; rows ⊄ constant → refuse **without** migrating; rows behind → migrate only when `MIGRATE_ON_BOOT`. The constant is pinned to the directory by a test, so forgetting to register a new migration fails `bun run check` rather than producing a boot check that quietly trusts whatever is there |
+| 2 | **The report described the database it found, not the one it left.** After migrating, `checkSchemaVersion` re-read the bookkeeping into `pending` and threw if anything still showed as pending — a branch that cannot be taken, because `migrateToLatest` throws on failure and only returns what it recorded. It cost the coverage gate a permanently unreachable line (97.3%, line ~191), and worse, the report it returned was the *pre-migration* one merged with nothing: `applied` still listed only what existed before this run, so the log line that is supposed to prove the boot migrated the database proved the opposite | The re-read is gone; the report merges this run's own `applied` list and reports `pending: []`, which is true by construction. Probed the honest way: replacing the merge with `[...before.applied]` and running the targeted suites **passed 17/17** — the merge was untested. Assertions on `report.applied` added to both migrating cases (empty database → `EXPECTED_MIGRATIONS`; one pending → `['0001_init', '0002_catalog']`); the same mutant now fails 2 tests. `version-check.ts` is at 100% lines/branches with no unreachable code left |
+| 3 | **A boot-time query silently broke every test that supplies a stub handle.** Adding the check to the `db` stage turned six `db-stage` specs red with `TypeError: executorProvider.getExecutor is not a function` — the stage was now querying a handle that is only a shape. The tempting repair is to detect the stub and skip the check, which makes the production path conditional on a test artifact | An explicit injectable seam: `PipelineContext.schemaCheck` and `BuildAppOptions.schemaCheck`, defaulted to the real `checkSchemaVersion` in `plugins/db.ts` and to an in-sync stub in `tests/helpers/test-app.ts`. Specs that assert boot ordering keep passing a spy; specs that do not care get the default. The production path — ping, then check, then listen — stays unconditional, and the two new stage tests (the check runs once *after* the ping; skew closes the handle and rethrows) are the ones that prove it |
+
+Also recorded because it changed the shape of the code: `MIGRATE_ON_BOOT` defaults to **true** for a bare
+`docker run`, while compose sets it to `false` because the entrypoint migrates. Both behaviours are pinned by
+real-process probes rather than mocks: default + empty database migrates and exits 0 on `SIGTERM`;
+`MIGRATE_ON_BOOT=false` + empty database logs `SCHEMA_SKEW`, applies nothing, and exits 1.
 
 ---
 

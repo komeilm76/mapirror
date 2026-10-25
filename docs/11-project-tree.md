@@ -68,6 +68,7 @@ mapirror/
 │  │  │  │  ├─ migrator.ts         # SQL provider, migrateToLatest/resetDatabase, name rules
 │  │  │  │  ├─ transaction.ts      # withTransaction: idle/statement bounds, read-only, retry 40001/40P01
 │  │  │  │  ├─ schema.ts           # Kysely table types, phase 1 (measured JS types, no `any`)
+│  │  │  │  ├─ version-check.ts    # Boot gate: disk vs EXPECTED_MIGRATIONS vs kysely_migration (SCHEMA_SKEW)
 │  │  │  │  └─ repositories/       # Typed queries per aggregate
 │  │  │  └─ lib/
 │  │  │     ├─ storage.ts          # Path building, .part files, atomic rename, delete

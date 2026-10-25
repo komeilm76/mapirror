@@ -17,7 +17,7 @@ import {
   type PluginSlot,
   type SqlDatabase,
 } from '../src/index';
-import { stubDatabase, buildTestApp } from './helpers/test-app';
+import { buildTestApp, schemaInSync, stubDatabase } from './helpers/test-app';
 
 /**
  * Acceptance test for `P1-API-07`: liveness never fails for a dependency's reason, readiness fails when the
@@ -273,6 +273,7 @@ describe('GET /readyz', () => {
       config: parseEnv({ CACHE_DIR: cacheDir }),
       slots,
       database: hanging,
+      schemaCheck: schemaInSync(),
     });
     apps.push(instance);
 

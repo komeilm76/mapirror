@@ -346,6 +346,9 @@ const ENV_SCHEMA = z.object({
   AUTH_MAX_LOGIN_ATTEMPTS: wholeNumber(10, { min: 1, message: 'must be at least 1 attempt' }),
   AUTH_LOCKOUT_MINUTES: wholeNumber(15, { min: 1, message: 'must be at least 1 minute' }),
 
+  // Migration ownership: the API applies pending migrations before it serves, unless a deployment gives the job
+  // to its entrypoint (`docker/entrypoint.api.sh`, `P1-DOCK-04`). Either way the *check* runs at boot.
+  MIGRATE_ON_BOOT: flag(true),
   WORKER_ENABLED: flag(true),
   WORKER_CONCURRENCY: wholeNumber(2, { min: 1, message: 'must be at least 1 worker' }),
   JOB_RETENTION_DAYS: wholeNumber(30, { min: 1, message: 'must be at least 1 day' }),
@@ -416,6 +419,8 @@ export interface AppConfig {
   /** Throttle window. */
   readonly authLockoutMinutes: number;
   /** Whether this process runs the queue worker and scheduler. */
+  /** Whether this process applies pending migrations before serving. The version check runs regardless. */
+  readonly migrateOnBoot: boolean;
   readonly workerEnabled: boolean;
   /** Parallel jobs. */
   readonly workerConcurrency: number;
@@ -569,6 +574,7 @@ export function parseEnv(source: EnvSource = process.env): AppConfig {
     authTokenTtlHours: env.AUTH_TOKEN_TTL_HOURS,
     authMaxLoginAttempts: env.AUTH_MAX_LOGIN_ATTEMPTS,
     authLockoutMinutes: env.AUTH_LOCKOUT_MINUTES,
+    migrateOnBoot: env.MIGRATE_ON_BOOT,
     workerEnabled: env.WORKER_ENABLED,
     workerConcurrency: env.WORKER_CONCURRENCY,
     jobRetentionDays: env.JOB_RETENTION_DAYS,

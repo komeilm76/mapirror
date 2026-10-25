@@ -82,12 +82,13 @@ describe('ERROR_STATUS', () => {
 });
 
 describe('INTERNAL_ERROR_CODES', () => {
-  it('lists the four codes that never travel as a status', () => {
+  it('lists the codes that never travel as a status', () => {
     expect([...INTERNAL_ERROR_CODES]).toEqual([
       'WORKER_LOST',
       'RUN_INTERRUPTED',
       'SKIPPED_OVERLAP',
       'INVALID_ENV',
+      'SCHEMA_SKEW',
     ]);
   });
 

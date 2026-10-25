@@ -4,14 +4,31 @@ import {
   AppError,
   buildApp,
   checkDatabase,
+  EXPECTED_MIGRATIONS,
   installDb,
-  parseEnv,
   installErrorHandlers,
   installRequestContext,
+  parseEnv,
+  SchemaSkewError,
   type BuildAppOptions,
   type PluginSlot,
   type SqlDatabase,
+  type SchemaVersionReport,
 } from '../src/index';
+import { schemaInSync } from './helpers/test-app';
+
+/** The report shape for a schema that matches the build. */
+function schemaInSyncReport(): SchemaVersionReport {
+  return {
+    expected: EXPECTED_MIGRATIONS,
+    onDisk: EXPECTED_MIGRATIONS,
+    applied: EXPECTED_MIGRATIONS,
+    pending: [],
+    unknown: [],
+    missingFromDisk: [],
+    unexpectedOnDisk: [],
+  };
+}
 
 /**
  * The `db` stage's own guarantees, none of which need a server: what the stage does with the handle it is given,
@@ -43,7 +60,7 @@ function recordingHandle(overrides: Partial<SqlDatabase> = {}) {
 describe('the db stage', () => {
   it('decorates the instance with the handle it was given', async () => {
     const { handle } = recordingHandle();
-    const instance = await buildApp({ database: handle });
+    const instance = await buildApp({ database: handle, schemaCheck: schemaInSync() });
 
     expect(instance.db).toBe(handle);
     await instance.close();
@@ -51,7 +68,7 @@ describe('the db stage', () => {
 
   it('checks the database once, during the boot', async () => {
     const { handle, calls } = recordingHandle();
-    const instance = await buildApp({ database: handle });
+    const instance = await buildApp({ database: handle, schemaCheck: schemaInSync() });
 
     // Once, not zero times (an unverified boot) and not once per request (a query in a hook).
     expect(calls.check).toBe(1);
@@ -64,7 +81,7 @@ describe('the db stage', () => {
     const failure = Object.assign(new Error('connect ECONNREFUSED'), { code: 'DB_UNAVAILABLE' });
     const { handle, calls } = recordingHandle({ check: () => Promise.reject(failure) });
 
-    await expect(buildApp({ database: handle })).rejects.toBe(failure);
+    await expect(buildApp({ database: handle, schemaCheck: schemaInSync() })).rejects.toBe(failure);
     // The instance was never returned, so nothing else will close it: `buildApp` must have. Without this the pool
     // leaks on every failed boot, and a supervisor retries a failed boot in a loop.
     expect(calls.close).toBe(1);
@@ -75,7 +92,9 @@ describe('the db stage', () => {
     // deployment takes, and the one the tests above skip by supplying a stub. Nothing listens on port 1, so the
     // boot check fails fast instead of reaching a server.
     const config = parseEnv({ DATABASE_URL: 'postgres://mapirror:hunter2@127.0.0.1:1/mapirror' });
-    const error = await buildApp({ config }).catch((caught: unknown) => caught);
+    const error = await buildApp({ config, schemaCheck: schemaInSync() }).catch(
+      (caught: unknown) => caught,
+    );
 
     expect(error).toBeInstanceOf(AppError);
     expect((error as AppError).code).toBe('DB_UNAVAILABLE');
@@ -94,6 +113,7 @@ describe('the db stage', () => {
     await expect(
       buildApp({
         database: handle,
+        schemaCheck: schemaInSync(),
         slots: [
           {
             id: 'db',
@@ -116,12 +136,53 @@ describe('the db stage', () => {
     expect(calls.close).toBe(1);
   });
 
+  it('verifies the schema once during the boot, after the ping', async () => {
+    const order: string[] = [];
+    const handle: SqlDatabase = {
+      db: {} as SqlDatabase['db'],
+      check: () => {
+        order.push('ping');
+        return Promise.resolve();
+      },
+      close: () => Promise.resolve(),
+    };
+    const check = vi.fn(() => {
+      order.push('schema');
+      return Promise.resolve({ ...schemaInSyncReport(), migrated: [] });
+    });
+
+    const instance = await buildApp({ database: handle, schemaCheck: check });
+    await instance.inject({ method: 'GET', url: '/healthz' });
+
+    // Once, at boot: a per-request check would query the catalogue on every call for a fact that changes when a
+    // container starts. After the ping, because a failure here assumes a reachable database.
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['ping', 'schema']);
+    await instance.close();
+  });
+
+  it('refuses to boot when the schema does not match, and closes the handle', async () => {
+    // The second way a boot can be refused, and it must take the same shutdown path as the first: the pool is open
+    // by the time this check runs and the instance is never returned to anyone who could close it.
+    const { handle, calls } = recordingHandle();
+    const skew = new SchemaSkewError('the database contains migrations this build does not ship', {
+      ...schemaInSyncReport(),
+      unknown: ['0002_catalog'],
+    });
+
+    await expect(
+      buildApp({ database: handle, schemaCheck: () => Promise.reject(skew) }),
+    ).rejects.toBe(skew);
+
+    expect(calls.close).toBe(1);
+  });
+
   it('closes the handle when the app closes, however the handle arrived', async () => {
     // One rule: `app.db` is the app's database, so its lifetime is the app's. An earlier version closed only
     // handles it had created itself, which made a caller-supplied pool leak across restarts — the kind of bug
     // that shows up as "too many connections" an hour after a deploy.
     const { handle, calls } = recordingHandle();
-    const instance = await buildApp({ database: handle });
+    const instance = await buildApp({ database: handle, schemaCheck: schemaInSync() });
     await instance.close();
 
     expect(calls.close).toBe(1);
@@ -191,7 +252,7 @@ describe('shutdown closes the pool behind a drained request', () => {
       },
     };
     const options: BuildAppOptions = { slots: slotsWith(handle) };
-    const instance = await buildApp(options);
+    const instance = await buildApp({ schemaCheck: schemaInSync(), ...options });
 
     const inFlight = instance.inject({ method: 'GET', url: '/_public/api/slow' });
     const response = await inFlight;
@@ -209,7 +270,7 @@ describe('shutdown closes the pool behind a drained request', () => {
       check: () => Promise.resolve(),
       close: closeSpy,
     };
-    const instance = await buildApp({ slots: slotsWith(handle) });
+    const instance = await buildApp({ slots: slotsWith(handle), schemaCheck: schemaInSync() });
 
     await instance.close();
     // Fastify tolerates a second close; the pool must not be told to close twice.

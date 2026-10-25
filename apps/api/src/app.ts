@@ -18,6 +18,7 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 
 import { parseEnv, type AppConfig } from './config/env';
 import type { SqlDatabase } from './db/client';
+import type { SchemaCheck } from './db/version-check';
 import { clientErrorHandler } from './lib/errors';
 import { withRedaction } from './lib/logger';
 import { PLUGIN_ORDER, registerPipeline, type PluginSlot } from './plugins/order';
@@ -54,6 +55,11 @@ export interface BuildAppOptions {
    * check — can be exercised without a server on the other end.
    */
   database?: SqlDatabase;
+  /**
+   * Boot-time schema verification to use instead of the real one. Tests only, for the same reason `slots` is:
+   * the fast gate must not need a migrated database. Production omits it.
+   */
+  schemaCheck?: SchemaCheck;
 }
 
 /**
@@ -103,6 +109,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       // Threaded through, not just declared: an option that is accepted and then dropped would make every test
       // above pass while the `db` stage quietly opened a real pool against the default DSN.
       ...(options.database === undefined ? {} : { database: options.database }),
+      ...(options.schemaCheck === undefined ? {} : { schemaCheck: options.schemaCheck }),
     });
 
     // Enforced after the boot, because a throwing `onRoute` hook stalls `ready()` forever — see the module

@@ -22,6 +22,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { createDatabase, type SqlDatabase } from '../db/client';
+import { checkSchemaVersion, SchemaSkewError, type SchemaCheck } from '../db/version-check';
 import type { PipelineContext } from './order';
 
 declare module 'fastify' {
@@ -53,12 +54,33 @@ export function installDb(app: FastifyInstance, context: PipelineContext): void 
   app.addHook('onReady', async () => {
     try {
       await database.check();
+      // Migrate (when this process owns that job) and then prove the schema matches the code. Runs after the ping
+      // because every failure below assumes a reachable database, and inside the same hook because none of these
+      // answers is useful once the server is accepting requests.
+      const check: SchemaCheck =
+        context.schemaCheck ??
+        ((handle, config) => checkSchemaVersion(handle, { migrateOnBoot: config.migrateOnBoot }));
+      const report = await check(database, context.config);
+      if (report.migrated.length > 0) {
+        app.log.info({ migrations: report.migrated }, 'migrations applied');
+      }
+      app.log.info(
+        { migrations: report.applied.length, expected: report.expected.length },
+        'database schema matches this build',
+      );
     } catch (error) {
       // The driver's message is what says *why* (a refused connection, a bad password, a missing database), and
       // it is logged here — the thrown `AppError` carries no DSN for the client-facing path.
+      // Two distinct refuse-to-boot reasons share this path: an unreachable database and a schema that does not match
+      // the code. Both mean "serving now would answer 500s", and both name themselves in the log.
+      const skew = error instanceof SchemaSkewError ? error : undefined;
       app.log.error(
-        { err: error, code: 'DB_UNAVAILABLE' },
-        'database is not reachable; refusing to boot',
+        skew === undefined
+          ? { err: error, code: 'DB_UNAVAILABLE' }
+          : { err: error, code: skew.code, report: skew.report },
+        skew === undefined
+          ? 'database is not reachable; refusing to boot'
+          : 'database schema does not match this build; refusing to boot',
       );
       throw error;
     }

@@ -24,6 +24,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { parseEnv, type AppConfig } from '../config/env';
 import type { SqlDatabase } from '../db/client';
+import type { SchemaCheck } from '../db/version-check';
 
 import { registerRoutes } from '../routes/index';
 
@@ -54,6 +55,16 @@ export interface PipelineContext {
    * over here rather than letting the stage open a second pool.
    */
   readonly database?: SqlDatabase;
+  /**
+   * Boot-time schema verification and migration. Defaults to the real check
+   * ({@link import('../db/version-check').checkSchemaVersion}).
+   *
+   * Exists for the same reason `slots` does: the specs that assert routing, headers and logging should not need a
+   * server with a migrated schema, and a stub handle cannot answer a real `information_schema` query. Tests pass a
+   * no-op that reports an in-sync schema; **production never sets it**, so the real check is what a deployment
+   * runs. It is not an ownership heuristic — that mistake is recorded in `16-changelog.md` pass 14.
+   */
+  readonly schemaCheck?: SchemaCheck;
 }
 
 /** One stage of the pipeline. */

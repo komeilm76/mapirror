@@ -57,6 +57,7 @@ export const INTERNAL_ERROR_CODES = [
   'RUN_INTERRUPTED',
   'SKIPPED_OVERLAP',
   'INVALID_ENV',
+  'SCHEMA_SKEW',
 ] as const;
 
 /** An internal (non-HTTP) code. */

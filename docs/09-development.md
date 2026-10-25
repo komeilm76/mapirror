@@ -106,6 +106,7 @@ sibling are mutually exclusive, and the hygiene check counts commented declarati
 | `DATABASE_URL` | `postgres://mapirror:mapirror@localhost:5432/mapirror` | ✅ in production | DSN the API boots with; **compose derives its own** from `POSTGRES_PASSWORD` + `db`, so `.env`'s copy serves native dev/tests. The default covers native dev and tests; `NODE_ENV=production` requires the variable — a production container must not guess a database |
 | `DATABASE_URL_TEST` | `postgres://mapirror:mapirror@localhost:5432/mapirror_test` | — | Test DB (integration tests create/truncate) |
 | `DB_POOL_MAX` | `10` | — | Pool size |
+| `MIGRATE_ON_BOOT` | `true` | — | Apply pending migrations before serving; the schema version check runs regardless (`P1-DB-04`) |
 | `CORS_ORIGINS` | *(empty = same-origin)* | — | Comma-separated allow-list; never `*` |
 | `IP_HASH_SALT` | *(generated on first boot, stored in `settings`)* | — | Salt for hashed download IPs |
 | `TRUST_PROXY` | `loopback` | — | Which peers may assert a client address in `X-Forwarded-For`: an address, CIDR block or comma-separated list (`loopback`/`linklocal`/`uniquelocal`), or `none`. Every per-IP behaviour (rate limits, hashed download IPs) depends on it — without it every client behind the proxy shares the proxy's address. A **hop count is refused** (Fastify silently trusts nothing for a number) and so is `true` (trusts every peer) |
@@ -168,6 +169,17 @@ bun run db:reset                                              # dev only
   executed, schema intact), because a quiet no-op is only acceptable while a test says so.
 - A migration that fails is **not** recorded as applied, so fixing the file and running again works. Also tested.
 - Never edit an applied migration; write a new one.
+- **Boot owns the schema decision** (`P1-DB-04`, `db/version-check.ts`). Before the first request, the running
+  container compares three things: the `.sql` files **on disk**, `EXPECTED_MIGRATIONS` in `version-check.ts` (what
+  this build ships), and the `kysely_migration` rows (what the database has). Two-way comparisons miss real cases —
+  an empty directory against an empty database agrees, and a database migrated by a newer image agrees with every
+  file it has. So: files ≠ constant → **refuse** (broken image / stale constant); rows ⊄ constant → **refuse without
+  migrating** (forward-only: the migrations that would undo it do not exist); rows behind files → migrate when
+  `MIGRATE_ON_BOOT=true` (the default), otherwise refuse. Exit code `1`, log line carries `code: SCHEMA_SKEW` and the
+  report. **Adding a migration means adding its name to `EXPECTED_MIGRATIONS`** — a test pins the constant to the
+  directory, so the omission fails the gate instead of shipping. In compose the migration entrypoint owns the step
+  (`P1-DOCK-04`) and the API runs with `MIGRATE_ON_BOOT=false`, so a container that silently repaired the schema
+  behind the orchestrator's back is not possible.
 - Transactions in services, not repositories; repositories accept a `Kysely` instance / `tx`.
 - Use `withTransaction(db, work, options)` (`db/transaction.ts`) rather than `db.transaction()` directly: it bounds the
   session (idle-in-transaction timeout, optional statement timeout), can enforce `read only` and `serializable`, and
