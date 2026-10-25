@@ -3,9 +3,40 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 28 passes · 131 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2).
+**Totals:** 29 passes · 133 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 29 — 2026-10-25 (the SPA boots: two toolchain defects, both silent)
+
+Both were found by mounting the app and looking at the DOM, not by reading the wiring — and both would have shipped as
+"it works": a page that returns `200`, logs nothing, and renders nothing.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **Vuetify registered no components, so the shell rendered empty.** The first boot produced `<v-app><v-main><!----></v-main></v-app>` — the literal elements, unresolved — with `[Vue warn] Failed to resolve component: v-app` in the console and an empty page underneath. Cause: Vuetify's **bundler** entry does not register components; it expects a build plugin to import the ones an SFC uses. `app.use(createVuetify())` therefore installed a framework with no components in it. A test asserting only "it mounts without throwing" would have passed | `vite-plugin-vuetify` with `autoImport: true`, registered in **both** `apps/web/vite.config.ts` (dev/build) and the root `vitest.config.ts` (tests). The Vitest half was needed for a second reason: Vuetify ships each component's `.css` beside it, and the externalised (node-resolved) copy failed with `TypeError: Unknown file extension ".css"` — `server.deps.inline: ['vuetify']` puts the package through Vite's pipeline. Re-probed: the shell renders `v-application`, the page's own text reaches the DOM, and the production build is 272 modules (292.95 kB JS / 99.20 kB gzip + 38.58 kB CSS) |
+| 2 | **Every `.vue` import was an "error typed" value to ESLint.** `bun run lint` failed with `no-unsafe-assignment` / `no-unsafe-argument` on correct code — `src/bootstrap.ts` and `src/router/index.ts` — because ESLint's type-aware service uses plain `tsc`, which cannot open an SFC, and the web `typecheck` had just moved to `vue-tsc` (which can). The lint error was true about the toolchain and false about the code | `apps/web/src/shims-vue.d.ts` declares `*.vue` as `DefineComponent`. The obvious risk — a shim that *overrides* the real component type and silently discards prop checking — was tested for, not hoped against: a probe component with `defineProps<{ count: number }>` misused as `h(Counter, { count: 'x' })` still fails `vue-tsc` with `Type 'string' is not assignable to type 'number'` **with the shim present**, so `vue-tsc` resolves the real SFC and the shim serves only the plain-`tsc` consumers. Without the shim the same probe passes (measured both ways) |
+
+Probed and found sound, rather than assumed, while wiring the boot:
+
+- **HMR is a component swap, not a page reload.** A client on `ws://localhost:5173/` (`vite-hmr`) receives
+  `{"type":"update","updates":[{"type":"js-update","path":"/src/pages/public/HomePage.vue",…}]}` when that template
+  changes, and `{"type":"full-reload","triggeredBy":"…/plugins/pinia.ts"}` for a module with no HMR boundary — which is
+  the correct answer for a module the app imports at boot. A first attempt appeared to show "no HMR at all": the edit
+  had appended an HTML comment *outside* the SFC's blocks, so the Vue plugin had nothing to patch. The behaviour was
+  right and the probe was wrong, which is why the probe now edits the template text.
+- **The alias cannot resolve to two modules.** `@/bootstrap` and `../src/bootstrap` are asserted to be the *same*
+  module object in `tests/bootstrap.spec.ts`, not merely to both work: two copies of the Pinia factory would look
+  identical at that assertion level and break state isolation in a way only a user would notice.
+- **`main.ts` is exercised, not inspected.** The test injects `<div id="app">`, imports the entry point, and asserts
+  Vuetify's root wrapper and the page's text are in the document. A test that read the file's text would pass on a file
+  whose only failing line was the mount call.
+- **The dev server's `allowedHosts: true` is a documented trade, not an oversight.** Vite 6+ refuses unknown `Host`
+  headers to blunt DNS rebinding, and a forwarded port has an unknown host; with `host: true` the server is reachable
+  from other interfaces, so `09-development.md` §3 now says in as many words that it is a development tool. Production
+  is nginx serving `dist/`.
 
 ---
 

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      `theme-color` and the rest of the head (preloads, fonts, Open Graph) arrive with the design tokens in
+      `P1-WEB-02`. What matters here is the one thing the boot depends on: the mount point below is `#app`, and
+      `src/main.ts` mounts to exactly that selector.
+    -->
+    <meta name="color-scheme" content="light dark" />
+    <title>MapMirror</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

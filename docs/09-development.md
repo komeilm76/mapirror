@@ -32,10 +32,14 @@ open http://localhost:8080/_auth/login # admin login
 
 > **Where we are today:** the API boots, talks to PostgreSQL, and the whole `/_auth/api` namespace is real —
 > `login` (throttled, audited, `200`/`400`/`401`/`403`/`429`), `me` and `logout` (`P1-AUTH-03`, `P1-AUTH-04`), all as
-> `04-api.md` §1 describes. Two routes are still stubs answering `503 NOT_READY` (`04-api.md` §0.3). There is no SPA
-> yet, so `bun run dev:web` shows an empty shell; `bun run dev:api` serves the API on `:3000`, and every
-> `/_admin/api/*` request now needs a token issued by `login` — the guard (`P1-AUTH-05`) answers `401` before the route
-> runs, so the two remaining stubs are reachable only with a credential (the public one is the anonymous exception).
+> `04-api.md` §1 describes. Two routes are still stubs answering `503 NOT_READY` (`04-api.md` §0.3), and every
+> `/_admin/api/*` request needs a token issued by `login` — the guard (`P1-AUTH-05`) answers `401` before the route
+> runs, so the stubs are reachable only with a credential (the public one is the anonymous exception).
+>
+> The SPA boots (`P1-WEB-01`): `bun run dev:web` serves `http://localhost:5173` with Vue 3, Vuetify 3, Pinia, Vue Router
+> and VueUse installed, and the one page it has so far says so. The theme, the router tree, the layouts and every
+> screen follow in `P1-WEB-02`…`P1-WEB-07` (`08-tasks.md`); until `P1-WEB-08` wires the dev proxy, the SPA in
+> development talks to nothing.
 
 ## 3. First run (local dev, hot reload)
 
@@ -56,7 +60,13 @@ bun run dev                            # runs API (:3000) + web (:5173) concurre
   in production (where Nginx splits them), which is a classic "works on my machine" trap.
 - The API watches `apps/api/src`; the worker and scheduler run in the same process
   (`WORKER_ENABLED=true`).
-- Vite HMR for the SPA.
+- Vite HMR for the SPA, proved rather than assumed (`P1-WEB-01`): with the dev server up, a client on
+  `ws://localhost:5173/` (`vite-hmr`) receives `{"type":"update","updates":[{"type":"js-update",
+  "path":"/src/pages/public/HomePage.vue"}]}` when that component's template changes — a component swap, not a reload.
+  Editing a module with no HMR boundary (`src/plugins/pinia.ts`) correctly answers `full-reload` instead.
+- The dev server binds **all interfaces** (`host: true`) and its host allow-list is off (`allowedHosts: true`) in
+  `apps/web/vite.config.ts`, so it is reachable from a container or a forwarded port. That makes it a *development*
+  tool: do not expose `:5173` beyond your machine. Production serves `dist/` from nginx, not Vite.
 
 ## 4. Repository scripts (root `package.json`)
 
@@ -67,11 +77,12 @@ Scripts marked ✅ exist today; ⬜ are created by the task named in `08-tasks.m
 | `bun run typecheck` | `tsc --noEmit` for `scripts/` plus every workspace (`P1-REPO-02`) | ✅ |
 | `bun run check:workspaces` | 21 assertions on the workspace wiring (`P1-REPO-01`) | ✅ |
 | `bun run check:hygiene` | 54 assertions: ignore matrix, nothing ignored is tracked, credential parity across both ignore files, env-doc parity (names **and** defaults), `.dockerignore` safelist, no orphan tests (`P1-REPO-04/06`) | ✅ |
-| `bun run dev` | API + web in watch mode | ⬜ P1-API-01 / P1-WEB-01 |
+| `bun run dev` | API + web in watch mode (`bun run --filter './apps/*' dev`, both logs in one terminal) | ✅ P1-WEB-01 |
 | `bun run dev:api` | API only, watch mode (`apps/api`: `bun --watch src/server.ts`) | ✅ P1-API-01 |
 | `bun run start:api` | API only, no watch (what the container runs) | ✅ P1-API-01 |
-| `bun run dev:web` | Web only | ⬜ P1-WEB-01 |
-| `bun run build` | Build web bundle | ⬜ P1-DOCK-02 |
+| `bun run dev:web` | Web only, Vite with HMR on `:5173` | ✅ P1-WEB-01 |
+| `bun run build:web` | Production bundle into `apps/web/dist` (`vite build`) | ✅ P1-WEB-01 |
+| `bun run build` | Build everything the image needs | ⬜ P1-DOCK-02 |
 | `bun run check` | **The gate**: workspaces → hygiene → typecheck → lint → format:check → test, fail-fast | ✅ P1-REPO-05/06 |
 | `bun run check:full` | `check` + coverage with thresholds (slower; used before a phase gate) | ✅ P1-REPO-05 |
 | `bun run lint` | ESLint over the whole repo (`--max-warnings=0`) | ✅ P1-REPO-03 |
@@ -339,8 +350,17 @@ Project-specific lint rules that encode the laws: `@typescript-eslint/no-floatin
 `no-explicit-any` (ENG-2), `vue/no-v-html` (D-13), `vue/component-api-style: script-setup` (09 §9)
 and `vue/define-{props,emits}-declaration: type-based`.
 
-`.vue` files are linted but **not type-checked** until `vue-tsc` replaces the web `typecheck` script in
-`P1-WEB-01`; the reason is in `apps/web/tsconfig.json`.
+`.vue` files are **type-checked** since `P1-WEB-01`: the web `typecheck` script runs `vue-tsc`, which reads an SFC,
+and `tsconfig.json` lists `src/**/*.vue` (plain `tsc` ignores them, which is why the two changed together). Two
+consequences worth knowing:
+
+- ESLint's type-aware service uses plain `tsc`, so `apps/web/src/shims-vue.d.ts` declares `*.vue` as a
+  `DefineComponent`. Without it every SFC import is an "error typed" value and `no-unsafe-assignment` fires on
+  correct code; `vue-tsc` resolves the real component and the shim is unused there (proved by a probe that kept
+  failing on a wrong prop with the shim in place).
+- `vite-plugin-vuetify` is registered in both `apps/web/vite.config.ts` and the root `vitest.config.ts`. Vuetify's
+  bundler entry registers **no** components on its own, so without the plugin `v-app` stays a literal element and the
+  page renders empty — in the browser and in the test alike.
 
 
 - **Layering:** route handler → service → repository. No SQL in handlers, no HTTP in services.

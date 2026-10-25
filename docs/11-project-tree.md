@@ -89,14 +89,19 @@ mapirror/
 │  │  └─ tests/                    # law-routes, auth, cache, public, scheduler, source
 │  │
 │  └─ web/                         # Vue 3 + Vuetify 3 SPA (served by nginx)
-│     ├─ package.json
-│     ├─ vite.config.ts            # Dev proxy for /_auth, /_admin, /_public
+│     ├─ package.json              # vue, vue-router, vuetify, pinia, @vueuse/core
+│     ├─ index.html                # The mount point (`#app`) and the module script
+│     ├─ vite.config.ts            # Vue + vite-plugin-vuetify, `@` alias, host/port (§09)
+│     ├─ alias.ts                  # `@` → src, shared by vite.config, vitest.config and the tests
 │     ├─ src/
-│     │  ├─ main.ts
-│     │  ├─ App.vue
-│     │  ├─ router/index.ts        # Public + admin + auth route trees, guards
+│     │  ├─ main.ts                # Two lines: build the app, mount it
+│     │  ├─ bootstrap.ts           # createWebApp(): Pinia → Vuetify → Router, one factory each
+│     │  ├─ App.vue                # v-app → v-main → router-view (the one shell)
+│     │  ├─ shims-vue.d.ts         # `*.vue` for plain-tsc consumers (ESLint); vue-tsc ignores it
+│     │  ├─ vite-env.d.ts          # Vite's ambient types (the web tsconfig sets `types: []`)
+│     │  ├─ router/index.ts        # `/` → `/_site/` and the home route; the full tree is P1-WEB-03
 │     │  ├─ router/paths.ts        # Page path builders, all derived from @mapirror/shared
-│     │  ├─ plugins/vuetify.ts     # Theme tokens (dark admin / light public)
+│     │  ├─ plugins/vuetify.ts     # createAppVuetify(); the two themes are P1-WEB-02
 │     │  ├─ plugins/pinia.ts
 │     │  ├─ stores/                # auth, catalog, cache, versions, intervals, jobs,
 │     │  │                         # system, ui (toasts/snackbars)
@@ -107,7 +112,7 @@ mapirror/
 │     │  │  ├─ auth/LoginPage.vue        # served at /_auth/login (the one page outside /_site)
 │     │  │  ├─ admin/{Dashboard,Catalog,Cache,CountryDetail,Intervals,Import,Jobs,
 │     │  │  │        System,Settings,Audit}Page.vue
-│     │  │  ├─ public/{Home,CountryDetail,ApiDocs,NotFound}Page.vue
+│     │  │  ├─ public/{Home,CountryDetail,ApiDocs,NotFound}Page.vue  # HomePage.vue exists (P1-WEB-01)
 │     │  ├─ components/
 │     │  │  ├─ common/             # PageHeader, DataTableShell, EmptyState, ErrorState,
 │     │  │  │                      # SkeletonBlock, ConfirmDialog, CopyField, StatCard
@@ -119,7 +124,7 @@ mapirror/
 │     │  │  └─ public/             # CountryCard, VersionList, DownloadButton, LicenseNote
 │     │  ├─ styles/                # tokens.css, typography, overrides
 │     │  └─ types/                 # Re-exports from @mapmirror/shared
-│     └─ tests/                    # Component + store tests (Vitest + jsdom)
+│     └─ tests/                    # Component + store tests (Vitest + jsdom), setup.ts stubs matchMedia/RO
 │
 ├─ packages/
 │  └─ shared/                      # Single source of truth for API contracts

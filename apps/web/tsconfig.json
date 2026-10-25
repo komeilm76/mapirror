@@ -4,11 +4,15 @@
   "compilerOptions": {
     /* The SPA runs in a browser: add DOM libs and drop the Bun type surface. */
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": []
+    "types": [],
+    /* `@/…` and `vite.config.ts`'s alias must be the same string, or the editor resolves an import the build cannot. */
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
-  /* `.vue` files are deliberately NOT listed here: plain `tsc` silently ignores them, which would
-     make the typecheck script report success on a broken SFC. Add `src/**\/*.vue` in `P1-WEB-01`, in
-     the same commit that switches this script to `vue-tsc`. */
-  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  /* `.vue` files ARE listed here since `P1-WEB-01`: that task replaced the web `typecheck` script with `vue-tsc`,
+     which is the compiler that can read an SFC. Plain `tsc` silently ignores them, and a typecheck that reports
+     success on a broken component is worse than no typecheck — the note this replaces said exactly that. */
+  "include": ["src/**/*.ts", "src/**/*.vue", "tests/**/*.ts", "vite.config.ts"],
   "exclude": ["node_modules", "dist"]
 }
