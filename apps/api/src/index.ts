@@ -9,6 +9,7 @@
  */
 
 export * from './app';
+export * from './config/env';
 export * from './config/prefixes';
 export {
   pendingPlugins,

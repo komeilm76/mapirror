@@ -90,8 +90,10 @@ Scripts marked ✅ exist today; ⬜ are created by the task named in `08-tasks.m
 
 `.env.example` is the canonical list and this table is its documentation; `bun run check:hygiene`
 asserts the two stay in sync in **both** directions, so adding a variable in one place only fails the
-gate. Every variable is validated at boot with Zod; a missing required value fails fast with a
-readable message.
+gate. Every variable is validated at boot with Zod (`apps/api/src/config/env.ts`); a required value that
+is missing, or any value that is unusable, stops the process with exit 1 and a list of every problem at
+once — the variable names, never the values, so a `DATABASE_URL` password cannot reach the container log.
+A test asserts the schema and this table describe the same set of variables.
 
 Alternatives such as `ADMIN_PASSWORD_FILE` are shipped **commented out** — a value and its `_FILE`
 sibling are mutually exclusive, and the hygiene check counts commented declarations as documented.
@@ -99,9 +101,9 @@ sibling are mutually exclusive, and the hygiene check counts commented declarati
 | Variable | Default | Required | Purpose |
 |---|---|---|---|
 | `NODE_ENV` | `development` | ✅ | `development` / `production` / `test` |
-| `PORT` | `3000` | — | API port |
+| `PORT` | `3000` | — | API port, 1–65535. Absent → 3000; **present and unusable → the boot stops** naming it (`0x10`, `30e3`, `3000.5`), because binding a port the operator did not ask for looks healthy and is unreachable |
 | `HOST` | `0.0.0.0` | — | Bind address |
-| `DATABASE_URL` | `postgres://mapirror:mapirror@localhost:5432/mapirror` | ✅ | DSN the API boots with; **compose derives its own** from `POSTGRES_PASSWORD` + `db`, so `.env`'s copy serves native dev/tests |
+| `DATABASE_URL` | `postgres://mapirror:mapirror@localhost:5432/mapirror` | ✅ in production | DSN the API boots with; **compose derives its own** from `POSTGRES_PASSWORD` + `db`, so `.env`'s copy serves native dev/tests. The default covers native dev and tests; `NODE_ENV=production` requires the variable — a production container must not guess a database |
 | `DATABASE_URL_TEST` | `postgres://mapirror:mapirror@localhost:5432/mapirror_test` | — | Test DB (integration tests create/truncate) |
 | `DB_POOL_MAX` | `10` | — | Pool size |
 | `CORS_ORIGINS` | *(empty = same-origin)* | — | Comma-separated allow-list; never `*` |

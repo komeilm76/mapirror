@@ -9,9 +9,9 @@
  * `0` = an asked-for shutdown completed, `1` = we could not start or could not close cleanly. A supervisor
  * that cannot see those apart restarts a crashing container forever.
  *
- * Environment reading here is intentionally minimal (`PORT`, `HOST`, `LOG_LEVEL` with defaults): `P1-API-02`
- * replaces it with the Zod-validated config, and inventing a second parsing path now would leave two
- * definitions of the same defaults.
+ * The environment is read **once**, through {@link parseEnv} (`P1-API-02`): the process either has a complete
+ * typed configuration or it prints every problem and exits 1. Nothing here reads `process.env` directly, so
+ * there is exactly one definition of each default.
  *
  * @module server
  */
@@ -19,12 +19,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import { buildApp } from './app';
-
-/** Default port; matches `PORT` in `.env.example` and the compose port mapping. */
-const DEFAULT_PORT = 3000;
-
-/** Default bind address: all interfaces, because the container's port is what Nginx connects to. */
-const DEFAULT_HOST = '0.0.0.0';
+import { ConfigError, parseEnv, type AppConfig, type EnvSource } from './config/env';
 
 /** Signals that must shut the process down instead of killing it mid-request. */
 const SHUTDOWN_SIGNALS = ['SIGTERM', 'SIGINT'] as const;
@@ -36,24 +31,6 @@ const SHUTDOWN_SIGNALS = ['SIGTERM', 'SIGINT'] as const;
  * of being SIGKILLed. `P1-API-06` keeps this bound when it adds the database pool to the same path.
  */
 export const SHUTDOWN_TIMEOUT_MS = 8_000;
-
-/**
- * Reads the port from the environment.
- *
- * Exported for its own test: it is the only place in the process where a string from outside becomes a
- * number, and a port of `0` (ephemeral) or `70000` must not reach `listen`.
- *
- * @returns A valid TCP port, or the default when the value is absent or unusable.
- */
-export function readPort(): number {
-  const raw = process.env.PORT?.trim() ?? '';
-  // Digits only. `Number(raw)` would read `0x10` as 16 and `30e3` as 30000 — both bind a port the operator
-  // did not ask for. This is the same lesson as `parsePagination` in `@mapirror/shared`: a value from
-  // outside is parsed by a rule you can state, not by whatever the language tolerates.
-  if (!/^[0-9]+$/.test(raw)) return DEFAULT_PORT;
-  const parsed = Number(raw);
-  return parsed > 0 && parsed < 65_536 ? parsed : DEFAULT_PORT;
-}
 
 /**
  * The smallest slice of a Fastify instance the shutdown path needs.
@@ -120,11 +97,20 @@ export function createShutdown(
 /**
  * Starts the API and keeps it running until a shutdown signal arrives.
  *
- * @returns The listening instance.
+ * @param source - Environment to read; a parameter so the whole startup path can be exercised without mutating
+ * `process.env`.
+ * @returns The listening instance, together with the config it started with.
+ * @throws {ConfigError} When the environment is unusable — before any socket or plugin work happens.
  * @throws When the port is taken or the boot fails; the caller turns that into exit code 1.
  */
-export async function start(): Promise<FastifyInstance> {
-  const app = await buildApp({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
+export async function start(
+  source: EnvSource = process.env,
+): Promise<{ app: FastifyInstance; config: AppConfig }> {
+  // Validated first: a bad environment must fail before we open a socket or register a plugin, so the message
+  // is the only thing in the log instead of the last line after a wall of boot output.
+  const config = parseEnv(source);
+
+  const app = await buildApp({ logger: { level: config.logLevel } });
 
   // Registered before `listen` so a signal during startup still drains rather than orphaning a socket.
   const shutdown = createShutdown(app);
@@ -134,15 +120,17 @@ export async function start(): Promise<FastifyInstance> {
     });
   }
 
-  await app.listen({ port: readPort(), host: process.env.HOST ?? DEFAULT_HOST });
-  return app;
+  await app.listen({ port: config.port, host: config.host });
+  return { app, config };
 }
 
 if (import.meta.main) {
   try {
     await start();
   } catch (error) {
-    console.error('failed to start the API:', error);
+    // A config error is the operator's to fix and already reads as a list, so it is printed as-is; anything
+    // else is unexpected and keeps its stack. Both exit 1: a supervisor must not see a boot failure as 0.
+    console.error(error instanceof ConfigError ? error.message : error);
     process.exit(1);
   }
 }
