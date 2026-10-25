@@ -115,9 +115,92 @@ export type LoggerOption = FastifyServerOptions['logger'];
  */
 export function withRedaction(logger: LoggerOption): LoggerOption {
   if (logger === false || logger === undefined) return false;
-  if (logger === true) {
-    return { redact: { paths: [...LOG_REDACT_PATHS], censor: REDACT_CENSOR } };
+  const redact = {
+    paths:
+      logger === true
+        ? [...LOG_REDACT_PATHS]
+        : [...new Set([...LOG_REDACT_PATHS, ...pathsOf(logger.redact)])],
+    censor: REDACT_CENSOR,
+  };
+  if (logger === true) return { redact, serializers: { err: describeError } };
+
+  // `err` is ours, whatever the caller configured: it is the one key every exception travels under, and it is
+  // where free text (a driver's message, a DSN) ends up. Other serializers are left as the caller wrote them.
+  // Measured: without this, `log.error({ err: error })` printed a password that lived inside the message, and
+  // Fastify's own `err` serializer reports a pre-shaped object as `type: "Object"`, losing the error's name.
+  return {
+    ...logger,
+    redact,
+    serializers: { ...logger.serializers, err: describeError },
+  };
+}
+
+/**
+ * Credential shapes that can appear inside **free text** — a driver's message, a stack frame, a URL.
+ *
+ * Field redaction (`LOG_REDACT_PATHS`) works on keys; it cannot see `connect ECONNREFUSED
+ * postgres://user:hunter2@db:5432/app`, because the secret is a substring of a value the logger was asked to
+ * print. Measured: an exception carrying a DSN put the password in the log even with every path configured,
+ * which is exactly what L9 forbids. So free text is scrubbed before it is logged.
+ */
+const SCRUB_RULES: readonly { readonly pattern: RegExp; readonly replacement: string }[] = [
+  // scheme://user:password@host → scheme://user:***@host
+  { pattern: /([a-z][a-z0-9+.-]*:\/\/[^\s/:@]+):[^\s@/]+@/gi, replacement: '$1:***@' },
+  // password=… / token=… / secret=… / api_key=… in a query string or a sentence
+  {
+    pattern: /\b(password|passwd|pwd|token|secret|api[_-]?key)=([^&\s,;]+)/gi,
+    replacement: '$1=***',
+  },
+  // Authorization: Bearer <token>
+  { pattern: /\b(bearer)\s+[A-Za-z0-9._~+/-]{8,}=*/gi, replacement: '$1 ***' },
+];
+
+/**
+ * Removes credentials from text that is about to be logged.
+ *
+ * Applied to error messages and stacks, not to structured fields — those are covered by
+ * {@link LOG_REDACT_PATHS}. Both layers exist because a secret has two ways into a log line.
+ *
+ * @param text - Free text from an exception or a third-party library.
+ * @returns The text with credential-bearing fragments masked.
+ */
+export function scrubSecrets(text: string): string {
+  return SCRUB_RULES.reduce((result, rule) => result.replace(rule.pattern, rule.replacement), text);
+}
+
+/**
+ * What a thrown value looks like once it is safe to log.
+ *
+ * The index signature is required by pino's serializer contract (`(value) => { [key: string]: unknown }`).
+ */
+export interface LoggableError {
+  /** Extra context a serializer may attach; pino's type requires the escape hatch. */
+  readonly [key: string]: unknown;
+  /** Constructor name of the error, or `Thrown` for a non-error value. */
+  readonly type: string;
+  /** Message with credentials scrubbed. */
+  readonly message: string;
+  /** Stack with credentials scrubbed; empty when the value had none (Fastify's `err` serializer expects it). */
+  readonly stack: string;
+}
+
+/**
+ * Converts any thrown value into something safe to log.
+ *
+ * Pino's `err` serializer prints `message` and `stack` verbatim, so both are scrubbed. A non-`Error` throw
+ * (a string, an object from a library) is stringified and scrubbed too — `throw 'oops'` is legal and would
+ * otherwise lose the only information there is.
+ *
+ * @param error - Whatever was caught.
+ * @returns Name, message and stack, safe to pass to `log.error({ err: … })`.
+ */
+export function describeError(error: unknown): LoggableError {
+  if (error instanceof Error) {
+    return {
+      type: error.name,
+      message: scrubSecrets(error.message),
+      stack: scrubSecrets(error.stack ?? ''),
+    };
   }
-  const paths = [...new Set([...LOG_REDACT_PATHS, ...pathsOf(logger.redact)])];
-  return { ...logger, redact: { paths, censor: REDACT_CENSOR } };
+  return { type: 'Thrown', message: scrubSecrets(String(error)), stack: '' };
 }

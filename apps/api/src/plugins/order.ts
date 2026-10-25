@@ -24,6 +24,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { registerRoutes } from '../routes/index';
 
+import { installErrorHandlers } from './errors';
 import { installRequestContext } from './request-context';
 
 /** Stable identifier for a pipeline stage. */
@@ -66,8 +67,8 @@ export const PLUGIN_ORDER: readonly PluginSlot[] = [
     id: 'errors',
     rationale:
       'Installs setErrorHandler/setNotFoundHandler; a route registered before it would answer 500 with Fastify’s default shape and leak internals.',
-    task: 'P1-API-04',
-    install: null,
+    task: null,
+    install: installErrorHandlers,
   },
   {
     id: 'security',

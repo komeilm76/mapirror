@@ -4,10 +4,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildApp,
+  describeError,
   LOG_REDACT_PATHS,
   REDACT_CENSOR,
   REDACTED_HEADERS,
   REDACTED_KEYS,
+  scrubSecrets,
   withRedaction,
 } from '../src/index';
 
@@ -175,5 +177,79 @@ describe('withRedaction', () => {
     // The caller's censor is replaced on purpose: two censors in one log stream is a reading hazard.
     expect(merged).toMatchObject({ redact: { censor: REDACT_CENSOR } });
     expect(JSON.stringify(merged)).toContain('a.b');
+  });
+});
+
+describe('free text is scrubbed, because field redaction cannot see inside a message', () => {
+  it('masks the password in a DSN embedded in a message', () => {
+    // The measured case: an exception whose text is `connect ECONNREFUSED postgres://user:hunter2@db/x`.
+    expect(scrubSecrets('connect ECONNREFUSED postgres://user:hunter2@db:5432/app')).toBe(
+      'connect ECONNREFUSED postgres://user:***@db:5432/app',
+    );
+  });
+
+  it('masks credentials written as key=value', () => {
+    expect(scrubSecrets('GET /x?password=hunter2&page=2')).toBe('GET /x?password=***&page=2');
+    expect(scrubSecrets('token=abc123 secret:')).toContain('token=***');
+    expect(scrubSecrets('api_key=abcdef')).toContain('api_key=***');
+  });
+
+  it('masks a bearer token quoted in a message', () => {
+    expect(scrubSecrets('sent Authorization: Bearer mm_abcdefghijklmnop')).toBe(
+      'sent Authorization: Bearer ***',
+    );
+  });
+
+  it('leaves ordinary text alone', () => {
+    const text = 'Version 260101 already exists for country finland (page 2 of 3).';
+    expect(scrubSecrets(text)).toBe(text);
+  });
+
+  it('scrubs both the message and the stack of a real exception', () => {
+    const error = new Error('failed: postgres://user:hunter2@db:5432/app unreachable');
+    const loggable = describeError(error);
+
+    expect(loggable.type).toBe('Error');
+    expect(loggable.message).not.toContain('hunter2');
+    expect(loggable.stack).toContain('failed');
+    expect(JSON.stringify(loggable)).not.toContain('hunter2');
+  });
+
+  it('keeps a thrown non-error readable', () => {
+    // `throw 'oops'` is legal; losing it entirely would leave an empty log line.
+    expect(describeError('oops')).toEqual({ type: 'Thrown', message: 'oops', stack: '' });
+    expect(describeError({ password: 'x' }).type).toBe('Thrown');
+  });
+});
+
+describe('the err serializer is installed by the logger, for every call site', () => {
+  it('scrubs a password inside an exception message logged the ordinary way', async () => {
+    // `log.error({ err })` is how every call site logs a caught exception — including `server.ts`'s shutdown
+    // path, which is why the scrubbing belongs to the serializer rather than to one handler.
+    const captured = captureLines();
+    const instance = await buildApp({ logger: { level: 'info', stream: captured.stream } });
+
+    instance.log.error(
+      { err: new Error('connect ECONNREFUSED postgres://user:hunter2@db:5432/app') },
+      'failed',
+    );
+    await instance.close();
+
+    const output = captured.text();
+    expect(output).not.toContain('hunter2');
+    expect(output).toContain('postgres://user:***@db:5432/app');
+    // The error's own name survives, which Fastify's default serializer loses for a pre-shaped object.
+    expect(output).toContain('"type":"Error"');
+  });
+
+  it('keeps a caller’s other serializers and still owns err', () => {
+    const merged = withRedaction({
+      serializers: { req: (value: unknown) => ({ custom: 'kept', value }) },
+    });
+    // Functions do not survive JSON.stringify, so the shape is inspected rather than serialised.
+    const serializers = (merged as { serializers?: Record<string, unknown> }).serializers ?? {};
+
+    expect(Object.keys(serializers).sort()).toEqual(['err', 'req']);
+    expect(typeof serializers.err).toBe('function');
   });
 });

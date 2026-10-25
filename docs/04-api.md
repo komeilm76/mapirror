@@ -57,6 +57,12 @@ lands.
 
 ### Error envelope
 
+Every non-2xx response is this shape — including `404` for an unknown path and for a method a path does not
+accept (the contract has no `405`), and including `500`. A `500` carries one fixed sentence and no detail: the
+exception's message and stack go to the log under the same `requestId`, so a bug report can be answered without
+the response ever describing the server's internals. `details` is omitted entirely when there is nothing to say.
+
+
 ```json
 {
   "error": {
@@ -83,6 +89,15 @@ lands.
 | 500 | `INTERNAL_ERROR` |
 | 502 | `SOURCE_UNAVAILABLE` (upstream failed — retryable) |
 | 503 | `DB_UNAVAILABLE`, `DISK_FULL`, `NOT_READY` |
+
+`VALIDATION_ERROR` puts the failing fields in `details.issues`, each with a dotted `path` and the rule it broke —
+what a form needs to mark the right input:
+
+```json
+{ "error": { "code": "VALIDATION_ERROR", "message": "Request validation failed.",
+  "details": { "issues": [{ "path": "username", "message": "Too small: expected string to have >=3 characters" }] },
+  "requestId": "…" } }
+```
 
 **Job & internal codes** (never HTTP status codes; they appear as `error_code` on a job or as a
 `storage` state, and are safe to show to the admin):

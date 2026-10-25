@@ -3,9 +3,37 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 10 passes · 94 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2).
+**Totals:** 11 passes · 95 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 11 — 2026-10-25 (adversarial review of `P1-API-04`)
+
+One defect, found by running the failure paths on a real process instead of trusting the unit tests — which
+passed while it was present.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The 500 log leaked the secret the 500 response was hiding.** The handler did everything right for the client: a fixed sentence, no stack, no driver text. Then it logged the exception with `request.log.error({ err: error })`, and the message it wrote was the driver's own — `connect ECONNREFUSED postgres://u:hunter2@db:5432/x`. Pino's `err` serializer prints `message` and `stack` verbatim, and **field redaction cannot see a secret that is a substring of a value**: `*.password` never matches a DSN inside a sentence. Measured: `grep -c hunter2` on the probe log returned 1 | Two layers, both at the logger level. `scrubSecrets` masks URL credentials (`scheme://user:***@host`), `password=`/`token=`/`secret=`/`api_key=` pairs and `Bearer <token>` inside free text; `withRedaction` installs it as the **`err` serializer**, owned over any caller's, so every call site is covered — including `server.ts`'s shutdown handler, which logs a raw exception too. Probe after the fix: `0` occurrences, and the useful text survives as `postgres://u:***@db:5432/x` |
+
+A second finding, fixed in the same pass because it was in the same line of code:
+
+- **Fastify's `err` serializer discards a pre-shaped error's name.** Passing `{ err: describeError(error) }`
+  produced `"type":"Object"`, losing `TypeError` vs `RangeError` — the one thing an operator reads first. The
+  serializer now receives the raw exception and does the shaping itself, so the name survives *and* the text is
+  scrubbed in one place.
+
+Two behaviours confirmed by probe rather than assumed:
+
+- **Client-caused failure codes** were read off a running instance, not guessed: malformed JSON and an empty
+  JSON body raise `FST_ERR_CTP_INVALID_JSON_BODY`/`FST_ERR_CTP_EMPTY_JSON_BODY` (400), an unsupported media
+  type raises `FST_ERR_CTP_INVALID_MEDIA_TYPE` (415), an oversized body raises `FST_ERR_CTP_BODY_TOO_LARGE`
+  (413) — each mapped to its documented code.
+- **A wrong method is a 404, not a 405.** Fastify answers `404` for a method a path does not accept, which is
+  what the contract's vocabulary allows (there is no 405 code) and what the existing route tests already
+  expected. Now asserted explicitly, with a comment, so nobody "fixes" it into a 405 later.
 
 ---
 

@@ -10,6 +10,7 @@
 
 export * from './app';
 export * from './config/env';
+export * from './lib/errors';
 export * from './lib/logger';
 export * from './config/prefixes';
 export {
@@ -19,6 +20,7 @@ export {
   type PluginId,
   type PluginSlot,
 } from './plugins/order';
+export * from './plugins/errors';
 export * from './plugins/request-context';
 export {
   assertRouteLaw,

@@ -83,7 +83,7 @@ The pipeline above is code, not a diagram: `apps/api/src/plugins/order.ts` holds
 | # | Stage | Why it sits here | Task |
 |---|---|---|---|
 | 1 | `request-context` | Everything after logs and reports against the request id | — |
-| 2 | `errors` | `setErrorHandler`/`setNotFoundHandler` must be installed before a route can throw | P1-API-04 |
+| 2 | `errors` | `setErrorHandler`/`setNotFoundHandler` must be installed before a route can throw | — |
 | 3 | `security` | Headers, CORS and body limits wrap every response, **including** the error envelope | P1-API-05 |
 | 4 | `db` | Decorates the instance and fails the boot when Postgres is unreachable, before any route needs it | P1-API-06 |
 | 5 | `rate-limit` | Before the guard, so a flood of bad credentials is rejected cheaply | P1-API-09 |
