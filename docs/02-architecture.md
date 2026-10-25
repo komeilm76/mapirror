@@ -75,6 +75,29 @@ flowchart LR
   `04-api.md` mirror them.
 - Errors always use one envelope: `{ error: { code, message, details?, requestId } }`.
 
+### Plugin order (normative)
+
+The pipeline above is code, not a diagram: `apps/api/src/plugins/order.ts` holds it as an ordered array that
+`app.ts` iterates, so a plugin can only be added in its slot and the order cannot drift from this table.
+
+| # | Stage | Why it sits here | Task |
+|---|---|---|---|
+| 1 | `request-context` | Everything after logs and reports against the request id | P1-API-03 |
+| 2 | `errors` | `setErrorHandler`/`setNotFoundHandler` must be installed before a route can throw | P1-API-04 |
+| 3 | `security` | Headers, CORS and body limits wrap every response, **including** the error envelope | P1-API-05 |
+| 4 | `db` | Decorates the instance and fails the boot when Postgres is unreachable, before any route needs it | P1-API-06 |
+| 5 | `rate-limit` | Before the guard, so a flood of bad credentials is rejected cheaply | P1-API-09 |
+| 6 | `auth` | Bearer guard for `/_admin/api/*` (L2, deny by default) runs immediately before the routes it protects | P1-AUTH-05 |
+| 7 | `routes` | Leaves of the pipeline, wrapped by every stage above | — |
+
+Two consequences of making the order data:
+
+- **A slot is either implemented or assigned a task, never both and never neither** — the empty slots are
+  visible (`pendingPlugins()`), so "we forgot the error handler" cannot look like "it landed".
+- **L1 is enforced when the app is built.** An `onRoute` hook rejects any route that is not under an API
+  prefix or a probe, so a route in the wrong namespace cannot boot the server — the law test (`P1-API-08`)
+  becomes a second line of defence rather than the only one.
+
 ## 4. Job system
 
 ```mermaid

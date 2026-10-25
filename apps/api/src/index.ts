@@ -1,12 +1,13 @@
 /**
- * Placeholder entry point for `@mapirror/api`.
+ * `@mapirror/api` — the server's public surface.
  *
- * It exists so `tsc` has an input to check while the workspace is being assembled (`P1-REPO-02`).
- * The real bootstrap — `app.ts` (plugin registry, route registration) and `server.ts` (listen,
- * signals, worker start) — replaces this file in `P1-API-01`. Until then it exports the route
- * classification built in `P1-REPO-07`, which the admin guard will be keyed on.
+ * Exported for tests and for the operator scripts: neither should reach into `src/` for these. `server.ts`
+ * is deliberately **not** re-exported here — importing it would be importing the process entry point, and
+ * `start()` is only meaningful to a supervisor, not to a caller.
  *
  * @module
  */
 
+export * from './app';
 export * from './config/prefixes';
+export { pendingPlugins, PLUGIN_ORDER, type PluginId, type PluginSlot } from './plugins/order';

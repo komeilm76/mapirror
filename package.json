@@ -24,6 +24,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
+    "start:api": "bun run --filter @mapirror/api start",
+    "dev:api": "bun run --filter @mapirror/api dev",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:api": "vitest run --project api",

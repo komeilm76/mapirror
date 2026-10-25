@@ -31,12 +31,16 @@ mapirror/
 │  │  │  │  ├─ prefixes.ts         # API route classification + requiresAdminToken (L2)
 │  │  │  │  └─ constants.ts        # API-only limits/defaults (prefixes come from @mapirror/shared)
 │  │  │  ├─ plugins/
+│  │  │  │  ├─ order.ts            # The pipeline as ordered data — the only place order is decided
 │  │  │  │  ├─ db.ts               # Kysely instance, healthcheck, shutdown hook
 │  │  │  │  ├─ errors.ts           # Error taxonomy + JSON envelope + 404/500 handlers
 │  │  │  │  ├─ security.ts         # Helmet-style headers, CORS, body limits
 │  │  │  │  ├─ rate-limit.ts       # Login + public download limits
 │  │  │  │  ├─ auth.ts             # Bearer guard for /_admin/api/* (deny by default)
 │  │  │  │  └─ request-context.ts  # Request id, logger child, timing
+│  │  │  ├─ routes/
+│  │  │  │  ├─ index.ts            # Registers one encapsulated plugin per API prefix
+│  │  │  │  └─ not-implemented.ts  # 503 NOT_READY stubs at their real contract paths
 │  │  │  ├─ modules/
 │  │  │  │  ├─ auth/               # /_auth: login, logout, me; token issue/verify/revoke
 │  │  │  │  │  ├─ routes.ts

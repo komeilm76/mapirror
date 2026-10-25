@@ -22,6 +22,23 @@ This table is the single normative source for route placement. `00-index.md` sum
 
 `GET /` → `302 /_site/`. Page routes never return JSON; API routes never return HTML (L1).
 
+### 0.3 Bootstrap state (temporary)
+
+The server is running before the modules are. Exactly three routes exist today, each at a path this
+document already defines, and each answers `503 NOT_READY` with the standard envelope naming the task that
+implements it:
+
+| Route | Replaced by |
+|---|---|
+| `POST /_auth/api/login` | `P1-AUTH-03` |
+| `GET /_admin/api/catalog` | `P2-API-01` |
+| `GET /_public/api/countries` | `P3-API-03` |
+
+No stub is registered at a bare prefix: `/_auth/api` with no trailing slash is not a route, which keeps the
+route table exactly as wide as the law allows. `apps/api/tests/app.spec.ts` asserts this set, so adding a
+fourth stub (or forgetting to delete one) fails the gate. The row disappears from this table as each module
+lands.
+
 ## 0.2 Conventions
 
 | Topic | Rule |

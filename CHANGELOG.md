@@ -36,6 +36,22 @@ passes. Patch releases (`0.1.1`, …) are corrections to an already-tagged phase
 - `apps/api/src/config/prefixes.ts` re-derived `API_PREFIXES` that `@mapirror/shared` already exported.
 
 ### Added
+- **Fastify bootstrap** (`P1-API-01`): `buildApp()` with the request pipeline as ordered data
+  (`plugins/order.ts` → request-context → errors → security → db → rate-limit → auth → routes), one
+  encapsulated plugin per API prefix registered from the shared route law, and `server.ts` owning the
+  process: port from `PORT`, `SIGTERM`/`SIGINT` shutdown, exit 0 when asked to stop and 1 when it cannot
+  start or close. `bun run dev:api` / `start:api` added.
+- **L1 is now enforced at boot**, not only by the law test: an `onRoute` hook rejects any route outside the
+  three API prefixes or the probes, naming the route and the rule.
+- Three temporary `503 NOT_READY` stubs at their real contract paths (`POST /_auth/api/login`,
+  `GET /_admin/api/catalog`, `GET /_public/api/countries`), each naming the task that replaces it and
+  asserted as a set by test, so a forgotten stub fails the gate rather than shipping.
+
+### Fixed
+- `readPort` accepted `0x10` and `30e3` as ports (16 and 30000) because it used `Number()`; it now reads
+  digits only — the same defect class as `parsePagination`, caught by the test written for it.
+
+### Added
 - **Shared contracts** (`P1-REPO-07`), the first code both apps depend on: `@mapirror/shared` now owns the
   route law (`routes`), the error vocabulary (`errors`), pagination (`pagination`), the ODbL attribution
   (`license`) and the shared enums (`constants`). Zero runtime dependencies, no globals, importable by the

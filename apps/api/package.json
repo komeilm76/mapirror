@@ -5,9 +5,12 @@
   "type": "module",
   "description": "MapMirror API: Fastify routes, PostgreSQL-backed job worker and interval scheduler.",
   "dependencies": {
-    "@mapirror/shared": "workspace:*"
+    "@mapirror/shared": "workspace:*",
+    "fastify": "5.12.7"
   },
   "scripts": {
+    "dev": "bun --watch src/server.ts",
+    "start": "bun src/server.ts",
     "typecheck": "tsc -p tsconfig.json"
   }
 }

@@ -30,9 +30,10 @@ open http://localhost:8080            # public site
 open http://localhost:8080/_auth/login # admin login
 ```
 
-> **Where we are today:** only the workspace and type-check commands exist (see §4). Everything below
-> that starts the API, the database or the SPA lands with `P1-API-01`, `P1-WEB-01` and `P1-DOCK-04`.
-> This section documents the target developer experience; it is not yet runnable end to end.
+> **Where we are today:** the API boots and serves its three namespaces (`P1-API-01`), but nothing in this
+> section works end to end yet — there is no database, no login and no SPA. `bun run dev:api` starts it on
+> `:3000`; every route answers `503 NOT_READY` until its module lands (see `04-api.md` §0.3).
+> The rest arrives with `P1-DOCK-04`, `P1-WEB-01` and the database tasks.
 
 ## 3. First run (local dev, hot reload)
 
@@ -65,7 +66,9 @@ Scripts marked ✅ exist today; ⬜ are created by the task named in `08-tasks.m
 | `bun run check:workspaces` | 21 assertions on the workspace wiring (`P1-REPO-01`) | ✅ |
 | `bun run check:hygiene` | 54 assertions: ignore matrix, nothing ignored is tracked, credential parity across both ignore files, env-doc parity (names **and** defaults), `.dockerignore` safelist, no orphan tests (`P1-REPO-04/06`) | ✅ |
 | `bun run dev` | API + web in watch mode | ⬜ P1-API-01 / P1-WEB-01 |
-| `bun run dev:api` / `dev:web` | One side only | ⬜ P1-API-01 / P1-WEB-01 |
+| `bun run dev:api` | API only, watch mode (`apps/api`: `bun --watch src/server.ts`) | ✅ P1-API-01 |
+| `bun run start:api` | API only, no watch (what the container runs) | ✅ P1-API-01 |
+| `bun run dev:web` | Web only | ⬜ P1-WEB-01 |
 | `bun run build` | Build web bundle | ⬜ P1-DOCK-02 |
 | `bun run check` | **The gate**: workspaces → hygiene → typecheck → lint → format:check → test, fail-fast | ✅ P1-REPO-05/06 |
 | `bun run check:full` | `check` + coverage with thresholds (slower; used before a phase gate) | ✅ P1-REPO-05 |

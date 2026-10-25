@@ -43,7 +43,7 @@ Legend: `Req` maps back to `PROMPT.md` §6–§16 requirement IDs. `Dep` = must 
 
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
-| P1-API-01 | Fastify bootstrap (`app.ts`, `server.ts`) with plugin order | ENG-5 | P1-REPO-01 | ⬜ | Server starts, routes registered under 3 prefixes |
+| P1-API-01 | Fastify bootstrap (`app.ts`, `server.ts`) with plugin order | ENG-5 | P1-REPO-01 | ✅ | Server starts, routes registered under 3 prefixes — proven end to end (real process on an ephemeral port: `503` at the three contract paths, `404` at `/`, `/healthz`, `/_site/`; `SIGTERM` and `SIGINT` exit 0). The pipeline is an ordered array (`plugins/order.ts`) iterated by `buildApp`, so order cannot drift; empty slots name the task that fills them. L1 is enforced at boot: an `onRoute` hook refuses any route outside an API prefix or the probes (probed: `/_site/leak` → exit 1 naming the route). Stubs live at their **real** contract paths and are asserted as a set, so one cannot be forgotten. 136 tests; `readPort` refuses hex/exponent input |
 | P1-API-02 | Zod env validation + typed config | ENG-2, L5 | P1-API-01 | ⬜ | Missing/invalid env → clear startup error, exit 1 |
 | P1-API-03 | Pino logger with secret redaction + request ids | ENG-5, L9 | P1-API-01 | ⬜ | `authorization`/`password` never appear in logs (test) |
 | P1-API-04 | Error taxonomy + JSON envelope + 404/500 handlers | ENG-5 | P1-API-01 | ⬜ | Every handler error maps to documented code |
