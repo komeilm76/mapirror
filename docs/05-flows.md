@@ -75,7 +75,9 @@ sequenceDiagram
 ```
 
 **Rules:** token only in `sessionStorage` (not `localStorage`); every API call attaches the header;
-`401` anywhere ⇒ clear state + redirect to `/_auth/login`; no auto-refresh (D-3).
+`401` anywhere ⇒ clear state + redirect to `/_auth/login`; no auto-refresh (D-3). Every `/_admin/api/*` request passes
+the Bearer guard first (`P1-AUTH-05`): `onRequest`, before the body is parsed, no opt-out — so the SPA's `401` handling
+is one branch for every admin call, not one per screen.
 **Tests:** login happy path, wrong password, unknown user, deactivated account, lockout (`429` with `Retry-After`),
 expired token, revoked token, cookie-only rejected, `?token=` rejected, SPA guard redirects when `sessionStorage` is
 empty or `/me` fails. The throttle is checked **before** the hash on purpose: a locked-out client costs a map lookup,

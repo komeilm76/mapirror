@@ -33,8 +33,9 @@ open http://localhost:8080/_auth/login # admin login
 > **Where we are today:** the API boots, talks to PostgreSQL, and the whole `/_auth/api` namespace is real —
 > `login` (throttled, audited, `200`/`400`/`401`/`403`/`429`), `me` and `logout` (`P1-AUTH-03`, `P1-AUTH-04`), all as
 > `04-api.md` §1 describes. Two routes are still stubs answering `503 NOT_READY` (`04-api.md` §0.3). There is no SPA
-> yet, so `bun run dev:web` shows an empty shell; `bun run dev:api` serves the API on `:3000`, and the admin guard
-> (`P1-AUTH-05`) is what will put `/_admin/api/*` behind the tokens these routes mint.
+> yet, so `bun run dev:web` shows an empty shell; `bun run dev:api` serves the API on `:3000`, and every
+> `/_admin/api/*` request now needs a token issued by `login` — the guard (`P1-AUTH-05`) answers `401` before the route
+> runs, so the two remaining stubs are reachable only with a credential (the public one is the anonymous exception).
 
 ## 3. First run (local dev, hot reload)
 
@@ -383,7 +384,12 @@ and `vue/define-{props,emits}-declaration: type-based`.
     compare against, which is why no `timingSafeEqual` appears anywhere. `token_prefix` is display-only and must
     never become a lookup key — a test exists solely to keep that true.
   - Map the verdict, don't invent codes: `valid` → proceed, `expired` → `401 TOKEN_EXPIRED`, `revoked` → `401
-    TOKEN_REVOKED`, `disabled` → `403 ACCOUNT_DISABLED`, `unknown` → `401 UNAUTHENTICATED` (`P1-AUTH-05`).
+    TOKEN_REVOKED`, `disabled` → `403 ACCOUNT_DISABLED`, `unknown` → `401 UNAUTHENTICATED` — done once, in
+    `modules/auth/session.ts`, so `/me`, `/logout` and the `/_admin/api/*` guard cannot disagree about one token.
+  - **A guard hook must `throw`, not `reply.send(...)` and `done()`.** In Fastify's callback style those are not
+    alternatives: `done()` resumes the lifecycle, the handler runs, and the refusal is discarded with
+    `FST_ERR_REP_ALREADY_SENT` logged after the handler's answer went out (measured, pass 25 — the L2 guard was inert).
+    An `async` hook that throws stops the chain and goes through the one error path.
   - Revocation is idempotent and keeps the first `revoked_at`; a password reset calls `revokeAllTokens` in the same
     transaction as the new hash.
   - `pruneExpiredTokens` runs once at boot through `lib/housekeeping.ts`, **after** `listen`, bounded by

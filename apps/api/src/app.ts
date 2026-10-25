@@ -27,6 +27,7 @@ import { JSON_BODY_LIMIT_BYTES } from './plugins/security';
 import { assertRouteLaw, installRouteLawHook } from './plugins/route-law';
 import type { LoginThrottle } from './modules/auth/login-throttle';
 import { loginThrottleFromConfig } from './modules/auth/login-throttle';
+import type { AuthVerify } from './plugins/auth-guard';
 
 /** Options accepted by {@link buildApp}. */
 export interface BuildAppOptions {
@@ -71,6 +72,20 @@ export interface BuildAppOptions {
    * reset the counter on every attempt.
    */
   loginThrottle?: LoginThrottle;
+  /**
+   * Verifier the Bearer guard uses instead of the database-backed one. **Tests only.**
+   *
+   * A seam for the *verifier*, not for the policy: it can say who a token belongs to or refuse it with an `AppError`,
+   * and there is no value of it that means "let everything through unverified" — the guard still refuses a request
+   * that presents no token, and still runs on every `/_admin/api/*` request. `server.ts` never passes it.
+   */
+  authVerify?: AuthVerify;
+  /**
+   * Observer for every route the pipeline registers. **Tests only**, and the reason it exists: the L2 test has to call
+   * *every* admin route, and a hand-written list of routes is a list that goes stale silently. Attached before the
+   * pipeline runs, because `onRoute` fires during boot and a hook added afterwards sees nothing.
+   */
+  routeObserver?: (route: { readonly url: string; readonly method: string | string[] }) => void;
 }
 
 /**
@@ -113,6 +128,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   const routeLaw = installRouteLawHook(app);
+  const { routeObserver } = options;
+  if (routeObserver !== undefined) app.addHook('onRoute', routeObserver);
 
   try {
     await registerPipeline(app, options.slots ?? PLUGIN_ORDER, {
@@ -124,6 +141,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       // One throttle for the process, built from `AUTH_MAX_LOGIN_ATTEMPTS` / `AUTH_LOCKOUT_MINUTES`. A supplied one
       // wins so a test can control its clock; nothing else in production passes it.
       loginThrottle: options.loginThrottle ?? loginThrottleFromConfig(config),
+      ...(options.authVerify === undefined ? {} : { authVerify: options.authVerify }),
     });
 
     // Enforced after the boot, because a throwing `onRoute` hook stalls `ready()` forever — see the module

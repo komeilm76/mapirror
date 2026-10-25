@@ -51,8 +51,16 @@ describe('the three API prefixes are registered', () => {
     it(`${scope} namespace answers under its prefix`, async () => {
       const response = await (await app()).inject({ method, url });
 
-      expect(response.statusCode).toBe(statusFor('NOT_READY'));
-      expect(response.statusCode).toBe(503);
+      if (scope === 'admin') {
+        // New as of `P1-AUTH-05`: the guard answers before the route does, so an anonymous request to an admin route
+        // is a `401` and never reaches the stub. The stub's own `503` is asserted in `admin-guard.spec.ts`, behind a
+        // token — this table states where the namespace *is*, and for admin that answer now comes from the guard.
+        expect(response.statusCode).toBe(statusFor('UNAUTHENTICATED'));
+        expect(response.statusCode).toBe(401);
+      } else {
+        expect(response.statusCode).toBe(statusFor('NOT_READY'));
+        expect(response.statusCode).toBe(503);
+      }
       expect(response.headers['content-type']).toMatch(/^application\/json/);
     });
   }
@@ -93,7 +101,7 @@ describe('the three API prefixes are registered', () => {
 
   it('serves nothing outside the three prefixes — no root, no bare prefix, no page', async () => {
     const instance = await app();
-    for (const url of ['/', '/_auth/api', '/_admin/api', '/_public/api', '/_site/', '/login']) {
+    for (const url of ['/', '/_auth/api', '/_public/api', '/_site/', '/login']) {
       const response = await instance.inject({ method: 'GET', url });
       expect(response.statusCode, url).toBe(404);
     }
@@ -107,7 +115,15 @@ describe('the three API prefixes are registered', () => {
       ['/_public/api/countries', 'GET'],
     ] as const) {
       // Every route in every namespace, stub or not: a JSON API never answers HTML, including for a bad request.
-      const response = await instance.inject({ method, url: route });
+      const response = await instance.inject({
+        method,
+        url: route,
+        // An admin route needs a token to get as far as its own answer (`P1-AUTH-05`); the shape of the *refusal* is
+        // asserted in `admin-guard.spec.ts`. What is checked here is that no route in any namespace answers HTML.
+        ...(route.startsWith('/_admin/')
+          ? { headers: { authorization: `Bearer mm_${'a'.repeat(43)}` } }
+          : {}),
+      });
       expect(response.headers['content-type'], route).toMatch(/^application\/json/);
       expect(response.body).not.toContain('<html');
     }

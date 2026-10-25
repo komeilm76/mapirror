@@ -87,7 +87,7 @@ The pipeline above is code, not a diagram: `apps/api/src/plugins/order.ts` holds
 | 3 | `security` | Headers, CORS and body limits wrap every response, **including** the error envelope | — |
 | 4 | `db` | Decorates the instance and fails the boot when Postgres is unreachable, before any route needs it | — |
 | 5 | `rate-limit` | Before the guard, so a flood of bad credentials is rejected cheaply | P1-API-09 |
-| 6 | `auth` | Bearer guard for `/_admin/api/*` (L2, deny by default) runs immediately before the routes it protects | P1-AUTH-05 |
+| 6 | `auth` | Bearer guard for `/_admin/api/*` (L2, deny by default) runs immediately before the routes it protects — `onRequest`, before parsing, throwing the one envelope | ✅ `P1-AUTH-05` |
 | 7 | `routes` | Leaves of the pipeline, wrapped by every stage above | — |
 
 Two consequences of making the order data:

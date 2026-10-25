@@ -20,7 +20,7 @@
  * @module plugins/order
  */
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { parseEnv, type AppConfig } from '../config/env';
 import type { SqlDatabase } from '../db/client';
@@ -30,6 +30,7 @@ import { loginThrottleFromConfig } from '../modules/auth/login-throttle';
 
 import { registerRoutes } from '../routes/index';
 
+import { installAuthGuard } from './auth-guard';
 import { installDb } from './db';
 import { installErrorHandlers } from './errors';
 import { installRequestContext } from './request-context';
@@ -77,6 +78,11 @@ export interface PipelineContext {
    * only sometimes: a second instance would double every limit while looking correct.
    */
   readonly loginThrottle: LoginThrottle;
+  /**
+   * Verifier for the Bearer guard, when a caller wants to supply one. **Tests only** — `buildApp` forwards it and
+   * `server.ts` never sets it; without it the guard uses the database-backed verifier.
+   */
+  readonly authVerify?: (request: FastifyRequest, token: string) => Promise<unknown>;
 }
 
 /** One stage of the pipeline. */
@@ -143,8 +149,12 @@ export const PLUGIN_ORDER: readonly PluginSlot[] = [
     id: 'auth',
     rationale:
       'The Bearer guard for /_admin/api (L2, deny by default) runs immediately before the routes it protects — after rate limiting, before anything reads a handler.',
-    task: 'P1-AUTH-05',
-    install: null,
+    task: null,
+    // The stage's signature is `(app, context)`; the guard takes no policy from the context — deliberately, since an
+    // option here would be the opt-out flag L2 forbids. The closure keeps the pipeline's shape without inventing one.
+    install: (app, context) => {
+      installAuthGuard(app, context.authVerify === undefined ? {} : { verify: context.authVerify });
+    },
   },
   {
     id: 'routes',

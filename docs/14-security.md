@@ -50,9 +50,21 @@ Trust nothing from: HTTP clients, multipart uploads, Geofabrik HTML/JSON respons
 
 ## 4. Authorization
 
-- Deny by default: the guard is registered for `/_admin/api/*` as a prefix hook; a new route is
-  protected automatically (L2). `/_site/admin/*` pages are static shells — they hold no data, the
-  guard on the API is what protects them.
+- Deny by default: **implemented** as a global `onRequest` hook (`plugins/auth-guard.ts`, `P1-AUTH-05`) keyed on
+  `isAdminApiPath` from `@mapirror/shared` — the same predicate the route law uses, which decodes percent-escapes
+  before classifying, so `/_admin/%61pi/…` is admin too. A route added next week is protected before its handler is
+  written. There is **no opt-out**: the hook's only option is a verifier (tests only), and the L2 test walks the route
+  table via `onRoute` and calls every admin route it finds, so the list cannot go stale.
+- The guard runs in `onRequest`, **before the body is parsed**, so an unauthenticated request costs no JSON parse and
+  can have no side effect. It answers with the standard envelope by *throwing*, through the one error path — a `401`
+  from the guard and a `500` from a dead pool are shaped by the same function.
+- An anonymous request to an admin path with no route (`/_admin/api`) or with an unknown one is `401`, not `404`:
+  `onRequest` runs before routing, so the admin surface is not mappable without a token. With a valid token the same
+  paths are honest `404`s.
+- CORS preflights are answered by the `security` stage (`204`) before the guard is reached — the order in
+  `plugins/order.ts` is `security`, `db`, `rate-limit`, `auth`, `routes`, and a test pins it. A browser cannot attach
+  `Authorization` to a preflight, so a guard ahead of CORS would break every cross-origin admin call.
+- `/_site/admin/*` pages are static shells — they hold no data, the guard on the API is what protects them.
 - No role system in v1; the schema supports additional admins without code changes to the guard.
 - Public read model applies `is_public = true AND status = 'ready'` in a single query layer so no
   endpoint can forget it (L8).

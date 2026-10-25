@@ -3,9 +3,41 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 24 passes · 124 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1).
+**Totals:** 25 passes · 125 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 25 — 2026-10-25 (adversarial review of `P1-AUTH-05`)
+
+One defect, and it is the worst kind a security control can have: the guard was installed, it ran, it decided correctly,
+and **its answer was thrown away**.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The Bearer guard's refusal never reached the client.** The hook used Fastify's callback style and did both things: `reply.send(401)` and then `done()`. In that style they are not alternatives — `done()` resumes the lifecycle, so the route handler ran, its reply won, and the guard's `401` was discarded with an `FST_ERR_REP_ALREADY_SENT` logged *after* a `200`/`503` had already gone out. Every `/_admin/api/*` request answered as if it were anonymous-friendly: measured before the fix, `GET /_admin/api/catalog` without a token answered `503 NOT_READY` and the stub's body. The L2 law was, for the length of one afternoon, a comment. Nothing in a *review* of the diff would have shown it: the code reads like a guard, and the only way to see it is to make a request | The hook is `async` and **throws**; there is no `done()` and no `reply.send()` in it. Returning from an async hook stops the chain, and throwing routes the refusal through the single error path — `toErrorEnvelope`, which is the same function that shapes a `500`, so the body, the `requestId` and the id header are the ones every other failure has. Re-probed: no token → `401 UNAUTHENTICATED`; a token the verifier rejects → the verdict's own code; a path with no route → `401` without a token and `404` with one. The regression test that would have caught it is not an assertion on the hook but the **route-table walk**: it calls every admin route the app registered and demands `401`, so a guard whose answer is discarded fails immediately |
+
+Three things came out of the same review and changed the design rather than the notes:
+
+- **The `500` policy had two copies.** The first version caught non-`AppError` failures from the verifier and rewrapped
+  them as `INTERNAL_ERROR`. Mutating that away did not fail a test — because the error stage already maps *any* unknown
+  error to `INTERNAL_ERROR` with a fixed sentence. The try/catch was therefore deleted rather than tested: one place
+  decides what a `500` says, and the guard throws whatever the verifier rejected with. The test that asserts a driver
+  message and a port number never appear in the body stayed, and it now pins the error stage's behaviour instead of a
+  duplicate of it.
+- **The L2 test had to grow with the app.** A hand-written list of admin routes is a list that goes stale exactly when
+  it matters — the next route someone adds. The test now collects the routes from `onRoute` during `boot` (through a
+  tests-only `routeObserver` seam on `buildApp`, the same pattern as `slots`/`database`) and calls every one of them,
+  with and without a token. It also asserts the list is non-empty, because a guard test that checks nothing passes
+  silently.
+- **`/_admin/api` itself is admin.** Adding the bare prefix to the walk made the fail-closed behaviour explicit: no
+  token → `401`, token → `404`. The refusal comes from `onRequest`, which runs before routing, so an anonymous caller
+  cannot map the admin surface by watching which paths answer `401` and which `404`.
+
+Mutation-checked: 7 mutations, all caught — the scope test removed, the scope test inverted, the missing-token throw
+removed, the missing-token code swapped for `TOKEN_EXPIRED`, the verifier given a truncated token, and the pipeline slot
+emptied. `plugins/auth-guard.ts` is at 100 % statements, branches, functions and lines; the suite is 580 tests.
 
 ---
 

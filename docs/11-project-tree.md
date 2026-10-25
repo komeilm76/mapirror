@@ -36,7 +36,7 @@ mapirror/
 │  │  │  │  ├─ errors.ts           # Error taxonomy + JSON envelope + 404/500 handlers
 │  │  │  │  ├─ security.ts         # Helmet-style headers, CORS, body limits
 │  │  │  │  ├─ rate-limit.ts       # Login + public download limits
-│  │  │  │  ├─ auth.ts             # Bearer guard for /_admin/api/* (deny by default)
+│  │  │  │  ├─ auth-guard.ts       # Bearer guard for /_admin/api/* — onRequest, deny by default (L2)
 │  │  │  │  └─ request-context.ts  # Request id, logger child, timing
 │  │  │  ├─ routes/
 │  │  │  │  ├─ index.ts            # Registers one encapsulated plugin per API prefix

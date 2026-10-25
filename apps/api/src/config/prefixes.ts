@@ -6,9 +6,10 @@
  * wrong. This module is the API-side half: given a request URL, which namespace is it in, and does it need
  * a token?
  *
- * The global `onRequest` guard in `P1-API-05` is keyed on {@link requiresAdminToken}, which is why the
- * default is **deny**: anything under `/_admin/api` needs a token, including routes added later that
- * nobody remembered to protect.
+ * The global `onRequest` guard (`plugins/auth-guard.ts`, `P1-AUTH-05`) keys on `isAdminApiPath` from
+ * `@mapirror/shared` — the same predicate {@link requiresAdminToken} wraps — which is why the default is
+ * **deny**: anything under `/_admin/api` needs a token, including routes added later that nobody remembered
+ * to protect.
  *
  * @module config/prefixes
  */

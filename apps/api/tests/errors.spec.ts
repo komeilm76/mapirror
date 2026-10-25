@@ -204,10 +204,11 @@ describe('the error stage wraps a real pipeline', () => {
 
   it('keeps the 503 stubs working under the new handler', async () => {
     // The stubs throw nothing today, but they must not be shadowed by the 404 handler. `POST /_auth/api/login` is a
-    // real route as of `P1-AUTH-03`, so the check moved to the one that is still a stub.
+    // real route as of `P1-AUTH-03`, and the admin stub sits behind the guard as of `P1-AUTH-05` — so the one that
+    // still answers anonymously is the public route.
     const instance = await buildTestApp();
 
-    const response = await instance.inject({ method: 'GET', url: '/_admin/api/catalog' });
+    const response = await instance.inject({ method: 'GET', url: '/_public/api/countries' });
     expect(response.statusCode).toBe(503);
     expect(response.json<{ error: { code: string } }>().error.code).toBe('NOT_READY');
     await instance.close();
