@@ -12,6 +12,7 @@ import {
   pendingPlugins,
   PLUGIN_ORDER,
   registerPipeline,
+  type PluginSlot,
 } from '../src/index';
 import { STUB_ROUTES } from '../src/routes/not-implemented';
 import Fastify, { type FastifyInstance, type FastifyPluginAsync } from 'fastify';
@@ -308,6 +309,37 @@ describe('L1 is enforced at boot, not only by the law test', () => {
     const violations = check((app) => app.get('/_site/countries', () => ({ ok: true })));
     expect(violations).toHaveLength(1);
   });
+
+  it('stops buildApp when the pipeline registers an illegal route, instead of hanging', async () => {
+    // The regression this guards: the guard used to throw from inside the `onRoute` hook, which left
+    // `ready()` unsettled — `buildApp` never returned and the container never started. This test fails by
+    // timing out if that comes back, and by asserting a message naming the route if the check is dropped.
+    const illegal: PluginSlot = {
+      id: 'routes',
+      rationale: 'test seam: a pipeline that puts a route outside the API namespaces',
+      task: null,
+      register: async (instance) => {
+        await Promise.resolve();
+        instance.get('/_site/leak', () => ({ ok: true }));
+      },
+    };
+
+    await expect(buildApp({ logger: false, slots: [illegal] })).rejects.toThrow(/\/_site\/leak/);
+    await expect(buildApp({ logger: false, slots: [illegal] })).rejects.toThrow(/violates L1/);
+  }, 2_000);
+
+  it('never throws from the hook, so a ready() can always settle', async () => {
+    // Proves the *shape* of the guard, not just its outcome: a throwing `onRoute` hook stalls Fastify's boot
+    // queue forever, so an illegal route must leave `ready()` resolvable. The 2 s cap turns a regression into
+    // a failure instead of a hung suite.
+    const instance = Fastify({ logger: false });
+    const law = installRouteLawHook(instance);
+    instance.get('/api/leak', () => ({ ok: true }));
+
+    await expect(instance.ready()).resolves.toBeDefined();
+    expect(law.violations).toHaveLength(1);
+    await instance.close();
+  }, 2_000);
 
   it('is installed by buildApp, so a legal app boots and is checked', async () => {
     const instance = await app();

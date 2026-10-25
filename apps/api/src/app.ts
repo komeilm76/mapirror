@@ -15,7 +15,7 @@
 
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 
-import { registerPipeline } from './plugins/order';
+import { PLUGIN_ORDER, registerPipeline, type PluginSlot } from './plugins/order';
 import { assertRouteLaw, installRouteLawHook } from './plugins/route-law';
 
 /** Options accepted by {@link buildApp}. */
@@ -25,6 +25,15 @@ export interface BuildAppOptions {
    * process logs and injecting requests into a built app does not.
    */
   logger?: FastifyServerOptions['logger'];
+  /**
+   * Overrides the pipeline. **Tests only.**
+   *
+   * It exists so the boot-time L1 guard can be proven to stop a boot that registers an illegal route. That
+   * guard cannot be tested from outside without this seam, because the pipeline a production boot uses is a
+   * constant — and the defect it prevents (a boot that hung forever) was invisible for exactly that reason.
+   * `server.ts` never passes it.
+   */
+  slots?: readonly PluginSlot[];
 }
 
 /**
@@ -50,7 +59,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   const routeLaw = installRouteLawHook(app);
 
-  await registerPipeline(app);
+  await registerPipeline(app, options.slots ?? PLUGIN_ORDER);
 
   // Enforced after the boot, because a throwing `onRoute` hook stalls `ready()` forever — see the module
   // comment in `plugins/route-law.ts`. Booting first also lets the error list every offending route.

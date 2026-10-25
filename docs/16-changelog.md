@@ -32,6 +32,12 @@ Also in this pass:
   `indexOf('---', …)` parse lands on the table separator, so the section is cut by heading offsets instead.
 - **Hook testing needs a bare instance**: a booted app is frozen, so `addHook`/`register`/route additions
   throw afterwards. The hook is exported from `plugins/route-law.ts` for exactly this.
+- **The boot path itself is now under test.** Defect 3 was first caught by a manual probe, which meant nothing
+  in the suite failed if a throwing hook came back. `buildApp` takes a `slots` override (documented *tests
+  only*, never passed by `server.ts`) so two real tests exist: one asserts `buildApp` rejects with the route
+  named, the other that an illegal route leaves `ready()` resolvable — the property whose absence hung the
+  boot. Both were proven by restoring each defect: the throwing hook fails both, and deleting the
+  `assertRouteLaw` call fails the `buildApp` one, with exactly one failure and no hung suite each time.
 - **Two deprecations gone**: `disableRequestLogging` is now passed as a direct option (`FSTDEP023`), and no
   warning remains in the boot output.
 
