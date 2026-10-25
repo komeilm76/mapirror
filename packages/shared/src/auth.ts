@@ -96,6 +96,29 @@ export const LoginResponseSchema = z.object({
 export type LoginResponse = z.infer<typeof LoginResponseSchema>;
 
 /**
+ * Response of `GET /_auth/api/me` — `200` (`04-api.md` §1).
+ *
+ * The SPA calls this on boot to find out whether the token in `sessionStorage` is still worth holding, so the answer
+ * has to say more than "yes": `expiresAt` lets the panel warn before the session ends instead of losing a half-filled
+ * form to a sudden `401`, and `lastUsedAt` is what a sessions screen shows. Both are the **token's** facts, not the
+ * account's — a token can be younger than the account's last login.
+ *
+ * Deliberately flat, with the same `admin` object `/login` returns: the SPA stores one profile shape and does not have
+ * to learn a second one. No token id or prefix here either: the client already holds the token itself, and a prefix is
+ * for a *list* of sessions (`P2`), not for the one it is using.
+ */
+export const MeResponseSchema = z.object({
+  admin: AdminProfileSchema,
+  /** ISO-8601 instant at which the presented token stops working. */
+  expiresAt: z.iso.datetime(),
+  /** ISO-8601 instant of the last request made with this token, or `null` if this is the first one. */
+  lastUsedAt: z.iso.datetime().nullable(),
+});
+
+/** Response of `GET /_auth/api/me`, as produced and as the SPA reads it. */
+export type MeResponse = z.infer<typeof MeResponseSchema>;
+
+/**
  * `details` of a `429 RATE_LIMITED` from the login endpoint (`04-api.md` §1).
  *
  * Both fields describe the same instant, and both are present because two different consumers need different things:

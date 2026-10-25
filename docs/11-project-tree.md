@@ -47,6 +47,8 @@ mapirror/
 │  │  │  │  │  ├─ service.ts
 │  │  │  │  │  ├─ password.ts       # Argon2id hash/verify + policy
 │  │  │  │  │  ├─ weak-passwords.ts # 1 000-entry blocklist (Django, BSD-3)
+│  │  │  │  │  ├─ session.ts        # Authorization header → session; verdict → 401/403 (shared with the guard)
+│  │  │  │  │  ├─ login-throttle.ts # sliding-window failures: (ip, username) + ip, bounded map
 │  │  │  │  │  └─ tokens.ts         # Bearer tokens: mint, digest, verify verdict, revoke, prune
 │  │  │  │  ├─ admin/              # /_admin/api: catalog, cache, versions, imports,
 │  │  │  │  │  │                   # intervals, jobs, metrics, settings, audit

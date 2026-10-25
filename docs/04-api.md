@@ -162,12 +162,31 @@ Side effects: audit `auth.login` / `auth.login_failed`; `last_login_at`; token r
 
 ### `GET /_auth/api/me`
 
-Bearer required. Returns the admin profile + token metadata (`expiresAt`, `lastUsedAt`).
-Used by the SPA on boot to validate `sessionStorage` state.
+Bearer required. The SPA's boot check: is the token in `sessionStorage` still worth holding, and for how long. The
+metadata is the **token's**, not the account's — a token minted on another device has its own expiry.
+
+```json
+200 {
+  "admin": { "id": "…", "username": "admin" },
+  "expiresAt": "2026-10-25T21:00:00.000Z",
+  "lastUsedAt": "2026-10-25T09:00:00.000Z"   // null until the first request made with this token
+}
+```
+
+Errors: `401 UNAUTHENTICATED` (no header, a scheme other than `Bearer`, an unknown or malformed token),
+`401 TOKEN_EXPIRED`, `401 TOKEN_REVOKED`, `403 ACCOUNT_DISABLED`. Header: `cache-control: no-store`. Side effect:
+`last_used_at` is recorded, at most once per minute (`03-data-model.md` §2.2).
 
 ### `POST /_auth/api/logout`
 
-Bearer required. Revokes **only the presented token**. `204 No Content`.
+Bearer required. Revokes **only the presented token** — closing a tab on a phone does not sign the desktop out.
+"Sign out everywhere" is not an endpoint: it is what a password reset does (`P1-AUTH-07`).
+
+`204 No Content`, empty body. The revocation and its `auth.logout` audit row commit in one transaction, so a failed
+audit write leaves the session alive and answers `500` rather than ending it unrecorded.
+
+Errors: the same four as `/me`. An already-revoked token answers `401 TOKEN_REVOKED`; the second logout does not
+pretend to have ended anything, and the original `revoked_at` is never rewritten.
 
 > Token TTL: `AUTH_TOKEN_TTL_HOURS` (default 12). No refresh endpoint by design (D-3): the SPA
 > redirects to the login page on `401 TOKEN_EXPIRED`. Password reset revokes all tokens.

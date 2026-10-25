@@ -1,8 +1,10 @@
 /**
  * `/_auth/api/*` — authentication routes.
  *
- * `POST /login` is real as of `P1-AUTH-03`; `logout` and `me` follow in `P1-AUTH-04`. The paths are the ones
- * `04-api.md` §1 documents and the ones the stub already occupied, so nothing moved.
+ * Three routes, all documented in `04-api.md` §1: `POST /login` (`P1-AUTH-03`), and `GET /me` + `POST /logout`
+ * (`P1-AUTH-04`). The two authenticated routes share `session.ts` with the `/_admin/api/*` guard (`P1-AUTH-05`), so a
+ * token that `/me` calls expired is the same token the admin API calls expired — a client never has to guess which
+ * answer to believe.
  *
  * **Validation happens with the shared Zod schema, in the handler.** Fastify's own `schema.body` takes JSON Schema, and
  * translating Zod to it would need a type provider that this project does not depend on (`15-decisions.md` ADR-021
@@ -26,13 +28,19 @@ import {
   LoginRateLimitDetailsSchema,
   LoginRequestSchema,
   type LoginResponse,
+  type MeResponse,
 } from '@mapirror/shared';
 import type { FastifyPluginCallback } from 'fastify';
 
 import type { AppConfig } from '../../config/env';
+import { insertAuditLog, AUDIT_ACTIONS } from '../../db/repositories/audit-logs';
+import { withTransaction } from '../../db/transaction';
+import { normaliseIp } from '../../lib/client-ip';
 import { AppError } from '../../lib/errors';
 import type { LoginThrottle } from './login-throttle';
+import { requireBearerToken, verifySession } from './session';
 import { login } from './service';
+import { revokeToken } from './tokens';
 
 /** What the namespace needs; supplied by `routes/index.ts` from the pipeline context. */
 export interface AuthRouteOptions {
@@ -91,5 +99,53 @@ export const authRoutes: FastifyPluginCallback<AuthRouteOptions> = (app, options
       if (retryAfter !== null) void reply.header('retry-after', retryAfter);
       throw error;
     }
+  });
+
+  // The SPA's boot check: is the token in `sessionStorage` still worth holding, and for how long?
+  app.get('/me', async (request): Promise<MeResponse> => {
+    const session = await verifySession(
+      app.db.db,
+      requireBearerToken(request.headers.authorization),
+    );
+
+    return {
+      admin: { id: session.admin.id, username: session.admin.username },
+      expiresAt: session.token.expiresAt.toISOString(),
+      lastUsedAt: session.token.lastUsedAt?.toISOString() ?? null,
+    };
+  });
+
+  // Revokes **the presented token and nothing else**: signing out on a phone must not sign out the desktop. "Sign out
+  // everywhere" is a different action, and it belongs to a password reset (`P1-AUTH-07`).
+  app.post('/logout', async (request, reply) => {
+    const presented = requireBearerToken(request.headers.authorization);
+    // Verified first, so a revoked or expired token is answered as such rather than being quietly "logged out": the
+    // caller learns whether the session had already ended.
+    const session = await verifySession(app.db.db, presented);
+
+    // One transaction: the revocation and the audit row that explains it. If the audit cannot be written, nothing is
+    // revoked and the caller gets a 500 — the alternative is a session that ended with no record of ending, and an
+    // operator asking why a token stopped working.
+    await withTransaction(app.db.db, async (trx) => {
+      // The revocation decides the answer, not the verification above. Two logouts arriving together both verify as
+      // valid (neither has committed yet), and while the *revocation* is guarded by `revoked_at is null`, a handler that
+      // ignored its result would answer `204` twice and write two `auth.logout` rows for one session — measured before
+      // this line existed. `false` means someone else ended it first, which is exactly `TOKEN_REVOKED`.
+      if (!(await revokeToken(trx, presented))) {
+        throw new AppError('TOKEN_REVOKED', 'This session has ended. Sign in again.');
+      }
+
+      await insertAuditLog(trx, {
+        actorId: session.admin.id,
+        actorName: session.admin.username,
+        action: AUDIT_ACTIONS.logout,
+        // The token id, never the token: an audit row must not hold a credential.
+        targetType: 'admin_token',
+        targetId: session.token.id,
+        ip: normaliseIp(request.ip),
+      });
+    });
+
+    await reply.code(204).send();
   });
 };

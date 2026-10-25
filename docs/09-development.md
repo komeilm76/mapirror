@@ -30,10 +30,11 @@ open http://localhost:8080            # public site
 open http://localhost:8080/_auth/login # admin login
 ```
 
-> **Where we are today:** the API boots, talks to PostgreSQL, and `POST /_auth/api/login` is real — throttled,
-> audited, and answering `200`/`400`/`401`/`403`/`429` as `04-api.md` §1 describes (`P1-AUTH-03`). Two routes are
-> still stubs answering `503 NOT_READY` (`04-api.md` §0.3). There is no SPA yet, so `bun run dev:web` shows an empty
-> shell; `bun run dev:api` serves the API on `:3000`, and `logout`/`me` arrive with `P1-AUTH-04`.
+> **Where we are today:** the API boots, talks to PostgreSQL, and the whole `/_auth/api` namespace is real —
+> `login` (throttled, audited, `200`/`400`/`401`/`403`/`429`), `me` and `logout` (`P1-AUTH-03`, `P1-AUTH-04`), all as
+> `04-api.md` §1 describes. Two routes are still stubs answering `503 NOT_READY` (`04-api.md` §0.3). There is no SPA
+> yet, so `bun run dev:web` shows an empty shell; `bun run dev:api` serves the API on `:3000`, and the admin guard
+> (`P1-AUTH-05`) is what will put `/_admin/api/*` behind the tokens these routes mint.
 
 ## 3. First run (local dev, hot reload)
 

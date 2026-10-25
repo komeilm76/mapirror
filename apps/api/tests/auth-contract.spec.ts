@@ -8,6 +8,7 @@ import {
   LOGIN_USERNAME_MAX,
   LOGIN_USERNAME_MIN,
   LoginResponseSchema,
+  MeResponseSchema,
 } from '@mapirror/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -66,6 +67,28 @@ describe('the login contract matches 04-api.md', () => {
     // says so. If either half loses that, this fails.
     const section = doc.slice(doc.indexOf('### `POST /_auth/api/login`'));
     expect(section).toMatch(/no-store/u);
+  });
+
+  it('documents the /me body this module exports', () => {
+    const section = doc.slice(doc.indexOf('### `GET /_auth/api/me`'));
+    expect(section, 'the /me section must exist').not.toBe('');
+
+    for (const field of ['"admin"', '"expiresAt"', '"lastUsedAt"']) {
+      expect(section.slice(0, 900), field).toContain(field);
+    }
+    // The same three fields the schema has: a document promising a fourth would be a client reading a field that never
+    // arrives, and a schema growing one would be an undocumented field.
+    expect(Object.keys(MeResponseSchema.shape).sort()).toEqual([
+      'admin',
+      'expiresAt',
+      'lastUsedAt',
+    ]);
+  });
+
+  it('documents logout as revoking only the presented token, with 204', () => {
+    const section = doc.slice(doc.indexOf('### `POST /_auth/api/logout`'));
+    expect(section.slice(0, 900)).toContain('204');
+    expect(section.slice(0, 900)).toMatch(/only the presented token/u);
   });
 
   it('no longer lists login in the stub table', () => {

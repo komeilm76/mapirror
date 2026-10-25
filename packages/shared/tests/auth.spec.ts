@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   AdminProfileSchema,
+  MeResponseSchema,
   LOGIN_PASSWORD_MAX,
   LOGIN_PASSWORD_MIN,
   LOGIN_USERNAME_MAX,
@@ -151,6 +152,42 @@ describe('LoginResponseSchema', () => {
     // than the token the client asked for.
     expect(Object.keys(LoginResponseSchema.shape).sort()).toEqual(['admin', 'expiresAt', 'token']);
     expect(Object.keys(AdminProfileSchema.shape).sort()).toEqual(['id', 'username']);
+  });
+});
+
+describe('MeResponseSchema', () => {
+  const valid = {
+    admin: { id: '6f1d0f34-3c6a-4d1b-9e0c-0b8f7a2e5d41', username: 'admin' },
+    expiresAt: '2026-10-25T21:00:00.000Z',
+    lastUsedAt: null,
+  };
+
+  it('accepts a session that has not been used yet, and one that has', () => {
+    expect(MeResponseSchema.safeParse(valid).success).toBe(true);
+    expect(
+      MeResponseSchema.safeParse({ ...valid, lastUsedAt: '2026-10-25T09:30:00.000Z' }).success,
+    ).toBe(true);
+  });
+
+  it('requires an ISO instant for both timestamps', () => {
+    for (const payload of [
+      { ...valid, expiresAt: 'tomorrow' },
+      { ...valid, expiresAt: 1_792_929_600 },
+      { ...valid, lastUsedAt: 'never' },
+      { ...valid, lastUsedAt: undefined },
+    ]) {
+      expect(MeResponseSchema.safeParse(payload).success, JSON.stringify(payload)).toBe(false);
+    }
+  });
+
+  it('carries no credential', () => {
+    // `/me` is called with a token and answers about it; a token in the *response* would put the credential in one more
+    // place (a log, a screenshot, a cache) for no benefit — the caller already holds it.
+    expect(Object.keys(MeResponseSchema.shape).sort()).toEqual([
+      'admin',
+      'expiresAt',
+      'lastUsedAt',
+    ]);
   });
 });
 

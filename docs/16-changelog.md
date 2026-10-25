@@ -3,9 +3,40 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 23 passes · 123 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2).
+**Totals:** 24 passes · 124 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 24 — 2026-10-25 (adversarial review of `P1-AUTH-04`)
+
+One defect, found by probing a race rather than by reading: two requests, one session, and an audit trail that said the
+session had ended twice.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **Concurrent logouts both answered `204` and wrote two `auth.logout` rows for one session.** The handler verified the token, then revoked it, then audited — and the verification says nothing about what happens *after* it. Two logouts arriving together both verify as valid (neither has committed), the first revocation wins, the second updates zero rows, and the handler ignored that result: `204` twice, two audit rows, one session. An audit trail that reports a session ending twice is worse than no audit trail, because the second row is indistinguishable from a real second session. Probed with `Promise.all` on one token before the fix: `204 204`, 2 rows | The **revocation decides the answer**: `revokeToken` returns `false` when `revoked_at` is already set (its `UPDATE … WHERE revoked_at IS NULL` is the atomic arbiter), and that `false` is now thrown as `401 TOKEN_REVOKED` inside the transaction, so nothing is audited. Re-probed: `204 401`, 1 row. The new test asserts the sorted status pair and the single row, which is deterministic whichever request wins — the loser either sees the revocation at verification time or loses the update, and both paths answer the same code |
+
+Three smaller outcomes of the same review, all of which changed code:
+
+- **`readBearerToken` had a condition no input could reach.** After `trim()` and a split on runs of whitespace, a
+  malformed header yields `undefined`, never `''` — so `value.length === 0` was a branch no test could cover. Removed,
+  with the reasoning in the comment: this is the fifth time in this project that "it looks defensive" turned out to mean
+  "it cannot happen", and each time the cost was a coverage gap that hid nothing.
+- **The credential is never normalised.** A test asserts `ReadBearerToken` returns the token verbatim; trimming or
+  lower-casing it would hash to a digest no row holds, i.e. a `401` for a perfectly good token. The mutation that adds
+  `.trim()` is therefore **equivalent** — no input can carry whitespace inside a single credential once the header is
+  split — and is recorded here rather than chased with a contrived test.
+- **`/me`'s `lastUsedAt` fallback is reachable only under a race** (two first-ever requests: both read `null`, one wins
+  the write, the loser reports `null`). It stays, because the value is the honest answer for that request, and it is the
+  one branch in the module no test can pin deterministically; the mutation that replaces `?? null` with a fabricated
+  instant is therefore not caught, and the coverage gap is stated here instead of being papered over.
+
+Also confirmed by probe and left alone (no change needed): a `401` from `/me` carries `cache-control: no-store` (the
+hook is on the namespace, not the handler); a 20 KB `Authorization` header answers `401` rather than `500`; a Unicode
+credential is refused without a query; and 300 unauthenticated `/me` requests take ~210 ms end to end in-process — one
+indexed digest lookup each, so the route needs no limiter of its own.
 
 ---
 
