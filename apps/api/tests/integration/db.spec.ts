@@ -1,3 +1,5 @@
+import { Writable } from 'node:stream';
+
 import { sql } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -115,6 +117,34 @@ describe.skipIf(!available)('the db stage against a real server', () => {
       const response = await instance.inject({ method: 'GET', url: '/_public/api/countries' });
       expect(response.statusCode).toBe(503);
     } finally {
+      await instance.close();
+    }
+  });
+
+  it('logs a connection lost while idle, instead of swallowing it', async () => {
+    // The stage's pool listener exists so a dropped idle connection cannot crash the process; a listener that
+    // only discards the error also hides it. A database that drops connections every few minutes would look
+    // perfectly healthy until a query happened to land on the dead socket.
+    const chunks: string[] = [];
+    const stream = new Writable({
+      write(chunk: Buffer | string, _encoding, done) {
+        chunks.push(chunk.toString());
+        done();
+      },
+    });
+    // No handle passed: the stage must create the pool, because that is the one wired to the logger.
+    const instance = await buildApp({ config: testConfig(), logger: { level: 'warn', stream } });
+    const killer = createDatabase(testConfig());
+    try {
+      const backend = await sql<{ pid: number }>`select pg_backend_pid() as pid`.execute(
+        instance.db.db,
+      );
+      await sql`select pg_terminate_backend(${backend.rows[0]!.pid})`.execute(killer.db);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(chunks.join('')).toContain('lost while idle');
+    } finally {
+      await killer.close();
       await instance.close();
     }
   });

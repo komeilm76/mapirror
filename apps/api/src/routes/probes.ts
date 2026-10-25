@@ -18,7 +18,6 @@
  * @module routes/probes
  */
 
-import { randomUUID } from 'node:crypto';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -28,8 +27,13 @@ import type { FastifyInstance, FastifyPluginCallback, FastifyReply } from 'fasti
 /** How long a readiness check may take before it counts as failed. */
 export const READY_PROBE_TIMEOUT_MS = 2_000;
 
-/** Name of the file the cache check writes and removes. Dot-prefixed: never a country artifact. */
-export const CACHE_PROBE_FILE_PREFIX = '.readyz-';
+/**
+ * File the cache check writes and removes. Dot-prefixed, so it can never collide with a country artifact, and
+ * **one fixed name** rather than one per call: a probe killed between the write and the unlink would otherwise
+ * leave a uniquely named file that nothing ever cleans up, and the storage screen reports unknown files under
+ * `CACHE_DIR` as orphans. With a fixed name the next probe overwrites and removes it.
+ */
+export const CACHE_PROBE_FILE = '.readyz';
 
 /** Outcome of one readiness check, as it appears in the body. */
 export type CheckResult = 'ok' | 'fail';
@@ -110,7 +114,7 @@ async function bounded(run: () => Promise<unknown>, timeoutMs: number): Promise<
  * @throws When the directory cannot be created or written to. The reason is logged by the caller's handler.
  */
 async function cacheWritable(cacheDir: string): Promise<void> {
-  const file = join(cacheDir, `${CACHE_PROBE_FILE_PREFIX}${randomUUID()}`);
+  const file = join(cacheDir, CACHE_PROBE_FILE);
   try {
     await mkdir(cacheDir, { recursive: true });
     await writeFile(file, '');

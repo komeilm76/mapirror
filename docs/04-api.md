@@ -592,7 +592,7 @@ hang is worse than a missing one — the load balancer waits, requests queue, an
 | Check | What it proves |
 |---|---|
 | `database` | `select 1` through the pool used to serve requests |
-| `cache` | `CACHE_DIR` accepts a write: a `.readyz-<uuid>` file is created and removed (the directory is created if missing — a fresh volume is empty) |
+| `cache` | `CACHE_DIR` accepts a write: a `.readyz` file is created and removed (the directory is created if missing — a fresh volume is empty). One fixed name, so a probe killed between the write and the delete cannot leave a file that nothing will ever clean up — the next probe overwrites and removes it |
 
 ```json
 // 200
@@ -604,6 +604,11 @@ hang is worse than a missing one — the load balancer waits, requests queue, an
 The body names the checks and **nothing else**. A driver's error text can contain the DSN, and the cache path is
 an internal detail; the reason for each failure goes to the log at `warn`, under the request id in
 `x-request-id`, one line per failing check.
+
+**The probes are the one documented exception to the §0.2 envelope.** `{"status","checks"}` answers `200` and
+`503` alike, because a machine reads it: an orchestrator wants to know *which* dependency is unhealthy, not a
+code and a sentence. Everything else — a wrong method, an unknown path — still answers the envelope, and the
+security headers and `x-request-id` are on probe responses exactly as everywhere else.
 
 ---
 

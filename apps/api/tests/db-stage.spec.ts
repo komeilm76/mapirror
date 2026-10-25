@@ -84,6 +84,38 @@ describe('the db stage', () => {
     expect((error as AppError).message).not.toContain('127.0.0.1');
   });
 
+  it('closes the handle when the boot is refused for an illegal route', async () => {
+    // Two boot failures exist and only one of them used to clean up. `onReady` failing is caught by `buildApp`
+    // and closes the instance; a route-law violation is thrown *after* a successful boot, so if that check sits
+    // outside the same guard the pool it just opened is never closed. A supervisor retries a refused boot in a
+    // loop, so this is the same leak as the one pass 14 fixed, reached through a different door.
+    const { handle, calls } = recordingHandle();
+
+    await expect(
+      buildApp({
+        database: handle,
+        slots: [
+          {
+            id: 'db',
+            rationale: 'test',
+            task: null,
+            install: (instance, context) => installDb(instance, { ...context, database: handle }),
+          },
+          {
+            id: 'routes',
+            rationale: 'test',
+            task: null,
+            install: (instance) => {
+              instance.get('/_site/leak', () => ({ ok: true }));
+            },
+          },
+        ],
+      }),
+    ).rejects.toThrow(/violates L1/);
+
+    expect(calls.close).toBe(1);
+  });
+
   it('closes the handle when the app closes, however the handle arrived', async () => {
     // One rule: `app.db` is the app's database, so its lifetime is the app's. An earlier version closed only
     // handles it had created itself, which made a caller-supplied pool leak across restarts — the kind of bug

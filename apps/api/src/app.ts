@@ -104,6 +104,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       // above pass while the `db` stage quietly opened a real pool against the default DSN.
       ...(options.database === undefined ? {} : { database: options.database }),
     });
+
+    // Enforced after the boot, because a throwing `onRoute` hook stalls `ready()` forever — see the module
+    // comment in `plugins/route-law.ts`. Booting first also lets the error list every offending route.
+    //
+    // Inside the guard on purpose. It is the *second* way a boot can be refused, and while it sat outside, an
+    // illegal route left a booted instance — with its pool — for nobody to close: the same leak as a failed
+    // `onReady` ping, reached through a different door.
+    assertRouteLaw(routeLaw.violations);
   } catch (error) {
     // A partial boot owns resources — the `db` stage has already opened a pool, and the failed instance is never
     // returned, so nothing else can close them. A supervisor retries a failed boot in a loop; without this, every
@@ -112,10 +120,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     await app.close().catch(() => undefined);
     throw error;
   }
-
-  // Enforced after the boot, because a throwing `onRoute` hook stalls `ready()` forever — see the module
-  // comment in `plugins/route-law.ts`. Booting first also lets the error list every offending route.
-  assertRouteLaw(routeLaw.violations);
 
   return app;
 }

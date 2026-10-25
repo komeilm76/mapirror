@@ -31,6 +31,9 @@ import { AppError } from '../lib/errors';
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface Database {}
 
+/** Receives an error that happened on a connection the pool was not using. */
+export type PoolErrorListener = (error: Error) => void;
+
 /**
  * A live database handle: the query builder, a liveness check, and the way to close what it opened.
  *
@@ -63,9 +66,12 @@ export const PING_TIMEOUT_MS = 5_000;
  * during boot, so a failure has exactly one shape and one message.
  *
  * @param config - Validated configuration (DSN and pool size).
+ * @param onPoolError - Called when a connection is lost while idle. The stage passes the app logger, so a
+ * database that keeps dropping connections is visible in the log; omitting it keeps the pool silent, which is
+ * what a short-lived test handle wants.
  * @returns The handle every repository receives.
  */
-export function createDatabase(config: AppConfig): SqlDatabase {
+export function createDatabase(config: AppConfig, onPoolError?: PoolErrorListener): SqlDatabase {
   const pool = new pg.Pool({
     connectionString: config.databaseUrl,
     max: config.dbPoolMax,
@@ -77,9 +83,13 @@ export function createDatabase(config: AppConfig): SqlDatabase {
   });
 
   // An error on an **idle** client is not tied to any query, so `pg` emits it on the pool. Node's default for an
-  // unhandled `error` event is to throw, which would take the process down for a database restart. The pool
-  // discards the broken client and the next query reconnects.
-  pool.on('error', () => undefined);
+  // unhandled `error` event is to throw, which would take the process down for a database restart; the pool
+  // discards the broken client and the next query reconnects. Listening is not optional — reporting is: a
+  // handler that only discards the error is how a database that drops connections every few minutes stays
+  // invisible until it becomes an outage.
+  pool.on('error', (error: Error) => {
+    onPoolError?.(error);
+  });
 
   const db = new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
 

@@ -3,9 +3,31 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 15 passes · 104 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2).
+**Totals:** 16 passes · 107 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 16 — 2026-10-25 (adversarial review of the working tree after `P1-API-07`)
+
+Three defects, found by asking what the *process* does rather than what the tests assert. The first is the same
+leak pass 14 fixed, reached through the other door; the other two are errors being discarded with no trace.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **A boot refused for an illegal route left the pool open.** `buildApp` gained a `try`/`catch` in pass 14 so a failed `onReady` ping closes the instance — but the route-law check runs *after* a successful boot and sat outside that guard. Measured with a recording handle: `buildApp` rejects with `One route violates the route law`, and `close` had been called **0** times. In production the process exits and the socket dies with it, which is why nothing looked wrong; in any process that builds apps more than once (tests today, a worker entry point later) it leaks `DB_POOL_MAX` connections per attempt | The check moved inside the guard, so both ways a boot can be refused take the same shutdown path. Test asserts `close` ran exactly once after a route-law rejection; the same probe now prints `1` |
+| 2 | **A connection lost while idle was discarded in silence.** The pool listener is required — a Node `EventEmitter` that emits `error` with no listener throws, so a Postgres restart would end the process — but it was `() => undefined`: the driver's error went nowhere. A database that drops connections every few minutes would look healthy in the log until a query happened to land on the dead socket and the request failed | `createDatabase` takes an optional `onPoolError`, and the `db` stage passes the app logger, so the drop is a `warn` with the driver error attached. Probed by restarting Postgres under a running API: `10` lines (`one per pooled connection the restart dropped`), `/readyz` stayed `200` because the pool reconnected. Optional on purpose — a test handle that is thrown away does not want a logger |
+| 3 | **A killed probe could leave a file in `CACHE_DIR` forever.** The cache check wrote `.readyz-<uuid>` and deleted it; a probe killed between the two — process restart, container stop — leaves a uniquely named empty file, and no later probe will ever touch that name again. `CACHE_DIR` is user-visible: the storage screen reports unknown files as orphans, so this becomes permanent litter that a human has to clear | One fixed name, `.readyz`. The next probe overwrites and removes it, so the directory heals itself, and two concurrent probes still cannot collide in a way that matters (both write an empty file; the second delete is a no-op). Test plants a leftover and asserts the directory is empty afterwards |
+
+Mutation checks: silencing the pool listener fails the new integration test, and restoring per-call file names fails
+the leftover test.
+
+Also verified while reviewing, with no defect found: 40 concurrent `/readyz` requests all answer `200` and leave no
+files behind; file descriptors plateau at the pool's `DB_POOL_MAX` and drain after the 30 s idle timeout (no leak);
+an inbound `x-request-id` is echoed on probe responses; a foreign-origin `OPTIONS /readyz` is refused `403` while
+`POST /readyz` answers the `404` envelope; and a second `SIGTERM` while shutting down produces exactly one
+`shutting down` line.
 
 ---
 

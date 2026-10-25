@@ -6,6 +6,7 @@ import { Writable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  CACHE_PROBE_FILE,
   READY_PROBE_TIMEOUT_MS,
   buildApp,
   installDb,
@@ -125,6 +126,23 @@ describe('GET /readyz', () => {
       checks: { database: 'ok', cache: 'ok' },
     });
     // A probe file must not survive the probe: the cache directory is user-visible through the admin UI.
+    expect(await readdir(cacheDir)).toEqual([]);
+  });
+
+  it('cleans up a probe file left behind by a probe that was killed', async () => {
+    // A file written by a probe that died before its `unlink` must not become permanent litter in a directory
+    // the admin UI reports orphans from: with one fixed name, the next probe overwrites and removes it.
+    const cacheDir = await tempCacheDir();
+    await writeFile(join(cacheDir, CACHE_PROBE_FILE), '');
+    const instance = await buildTestApp({
+      config: parseEnv({ CACHE_DIR: cacheDir }),
+      database: stubDatabase(),
+    });
+    apps.push(instance);
+
+    const response = await instance.inject({ method: 'GET', url: '/readyz' });
+
+    expect(response.statusCode).toBe(200);
     expect(await readdir(cacheDir)).toEqual([]);
   });
 
