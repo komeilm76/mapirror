@@ -31,8 +31,10 @@ sequenceDiagram
   Entry->>Entry: start Fastify + worker
 ```
 
-**Rules:** password from `ADMIN_PASSWORD`, `ADMIN_PASSWORD_FILE`, or hidden prompt; min 12 chars;
-never logged; re-running never overwrites an existing password (use the reset script).
+**Rules:** password from `ADMIN_PASSWORD`, `ADMIN_PASSWORD_FILE`, or hidden prompt; the creation policy of
+`14-security.md` §3 applies (≥ 12 characters, not on the blocklist, no username inside it — enforced by
+`modules/auth/password.ts`, `P1-AUTH-01`); never logged; re-running never overwrites an existing password (use
+the reset script).
 **Tests:** `scripts/tests/init-admin.spec.ts` — create, idempotent re-run, weak password rejected,
 missing env + non-interactive → clear error, exit code 1.
 
@@ -85,7 +87,7 @@ sequenceDiagram
 
 **Options:** `--generate` prints a strong password **once**; `--password-stdin` for automation.
 **Tests:** old token stops working, new password logs in, audit row `auth.password_reset` written,
-short password rejected.
+password that breaks the policy rejected (with every reason listed, not one per attempt).
 
 ---
 

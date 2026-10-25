@@ -345,6 +345,27 @@ and `vue/define-{props,emits}-declaration: type-based`.
 - **Vue:** `<script setup lang="ts">`, composables over mixins, Pinia stores per domain, Vuetify
   components only (no raw HTML styling beyond layout), tokens from the theme.
 - **Commits:** conventional (`feat:`, `fix:`, `docs:`, `test:`, `chore:`), one logical change each.
+- **Passwords** (`modules/auth/password.ts`, `P1-AUTH-01`): only two functions create or check a credential —
+  `hashPassword` and `verifyPassword` — and both normalise with NFKC, so use them instead of calling the addon.
+  - The **policy runs where a password is created** (launch and reset scripts), never on login: a stored account
+    created under an older, weaker policy must stay usable, and login must not tell an attacker what the policy is.
+  - The **floor counts characters** (code points of the NFKC form); the **ceiling counts UTF-16 units of what was
+    submitted**, because that is what the login schema's `.max()` measures. Mixing the two up creates an account
+    that can be set and never used — a test parses both numbers out of the docs and compares them to the constants.
+  - Surrounding whitespace is **rejected, not trimmed**: trimming changes the password the person set, and the next
+    login fails with no explanation.
+  - The blocklist is 1 000 lines of Django's `common-passwords.txt.gz`, taken verbatim in frequency order, licence
+    notice in the module. To grow it, take more lines from the same file (the order is the only information in it)
+    and update the count in `14-security.md` — the doc test compares the number. Matching case-folds and strips
+    trailing digits and symbols, so `Password2026!` matches `password`; substitutions (`p@ssw0rd`) are **not**
+    caught, and the module says so.
+  - Parameters live in `ARGON2_PARAMS` and govern *new* hashes only; `verify` reads them from the stored string. If
+    they are raised later, no migration is needed for existing rows.
+  - No composition rules ("must contain a symbol"). That is deliberate: `14-security.md` §3 and ADR-025.
+  - `@node-rs/argon2` is a **native addon**: the lockfile pins a build per platform/libc, so the Ubuntu image
+    resolves `argon2-linux-x64-gnu`. An Alpine base would need the `musl` variant, and a broken native install
+    fails at import time rather than silently falling back to something weaker — which is the failure mode to
+    prefer.
 
 ## 10. Adding a feature (checklist)
 

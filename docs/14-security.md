@@ -35,8 +35,8 @@ Trust nothing from: HTTP clients, multipart uploads, Geofabrik HTML/JSON respons
 
 | Control | Implementation |
 |---|---|
-| Hashing | Argon2id (memory 64 MB, iterations 3, parallelism 1) with per-hash salt |
-| Password policy | ≥ 12 chars, reject top-1000 weak list, reject username substring |
+| Hashing | Argon2id (memory 64 MiB, iterations 3, parallelism 1) with per-hash salt |
+| Password policy | ≥ 12 chars (code points, NFKC-normalised), ≤ 256 UTF-16 units (the login schema's own limit), reject top-1000 weak list (case-folded, trailing digits/symbols stripped), reject username substring, reject surrounding whitespace. Enforced where passwords are **created**, not on login. No composition rules (NIST SP 800-63B) — see ADR-025 |
 | Tokens | 256-bit random, `mm_` prefix, **SHA-256 hash stored**, constant-time compare, TTL 12 h |
 | Revocation | Logout revokes one; password reset revokes all; expired rows pruned |
 | Login throttling | ≤ 10 failures / 15 min per (ip, username) → `429` + `Retry-After` (a disabled account gets `403 ACCOUNT_DISABLED` — not `ACCOUNT_LOCKED`, which read like throttling), generic error messages |

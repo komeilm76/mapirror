@@ -3,9 +3,35 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 19 passes · 114 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3).
+**Totals:** 20 passes · 117 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 20 — 2026-10-25 (adversarial review of `P1-AUTH-01`)
+
+Three defects. The first is the interesting kind: it passes every test written for the feature, passes review, and
+fails only on the second login.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The password ceiling was counted in the wrong unit, so an account could be created and never used.** The policy rejected passwords longer than 256 *characters*, and the login schema rejects bodies where the password is longer than 256 *UTF-16 code units* (Zod's `.max()` on a string). The two agree for ASCII and disagree exactly where a user is likely to notice: measured, `'😀'.repeat(200)` is 200 characters and 400 units — accepted by the policy, refused by login, forever, with a `422` that says the request is invalid. The same hole in the other direction: a decomposed string of 300 units normalises (NFKC) to 150 characters, so the *normalised* count would have passed it too. Probing before the fix: `passwordProblems(decomposed)` → `[]` while the login schema refuses it | The ceiling now measures `password.length` — the same unit, on the same string, that the login schema measures — while the floor keeps counting characters (code points of the NFKC form), because that is the unit the policy is expressed in. Both units are named in `PASSWORD_POLICY`, in ADR-025 and in `14-security.md`. Two tests pin the two shapes that fell through (200 emoji, 300 decomposed units), and reverting to the character comparison fails one of them. A doc test also parses the `1–256` limit out of `04-api.md` and compares it to the constant, so the pair cannot drift again |
+| 2 | **The security doc advertised a weaker hash than the code builds.** `14-security.md` §3 said "memory 64 MB" while `ARGON2_PARAMS.memoryCost` is `65_536` KiB, i.e. 64 **MiB** — 67.1 MB. Reading the doc, an operator would have sized the container's memory for a hash 5% smaller than the real one; reading it as the source of truth, a reviewer checking "does the code match the docs?" would have found a discrepancy and had to guess which side was wrong | The doc says MiB. More importantly, three tests now **parse** the numbers out of `14-security.md` and `04-api.md` (hash memory, iterations, parallelism, minimum length, blocklist size, login ceiling) and compare them to the code's constants, so a mismatch is a red test rather than a footnote nobody reads. That is the same technique the migrator and schema tasks used for the SQL, applied to the one table whose numbers are security claims |
+
+| 3 | **The username substring rule compared bytes while the password was normalised.** The password is NFKC-normalised before matching — that is the decision that makes a macOS-typed `café` work on Linux — but the username was only trimmed and lower-cased. A username containing an accent (`José`, typed decomposed) therefore never matched a composed password that contains it, so the rule silently did nothing for exactly the accounts whose names are hardest to type | Both sides go through the same normalisation, and a test pins the case: `José-let-me-in-9` against the decomposed username must be rejected. Reverting the fix fails that test |
+
+Also recorded while probing the addon, because each changed a decision rather than just informing one:
+
+- `verify` **throws** (`Error: Decoding failed`) for anything that is not a PHC string — measured on `''`, on a
+  truncated hash and on a bcrypt hash. A corrupt row would therefore have answered `500` where the contract
+  says `401`, so verification catches and answers `false`.
+- The addon runs on the libuv thread pool, not the event loop: four concurrent 64 MiB hashes finished in 131 ms
+  with a maximum event-loop gap of 11 ms. That is what makes "hash on the request path, throttled" acceptable
+  instead of needing a queue.
+- Only **9** of the 1 000 blocklist entries reach a 12-character floor on their own — the measurement that
+  turned "exact match" into "match the stem left after trailing digits and symbols", and that made the docs
+  state plainly that the list is a floor, not a guarantee.
 
 ---
 

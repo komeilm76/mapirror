@@ -1,6 +1,6 @@
 # 15 — Architecture Decision Records
 
-**TL;DR** — 24 ADRs recording *why*. The owner's decision table (D-1…D-19) lives in `PROMPT.md` §24 and
+**TL;DR** — 25 ADRs recording *why*. The owner's decision table (D-1…D-19) lives in `PROMPT.md` §24 and
 is the authority on *what*; each ADR below explains the reasoning and consequences. If a doc contradicts
 `PROMPT.md` §24, that table wins; if two docs disagree with each other, the ADR decides.
 
@@ -319,6 +319,43 @@ public API under `/_public/api/*`, `/` → `/_site/`.
 - Session-expiry redirects go to `/_auth/login` (not `/_site/login`), so the redirect target is inside
   the auth namespace too.
 - The SPA still owns the login screen (same bundle); it just lives at a different prefix.
+
+---
+
+## ADR-025 — Password policy: length and a blocklist, no composition rules
+
+**Context.** AUTH-5 requires Argon2id, and AUTH-1 requires "password policy enforced (min length, not in a
+small weak-password list)" with input hidden and never logged. The obvious additions — "must contain a
+digit, a symbol, mixed case" — are what most policies do, and they are measurably counter-productive:
+people answer them with `Passw0rd!` and then `Passw0rd2!` at the next rotation, which is a *smaller*
+effective space than a long passphrase. NIST SP 800-63B §5.1.1.2 drops composition rules for that reason.
+
+**Decision.**
+
+| Rule | Value | Why |
+|---|---|---|
+| Hash | Argon2id, 64 MiB, 3 passes, parallelism 1, 16-byte random salt, PHC-encoded | The reference algorithm, from the Rust reference implementation; the stored string carries its own parameters |
+| Floor | 12 characters, counted as Unicode code points of the NFKC form | What a person counts; `'😀'.length` is 2 and would let six emoji through |
+| Ceiling | 256 UTF-16 units of the submitted string | The login schema's own `.max()`. A ceiling in different units creates an account that can be set and never used |
+| Blocklist | 1 000 most-used passwords (Django's list, verbatim), matched case-folded and with trailing digits/symbols stripped | A floor against the first thing anyone tries; the stem rule is what makes it fire at a 12-character floor |
+| Username | Rejected as a substring, when the username is ≥ 3 characters | Short usernames appear inside ordinary words |
+| Whitespace | Surrounding whitespace rejected, not trimmed | Trimming changes the password that was set |
+| Normalisation | NFKC, in both hashing and verification | `café` from a macOS keyboard must log in on Linux |
+| Composition rules | **None** | See the context: they produce predictable passwords |
+
+**Consequences.**
+
+- The policy is enforced only where a password is **created** (the launch script, the reset script). Login
+  verifies whatever the account was created with, so tightening the policy later cannot lock anyone out, and
+  a login attempt cannot be used to learn the policy.
+- The blocklist is a floor, not a guarantee: substitutions (`p@ssw0rd`) and repetitions (`adminadmin`) pass.
+  A breached-password API (HIBP k-anonymity) would close most of that gap and is deliberately **not** used —
+  it would make password creation depend on a third-party service being reachable, in a self-hosted app that
+  has to work offline.
+- Argon2 cost is bounded by the login throttle (10 failures / 15 min per ip+username): each hash holds 64 MiB
+  and one libuv thread for ~74 ms, so an unthrottled endpoint would be a memory-amplification lever.
+- Raising `ARGON2_PARAMS` later does not invalidate existing rows — verification reads the parameters from
+  each stored hash.
 
 ---
 

@@ -89,3 +89,7 @@ Ubuntu 24.04 runbook: [`docs/12-deployment.md`](docs/12-deployment.md).
 Map data served by MapMirror comes from [Geofabrik](https://download.geofabrik.de) and is
 © OpenStreetMap contributors, licensed under
 [ODbL 1.0](https://opendatacommons.org/licenses/odbl/). Public pages display this attribution.
+
+The embedded weak-password list (`apps/api/src/modules/auth/weak-passwords.ts`) is derived from Django's
+`common-passwords.txt.gz` (© Django Software Foundation and individual contributors, BSD-3-Clause); the
+licence notice sits at the top of that module.

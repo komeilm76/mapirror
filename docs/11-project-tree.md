@@ -46,6 +46,7 @@ mapirror/
 │  │  │  │  │  ├─ routes.ts
 │  │  │  │  │  ├─ service.ts
 │  │  │  │  │  └─ password.ts      # Argon2id hash/verify + policy
+│  │  │  │  │                   # weak-passwords.ts: 1 000-entry blocklist (Django, BSD-3)
 │  │  │  │  ├─ admin/              # /_admin/api: catalog, cache, versions, imports,
 │  │  │  │  │  │                   # intervals, jobs, metrics, settings, audit
 │  │  │  │  │  ├─ routes/{catalog,cache,versions,imports,intervals,jobs,system,settings,audit}.ts
