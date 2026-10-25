@@ -1,11 +1,9 @@
-import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { sql } from 'kysely';
-import pg from 'pg';
-import { afterAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   MIGRATIONS_DIR,
@@ -13,7 +11,7 @@ import {
   migrateToLatest,
   resetDatabase,
 } from '../../src/db/migrator';
-import { createDatabase, parseEnv, type SqlDatabase } from '../../src/index';
+import { freshDatabaseSkipReason, withFreshDatabase } from '../helpers/fresh-db';
 import { Migrator } from 'kysely/migration';
 
 /**
@@ -26,84 +24,8 @@ import { Migrator } from 'kysely/migration';
  * test role has it, the suite runs, and where it does not, it says so instead of failing.
  */
 
-/** DSN of the test server, as documented in `09-development.md`. */
-const DSN =
-  process.env.DATABASE_URL_TEST ?? 'postgres://mapirror:mapirror@localhost:5432/mapirror_test';
-
-/** Rewrites a DSN to point at another database on the same server. */
-function dsnFor(database: string): string {
-  const url = new URL(DSN);
-  url.pathname = `/${database}`;
-  return url.toString();
-}
-
-/** Scratch databases created by this file, dropped in teardown (and again in `finally`). */
-const created: string[] = [];
-
-/**
- * Creates an empty database and hands it over, dropping it afterwards whatever happens.
- *
- * @param run - Receives a handle to the fresh database and its name.
- * @throws `SKIP_CREATEDB` when the role may not create databases, which the suite reports as a skip.
- */
-async function withFreshDatabase(
-  run: (database: SqlDatabase, name: string) => Promise<void>,
-): Promise<void> {
-  const name = `mapirror_mig_${randomUUID().replaceAll('-', '').slice(0, 12)}`;
-  const admin = new pg.Client({ connectionString: dsnFor('postgres') });
-
-  try {
-    await admin.connect();
-  } catch {
-    await admin.end().catch(() => undefined);
-    throw new SkipError('cannot reach the "postgres" database to create a scratch database');
-  }
-
-  try {
-    await admin.query(`create database ${name}`);
-  } catch (error) {
-    await admin.end().catch(() => undefined);
-    const code = (error as { code?: string }).code;
-    if (code === '42501' || code === '3D000') {
-      throw new SkipError(`the test role may not create databases (${code})`);
-    }
-    throw error;
-  }
-  created.push(name);
-
-  const database = createDatabase(parseEnv({ DATABASE_URL: dsnFor(name) }));
-  try {
-    await run(database, name);
-  } finally {
-    await database.close();
-    await admin.query(`drop database if exists ${name} with (force)`);
-    await admin.end();
-    created.splice(created.indexOf(name), 1);
-  }
-}
-
-/** Thrown when the environment cannot host this suite; reported as a skip with the reason. */
-class SkipError extends Error {}
-
 /** Asks the server once whether a scratch database can be created; the answer becomes the skip decision. */
-const canCreate = await (async (): Promise<string | null> => {
-  try {
-    await withFreshDatabase(() => Promise.resolve());
-    return null;
-  } catch (error) {
-    return error instanceof SkipError ? error.message : (error as Error).message;
-  }
-})();
-
-afterAll(async () => {
-  // Belt and braces: a crash inside a test still leaves the server clean for the next run.
-  const admin = new pg.Client({ connectionString: dsnFor('postgres') });
-  await admin.connect().catch(() => undefined);
-  for (const name of created) {
-    await admin.query(`drop database if exists ${name} with (force)`).catch(() => undefined);
-  }
-  await admin.end().catch(() => undefined);
-});
+const canCreate = await freshDatabaseSkipReason();
 
 describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
   it('creates every documented phase-1 table and index', async () => {

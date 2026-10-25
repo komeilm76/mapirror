@@ -149,6 +149,11 @@ bun run db:migrate                                            # apply
 bun run db:reset                                              # dev only
 ```
 
+- **Types are not `any` and not guessed.** `apps/api/src/db/schema.ts` describes what `pg` actually returns
+  (`bigserial` → `string`, `timestamptz` → `Date`, `bytea` → `Buffer`, `jsonb` → parsed, `inet` → `string`), and a
+  test walks `src/db` with comments stripped to prove no `any` is used there. A table or column that does not exist
+  is a compile error; `bun run typecheck` is what enforces it, so `expectTypeOf` assertions are compile-time
+  checks, not runtime ones.
 - Migrations: `apps/api/src/db/migrations/NNNN_name.sql`, forward-only, applied by
   `apps/api/src/db/migrator.ts` (Kysely's migrator over plain SQL files). Add the Kysely type change in
   `schema.ts` in the same commit — `P1-DB-02` owns the types, `P1-DB-04` runs this at boot.
@@ -174,6 +179,12 @@ bun run db:reset                                              # dev only
 | Contract | `packages/shared/tests/**` | Zod schemas accept/reject the documented shapes |
 | Component | `apps/web/tests/**` | tables, dialogs, forms, stores (Vitest + jsdom/VTU) |
 | Fixtures | `apps/api/tests/fixtures/**` | saved Geofabrik index + region HTML; a local HTTP server serves pbf/md5 |
+
+**A suite that needs a database in a known state creates one per test** (`tests/helpers/fresh-db.ts`). A shared
+`mapirror_test` cannot answer "a fresh database → migrate → these columns exist": it is whatever the last run left,
+and two files running in parallel contend for it. The helper creates a real database, runs `0001_init` when asked,
+hands over a handle and drops it afterwards — and where the test role lacks `CREATEDB` the suite skips with that
+reason rather than failing on something the developer did not do wrong.
 
 An integration suite **skips itself, with the reason, when the database it names is not answering** — it probes
 `DATABASE_URL_TEST` once before `describe` (`describe.skipIf`) rather than failing a laptop with no Postgres

@@ -438,6 +438,10 @@ CREATE INDEX audit_logs_action_idx ON audit_logs (action, created_at DESC);
   backfills in a follow-up migration, destructive changes last).
 - `schema.ts` (Kysely types) is updated **in the same commit** as the migration; a startup check
   compares migration count with an expected constant to catch version skew.
+- The TypeScript types describe what the **driver returns**, which is not always what the SQL type suggests — the
+  measured table lives in `apps/api/src/db/schema.ts` (`bigserial` → `string`, `timestamptz` → `Date`,
+  `bytea` → `Buffer`, `jsonb` → parsed value, `inet` → `string`). A column's SQL type here and its JS type there are
+  both part of the contract; tests compare them in both directions against a freshly migrated database.
 
 ## 5. Sizing estimate
 

@@ -66,7 +66,7 @@ mapirror/
 │  │  │  ├─ db/
 │  │  │  │  ├─ migrations/         # 0001_init.sql … (SQL only, Kysely migrator)
 │  │  │  │  ├─ migrator.ts         # SQL provider, migrateToLatest/resetDatabase, name rules
-│  │  │  │  ├─ schema.ts           # Kysely DB interface (generated/maintained by hand)
+│  │  │  │  ├─ schema.ts           # Kysely table types, phase 1 (measured JS types, no `any`)
 │  │  │  │  └─ repositories/       # Typed queries per aggregate
 │  │  │  └─ lib/
 │  │  │     ├─ storage.ts          # Path building, .part files, atomic rename, delete

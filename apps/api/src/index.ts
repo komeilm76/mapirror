@@ -14,6 +14,7 @@ export * from './lib/errors';
 export * from './lib/logger';
 export * from './config/prefixes';
 export * from './db/client';
+export * from './db/schema';
 export {
   pendingPlugins,
   PLUGIN_ORDER,

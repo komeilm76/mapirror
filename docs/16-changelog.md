@@ -3,9 +3,27 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 16 passes · 107 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3).
+**Totals:** 17 passes · 109 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 17 — 2026-10-25 (adversarial review of `P1-DB-02`)
+
+Two defects, both in the new schema work, both found by trying to *break* the guarantee rather than by reading it.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The type assertions did not run.** The suite asserted `id` is a `string` with `expectTypeOf`, which is a compile-time DSL: at runtime the calls are no-ops, so `bun run test` passed with `AuditLogs.id` changed to `Generated<number>` — a mutation that compiles, reads fine on a small database, and then compares wrong. The test claimed a guarantee that only `tsc` provides, and nothing said so | The compile-time half stays (it *is* enforced — `bun run typecheck` fails with `Expected: string, Actual: number`) with a comment stating exactly that and how it was verified; and the runtime half was added against a real server (`instanceof Date`, `Buffer.isBuffer`, `typeof id === 'string'`), which is the one that catches a type the driver disagrees with |
+| 2 | **An insert could supply a generated id.** Ids were `Generated<T>`, whose insert type includes `T` — so `insertInto('audit_logs').values({ id: '7', … })` compiled. For `bigserial` that writes the row without advancing the sequence, and the next generated id collides: a failure that surfaces later, in a different request, far from the insert that caused it | `GeneratedAlways<string>` for all three ids: insert type `never`, so the mistake is a compile error. Pinned with `@ts-expect-error` in the suite |
+
+Neither existed in a released build — both were in uncommitted work, like passes 14 and 15.
+
+Verified while reviewing, with the edit applied and asserted (the first attempt silently no-op'd, which is why the
+first result was a false pass): a column added to the SQL only fails 2 tests, a column added to the interface only
+fails 1, `user_agent text NOT NULL` in SQL only fails 3, a renamed property fails 1, a stray `any` fails 1, and
+`Generated<number>` for the audit id fails `tsc`.
 
 ---
 

@@ -6,9 +6,10 @@
  * module — so a query can always be traced to the thing that opened it, and a service can compose two writes in
  * one transaction without reaching for a global.
  *
- * **Typed but not yet modelled.** `Database` is empty until `P1-DB-02` writes the table types. It is declared
- * here anyway, because the alternative — `Kysely<any>` — is the one type that would let a query compile against
- * a table that does not exist, and law `L5` bans exactly that.
+ * **Typed, not `any`.** The table map lives in `db/schema.ts` (`P1-DB-02`) and is re-exported from here, so a
+ * query against a table or column that does not exist fails to compile — the guarantee law `L5` asks for. The
+ * phase-2 tables join the same map (`P2-DB-01`); until then a query against one is a type error, which is the
+ * correct behaviour for a table the schema does not have yet.
  *
  * @module db/client
  */
@@ -17,19 +18,12 @@ import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
 
 import type { AppConfig } from '../config/env';
+import type { Database } from './schema';
 import { AppError } from '../lib/errors';
 
-/**
- * The tables Kysely knows about.
- *
- * Deliberately empty for now: `P1-DB-02` fills it from `03-data-model.md`. An empty interface is not `any` — a
- * query against an unknown table still fails to compile, which is the property that keeps `P1-DB-02` honest.
- */
-// `{}` is the honest type until `P1-DB-02` fills the table map: it still rejects unknown tables, which `unknown`
-// would not. The empty-object rule is about accidentally accepting `0` or `""` where a shape was meant — here the
-// emptiness is the starting point, not an oversight.
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Database {}
+// The table map lives in `db/schema.ts` (§`P1-DB-02`) and is re-exported here, so every caller that already
+// imports from this module keeps working and there is exactly one definition of the schema.
+export type { Database } from './schema';
 
 /** Receives an error that happened on a connection the pool was not using. */
 export type PoolErrorListener = (error: Error) => void;
