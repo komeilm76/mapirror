@@ -64,6 +64,27 @@ describe('when a credential is attached', () => {
     expect(needsBearer(LOGIN)).toBe(false);
   });
 
+  it('keeps the login exception when the call carries a query string or a fragment', () => {
+    // The exception compares paths, and a query string is not part of an endpoint's identity — so before pass 33 the
+    // request that *mints* a credential was the one carrying the previous one, whenever it was called with a parameter.
+    expect(needsBearer(`${LOGIN}?next=%2F_site%2Fadmin%2F`)).toBe(false);
+    expect(needsBearer(`${LOGIN}#form`)).toBe(false);
+    // ...and a different auth endpoint still gets it, query or not.
+    expect(needsBearer(`${ME}?fresh=1`)).toBe(true);
+  });
+
+  it('sends no authorization header on a login call with a query string', async () => {
+    // The same case one layer down: what the request actually carries.
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'mm_stale');
+    const fetchImpl = jsonFetch({ ok: true });
+
+    await createApiClient({ fetchImpl }).post(LOGIN, undefined, {
+      query: { next: '/_site/admin/' },
+    });
+
+    expect(headersOf(fetchImpl).has('authorization')).toBe(false);
+  });
+
   it('sends the stored token on an admin call', async () => {
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'mm_token');
     const fetchImpl = jsonFetch({ ok: true });
@@ -174,15 +195,17 @@ describe('how a request is built', () => {
     expect(headersOf(fetchImpl).has('content-type')).toBe(false);
   });
 
-  it('never sends cookies', async () => {
-    // D-13: the credential is a header. A later `credentials: 'include'` would quietly start carrying the server's
-    // cookies cross-site, which is the shape of a CSRF in reverse.
+  it('never sends or accepts cookies', async () => {
+    // D-13 and `14-security.md` §4: the browser holds the credential in `sessionStorage` and nowhere else. `omit` is the
+    // only value that says so in the one deployment that matters — behind nginx the SPA and the API are the *same*
+    // origin, so the default `same-origin` would attach cookies to every admin call and accept `set-cookie` from every
+    // answer. The first version of this line was `same-origin` with a comment promising it prevented exactly that.
     const fetchImpl = jsonFetch({ ok: true });
 
     await createApiClient({ fetchImpl }).get(ADMIN);
 
     const [, init] = fetchImpl.mock.calls[0] ?? [];
-    expect(init?.credentials).toBe('same-origin');
+    expect(init?.credentials).toBe('omit');
   });
 
   it('uses the documented verbs, one method each', async () => {
@@ -347,6 +370,30 @@ describe('which failures end a session', () => {
     }
 
     expect(onSessionExpired).not.toHaveBeenCalled();
+  });
+
+  it('reports the API failure even when the sign-out handler throws', async () => {
+    // A handler is other people's code — a store action, a router call — and a bug in it must not relabel the failure.
+    // Measured before this was guarded (pass 33): the client rejected with `NETWORK`, so the screen would have said
+    // "the server could not be reached" about a request that answered `401 TOKEN_EXPIRED`, and lost the request id.
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'mm_stale');
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const error = await createApiClient({
+      fetchImpl: codeFetch('TOKEN_EXPIRED', 401),
+      onSessionExpired: () => {
+        throw new Error('the handler broke');
+      },
+    })
+      .get(ADMIN)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).code).toBe('TOKEN_EXPIRED');
+    expect((error as ApiError).status).toBe(401);
+    // ...and the handler's own failure is not swallowed silently.
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    consoleError.mockRestore();
   });
 
   it('fires for an unreadable `401`, and not for an unreadable `500`', async () => {

@@ -63,6 +63,17 @@ our `surface` (page background) becomes Vuetify's **`background`**, because `v-a
 the page would be invisible. Both themes are built from this table by `styles/tokens.ts` — nothing else in the SPA
 holds a colour — and `apps/web/tests/tokens.spec.ts` parses it and fails on any hex that differs.
 
+**Nothing else is in the theme.** Vuetify merges its own Material palettes *under* the two built here, so every key this
+table does not name arrives with a colour from another design system. Measured on the shipped themes (pass 33): `info`
+`#2196F3` in **both** themes and with no `on-info` — the neutral toast's fill, with a label Vuetify picked by APCA;
+`surface-bright` `#ccbfd6` in the dark theme (a lavender "bright surface" in a control room); `secondary-darken-1` a
+Material teal while our `secondary` is indigo; and `on-surface-variant` `#EEEEEE` in the light theme — near-white ink on
+a `#F6F7F9` card, **1.04:1**. The module therefore names all seven: the surfaces and the ink alias `surface-variant` and
+`text-primary`, and `info` — a state this table does not define, so no fourteenth colour is invented — aliases
+`secondary` and gets a `bestOn` label. `tokens.spec.ts` asserts that **no colour value in either shipped theme is outside
+this table** (white and black excepted: they are the computed labels), which is what makes "no colour outside the token
+module" true of the theme and not merely of the source files.
+
 ### Typography
 
 | Role | Font | Size / weight |

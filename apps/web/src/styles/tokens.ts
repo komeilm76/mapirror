@@ -187,6 +187,9 @@ export function bestOn(fill: string): string {
 export function themeFrom(palette: Palette, dark: boolean): ThemeDefinition {
   const on: Record<string, string> = {};
   for (const name of FILL_COLOURS) on[`on-${name}`] = bestOn(palette[name]);
+  // The informational fill is an alias of `secondary` — see the aliases block below — so it needs a label too, and
+  // `getForeground`'s APCA rule is exactly what this module exists to avoid.
+  on['on-info'] = bestOn(palette.secondary);
 
   return {
     dark,
@@ -211,6 +214,30 @@ export function themeFrom(palette: Palette, dark: boolean): ThemeDefinition {
       // instead of Vuetify's default `#000`/`#fff`.
       'on-background': palette['text-primary'],
       'on-surface': palette['text-primary'],
+      'on-surface-variant': palette['text-primary'],
+      // ---- The seven keys Vuetify would otherwise supply itself ----
+      //
+      // `createVuetify` merges its own Material palettes **under** the themes it is given, so every key this function
+      // does not name keeps a colour `13-ui-ux.md` §2 has never heard of — and the leftovers are not harmless. Measured
+      // before these lines existed (pass 33), on the shipped themes:
+      //
+      // | Key | Light | Dark | What it would have done |
+      // |---|---|---|---|
+      // | `info` | `#2196F3` | `#2196F3`, *and no `on-info`* | the neutral toast's blue, and a label Vuetify derives by APCA |
+      // | `surface-bright` | `#FFFFFF` | **`#ccbfd6`** | a lavender "bright surface" in a dark control room |
+      // | `surface-light` | `#EEEEEE` | `#424242` | a grey from another palette |
+      // | `on-surface-variant` | **`#EEEEEE`** | `#EEEEEE` | near-white ink on a `#F6F7F9` card: **1.04:1** |
+      // | `secondary-darken-1` | `#018786` | `#48A9A6` | a Material teal, while our `secondary` is indigo |
+      //
+      // Each is therefore given a value from the table, not a new colour: the surfaces alias `surface-variant`, the ink
+      // aliases `text-primary`, and `info` — a state the document does not name — aliases `secondary` rather than
+      // inventing a fourteenth colour. `tests/tokens.spec.ts` asserts the whole colour map contains **no value outside
+      // this palette** (white and black excepted, as they are the computed labels), so a future Vuetify default cannot
+      // slip back in through a key nobody looked at.
+      'surface-bright': palette['surface-variant'],
+      'surface-light': palette['surface-variant'],
+      'secondary-darken-1': palette.secondary,
+      info: palette.secondary,
       ...on,
     },
     variables: {

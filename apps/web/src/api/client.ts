@@ -81,6 +81,21 @@ export interface ApiClient {
 const LOGIN_API_PATH = '/_auth/api/login';
 
 /**
+ * The path alone — no query string, no fragment.
+ *
+ * Needed because `needsBearer` compares against an exact path, and a login call that carries `?next=/x` or a `#form`
+ * is still `POST /_auth/api/login` to the server. Measured before this existed (pass 33): `needsBearer` said **true**
+ * for `/_auth/api/login?next=/x`, so the request that mints a credential was the one carrying the old one.
+ *
+ * @param path - A request path, possibly with a query string or fragment.
+ * @returns The path with neither.
+ */
+function pathOnly(path: string): string {
+  const marker = path.search(/[?#]/u);
+  return marker === -1 ? path : path.slice(0, marker);
+}
+
+/**
  * Whether a path's request carries the session token.
  *
  * Keyed on the path for the same reason the router's guard is (`router/guards.ts`): a per-call flag is a flag somebody
@@ -92,7 +107,9 @@ const LOGIN_API_PATH = '/_auth/api/login';
 export function needsBearer(path: string): boolean {
   const scope = apiScopeOf(path);
   if (scope === 'admin') return true;
-  if (scope === 'auth') return path !== LOGIN_API_PATH;
+  // `pathOnly`, not `path`: a trailing query string is not part of the endpoint's identity, and comparing the raw value
+  // made the exception fail open for `/_auth/api/login?next=/x` and `/_auth/api/login#form`.
+  if (scope === 'auth') return pathOnly(path) !== LOGIN_API_PATH;
   // The public API is anonymous by contract (`04-api.md` §0), and an unknown scope means the caller is not at an API
   // path at all — `request()` refuses those before this is reached.
   return false;
@@ -158,7 +175,9 @@ async function readSuccess<T>(response: Response): Promise<T> {
  * Builds the API client.
  *
  * @param options - Injection points; production passes none of them.
- * @returns A client whose methods reject with {@link ApiError} and never with anything else.
+ * @returns A client whose methods reject with {@link ApiError} for anything the server, the network or a timeout did.
+ *   The one exception is deliberate and is a **programming error rather than a request failure**: a path that is not an
+ *   API path throws a plain `Error` before the network is touched, because the fix is to correct the call site.
  */
 export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   const fetchImpl: typeof fetch =
@@ -169,6 +188,27 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   const readToken = options.token ?? ((): string | null => readSessionToken());
   const baseUrl = options.baseUrl ?? '';
   const defaultTimeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+  /**
+   * Runs the caller's sign-out handler without letting its failures become the failure under report.
+   *
+   * Measured before this existed (pass 33): a handler that threw made the client reject with `NETWORK` — "the server
+   * could not be reached" — for a request that had answered `401 TOKEN_EXPIRED`. The screen would then offer the wrong
+   * advice ("check your connection") for an expired session, and the true code and request id were lost. The API's
+   * answer is the failure; a bug in a UI callback is reported to the console and nothing else.
+   *
+   * @param error - The failure that ended the session.
+   */
+  function notifySessionExpired(error: ApiError): void {
+    try {
+      options.onSessionExpired?.(error);
+    } catch (cause) {
+      console.error(
+        'mapirror: the onSessionExpired handler threw; the API error is reported instead.',
+        cause,
+      );
+    }
+  }
 
   async function request<T>(
     method: HttpMethod,
@@ -216,9 +256,13 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         headers,
         body,
         signal: controller.signal,
-        // No cookie is ever sent: the credential is a header and nothing else (D-13). Stated rather than left to the
-        // default, because a later `credentials: 'include'` would quietly start carrying the server's cookies.
-        credentials: 'same-origin',
+        // **No cookie is ever sent** (D-13, `14-security.md` §4: the browser's only storage is `sessionStorage`).
+        //
+        // `omit`, not the page default `same-origin`: the SPA and the API are one origin behind nginx in production, so
+        // `same-origin` *does* attach cookies to every admin request and *does* accept `set-cookie` from every answer —
+        // the exact thing the comment here used to promise it prevented (measured against the Fetch standard in pass
+        // 33; the old value was `same-origin`, so the promise was false in the one deployment that matters).
+        credentials: 'omit',
       });
 
       if (!response.ok) {
@@ -226,7 +270,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         // Only a request that presented a credential can have that credential fail. Without this condition the login
         // form's `401 INVALID_CREDENTIALS` would sign out a visitor who is already signed out, and clear a token that
         // belongs to another tab's session.
-        if (presented !== null && error.sessionEnded) options.onSessionExpired?.(error);
+        if (presented !== null && error.sessionEnded) notifySessionExpired(error);
         throw error;
       }
 

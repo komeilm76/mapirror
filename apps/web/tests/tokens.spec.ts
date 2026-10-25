@@ -12,6 +12,7 @@ import {
   themeFrom,
   type Palette,
 } from '../src/styles/tokens';
+import { createAppVuetify } from '../src/plugins/vuetify';
 
 /**
  * The design tokens, checked against the document that specifies them (`P1-WEB-02`).
@@ -187,6 +188,77 @@ describe('every promised contrast ratio holds, computed from the shipping palett
     expect(contrastRatio(DARK_PALETTE.border, DARK_PALETTE.surface)).toBeLessThan(3);
     expect(section('### Color')).toMatch(/Decorative division/u);
     expect(section('### Color')).toMatch(/`border-strong`.*3:1/u);
+  });
+});
+
+describe('the theme contains only the colours the document names', () => {
+  /** The two themes, as pairs, so neither case re-spells the palette list. */
+  const themes: readonly (readonly ['light' | 'dark', Palette])[] = [
+    ['light', LIGHT_PALETTE],
+    ['dark', DARK_PALETTE],
+  ];
+
+  /**
+   * Every value §2 names, upper-cased — plus white and black, which are what `bestOn` computes for a label.
+   *
+   * Written as a keyed walk rather than `Object.values(palette)`: `Palette` is an interface with no index signature, so
+   * `Object.values` falls through to its `any[]` overload and quietly removes the check's teeth.
+   */
+  function allowedValues(): Set<string> {
+    const values = new Set<string>(['#FFFFFF', '#000000']);
+    for (const palette of [LIGHT_PALETTE, DARK_PALETTE]) {
+      for (const key of Object.keys(palette) as (keyof Palette)[]) {
+        values.add(palette[key].toUpperCase());
+      }
+    }
+    return values;
+  }
+
+  /**
+   * The merged theme — the one that ships — not just what `themeFrom` returned.
+   *
+   * `createVuetify` merges its own Material palettes *under* the themes it is given, so a key our module never mentions
+   * arrives with a colour from another design system. That is how the neutral toast ended up `#2196F3` (Vuetify's
+   * `info`, with no `on-info`, so Vuetify derived the label by APCA) and how the dark theme acquired a lavender
+   * `surface-bright`. The table of measured leftovers is in `styles/tokens.ts`.
+   */
+  function shippedColours(name: 'light' | 'dark'): Record<string, string> {
+    return createAppVuetify().theme.themes.value[name]?.colors ?? {};
+  }
+
+  it('inherits no colour from Vuetify, in either theme', () => {
+    for (const [name] of themes) {
+      const colours = shippedColours(name);
+      // A map that lost its keys would make the check below pass on nothing.
+      expect(Object.keys(colours).length, name).toBeGreaterThan(15);
+
+      // White and black are allowed because they are what `bestOn` computes for a label; everything else must be a hex
+      // from §2's table. This is the invariant that makes "no colour outside the token module" true of the *theme* and
+      // not merely of the source files — a Vuetify default cannot come back without failing here.
+      const allowed = allowedValues();
+      const foreign = Object.entries(colours).filter(
+        ([, value]) => !allowed.has(String(value).toUpperCase()),
+      );
+
+      expect(foreign, `${name} theme colours that are not in 13-ui-ux.md §2`).toEqual([]);
+    }
+  });
+
+  it('gives the informational state a colour and a label of ours', () => {
+    // §2 has no `info` row, and the document is right not to invent one: an informational message is not a fifth
+    // semantic colour. So `info` is an alias of `secondary` — a documented colour, not a new one — and it carries a
+    // label `bestOn` computed, because Vuetify would otherwise pick one by APCA.
+    for (const [name, palette] of themes) {
+      const theme = themeFrom(palette, name === 'dark');
+      const label = theme.colors?.['on-info'];
+
+      expect(theme.colors?.info, name).toBe(palette.secondary);
+      expect(label, `on-info must be defined (${name})`).toBeTruthy();
+      expect(
+        contrastRatio(label as string, palette.secondary),
+        `on-info (${name})`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });
 

@@ -244,6 +244,60 @@ describe('a dead token', () => {
 });
 
 describe('the token seam', () => {
+  it('signs out when the token lives somewhere other than the store', async () => {
+    // The seam `P1-WEB-05` builds on: a Pinia store holding the token in memory. The policy must read *that* source and
+    // clear *that* source, or the sign-out is silent — measured in pass 33 before this worked: the latch asked
+    // `sessionStorage` (empty, because the store never wrote it), so a dead token produced **no toast and no
+    // navigation**, leaving the reader on an admin page that can only answer `401`.
+    let held: string | null = 'mm_from_the_store';
+    const router = await readyRouter(`${ADMIN_ROOT}/jobs`);
+    const client = createAppApiClient({
+      router,
+      notifications,
+      token: () => held,
+      clearToken: () => {
+        held = null;
+      },
+      fetchImpl: failing('TOKEN_EXPIRED', 401),
+    });
+    expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull();
+
+    await client.get('/_admin/api/jobs').catch(() => undefined);
+    await flushPromises();
+
+    expect(held).toBeNull();
+    expect(notifications.items).toHaveLength(1);
+    expect(router.currentRoute.value.path).toBe(LOGIN_PAGE);
+    expect(router.currentRoute.value.query.redirect).toBe(`${ADMIN_ROOT}/jobs`);
+  });
+
+  it('keeps the burst latch on the injected source too', async () => {
+    // The other half: before, the latch was `sessionStorage`, so with an injected token every `401` in a burst was
+    // "handled" and none of them was — the count below was 0. Now each refusal reads the store, the first clears it, and
+    // the rest see nothing to end.
+    let held: string | null = 'mm_from_the_store';
+    const router = await readyRouter(`${ADMIN_ROOT}/`);
+    const client = createAppApiClient({
+      router,
+      notifications,
+      token: () => held,
+      clearToken: () => {
+        held = null;
+      },
+      fetchImpl: failing('TOKEN_EXPIRED', 401),
+    });
+    const replace = vi.spyOn(router, 'replace');
+
+    await Promise.all(
+      Array.from({ length: 4 }, async () =>
+        client.get('/_admin/api/system/status').catch(() => undefined),
+      ),
+    );
+
+    expect(notifications.items).toHaveLength(1);
+    expect(replace).toHaveBeenCalledTimes(1);
+  });
+
   it('takes a token provider instead of the store, for the auth store P1-WEB-05 will build', async () => {
     // `sessionStorage` is where the token lives, but reading it is not the only possible source: `P1-WEB-05`'s Pinia
     // store holds the same value in memory and hands it in here, so a request does not depend on a storage read

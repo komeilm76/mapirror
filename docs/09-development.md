@@ -372,6 +372,7 @@ implementation. The rule is one sentence: **no component holds a colour, a size 
 | An interactive boundary (input, switch track) | `--v-theme-border-strong` / `.mm-border-interactive` (3:1) | `border` — that is the decorative hairline |
 | Spacing, radius, motion | `--mm-space-*`, `--mm-radius-*`, `--mm-motion-*` | `padding: 17px`, `transition: 120ms` |
 | A type role | `.mm-display`, `.mm-title`, `.mm-body-public`, `.mm-caption`, `.mm-mono`, `.mm-tabular` | `font-size: 27px` |
+| A state §2 does not name | the nearest documented key — `primary` for a neutral toast | `color="info"` (a Vuetify Material default, in both themes) |
 
 `apps/web/tests/tokens.spec.ts` enforces it: it scans every `.vue`, `.ts` and `.css` under `apps/web/src` for colour
 literals (only `styles/tokens.ts` and the two stylesheets may contain one), parses §2 for every value it can, and

@@ -11,6 +11,12 @@
  * (`13-ui-ux.md` §7), announced without stealing focus from the form that just failed. Nothing here sets a colour:
  * `color="error"` resolves through the theme, and its label colour is the `on-error` the token tests pin at 4.5:1.
  *
+ * **The three kinds use three documented colours**: `error`, `success` and — for a neutral note — `primary`. The first
+ * version used `color="info"`, which `13-ui-ux.md` §2 does not define: Vuetify's own Material palette supplied a blue
+ * for it, the same one in both themes, with no `on-info`, so the label was picked by Vuetify's APCA heuristic (pass 33;
+ * the hex and the measurement are in `styles/tokens.ts`, which is the one file allowed to name a colour). The palette is
+ * closed now and the token test asserts it, but the component names a colour the document names too.
+ *
  * The countdown is Vuetify's, driven by `item.timeout`, and the mapping is done **here** because the constant is
  * Vuetify's and not a fact about toasts: `-1` is "wait for the close button", while `0` is "dismiss on the next tick"
  * (measured in pass 32 — the store's first version said `0` and errors vanished as they appeared). The store keeps no
@@ -33,7 +39,10 @@ const notifications = useNotifications();
 function colorFor(kind: 'success' | 'info' | 'error'): string {
   if (kind === 'error') return 'error';
   if (kind === 'success') return 'success';
-  return 'info';
+  // A neutral note wears the brand colour, which is the most visible filled surface in both themes. `surface-variant`
+  // was the other candidate and is only 1.05:1 against the page behind it — a toast has to be seen without being read
+  // first, and a shadow alone is not enough at 200 % zoom.
+  return 'primary';
 }
 </script>
 

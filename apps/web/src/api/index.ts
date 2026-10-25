@@ -15,8 +15,14 @@
  *
  * A dashboard fires several requests at once, so a dead token produces several `401`s. Each one reaches this callback,
  * and each one would toast and navigate. The guard is the token itself: the first callback clears it, so by the time
- * the second arrives `hasSessionToken()` is already `false` — the session is over and has been reported. The next
+ * the second arrives the reader is already holding nothing — the session is over and has been reported. The next
  * sign-in stores a new token, and the next expiry starts from a non-empty store again.
+ *
+ * The latch therefore reads **the same source the requests read** (`token`), and clears through `clearToken`. Both are
+ * injectable for that reason, and the pair must agree: the first version of this module latched on `sessionStorage`
+ * while the client was already reading an injected provider, so a store-backed token (what `P1-WEB-05` builds) would
+ * end its session silently — no toast, no navigation, and the reader left on an admin page that can only answer `401`
+ * (measured in pass 33 with a provider and an empty store: 0 toasts, route unchanged).
  *
  * @module api
  */
@@ -25,7 +31,7 @@ import type { App } from 'vue';
 import type { InjectionKey } from 'vue';
 import type { Router } from 'vue-router';
 
-import { clearSessionToken, hasSessionToken } from '@/auth/token-storage';
+import { clearSessionToken, readSessionToken } from '@/auth/token-storage';
 import { loginRedirectFor } from '@/router/redirect';
 import type { useNotifications } from '@/stores/notifications';
 import { areaForPath } from '@/theme/policy';
@@ -41,8 +47,21 @@ export interface AppApiOptions {
   readonly router: Router;
   /** The toast store the app was built with. */
   readonly notifications: ReturnType<typeof useNotifications>;
-  /** Reads the token; defaults to `sessionStorage` (`auth/token-storage.ts`). */
+  /**
+   * Reads the token. Defaults to `sessionStorage` (`auth/token-storage.ts`).
+   *
+   * Handed in by `P1-WEB-05`'s auth store, and **paired with `clearToken`**: the sign-out policy reads and clears
+   * through these two, so a token that lives in memory cannot end its session against a storage key that was never
+   * holding it.
+   */
   readonly token?: () => string | null;
+  /**
+   * Forgets the token. Defaults to `clearSessionToken`.
+   *
+   * Required whenever `token` is provided and the token is not in `sessionStorage` — otherwise the client would report
+   * the session ended while the store went on presenting the same dead credential.
+   */
+  readonly clearToken?: () => void;
   /** The `fetch` to use; defaults to the global one. A seam for tests, and for pointing the SPA at another origin. */
   readonly fetchImpl?: typeof fetch;
 }
@@ -66,15 +85,18 @@ const REASON: Record<string, string> = {
  */
 export function createAppApiClient(options: AppApiOptions): ApiClient {
   const { router, notifications } = options;
+  const readToken = options.token ?? ((): string | null => readSessionToken());
+  const forgetToken = options.clearToken ?? ((): void => clearSessionToken());
 
   return createApiClient({
-    ...(options.token === undefined ? {} : { token: options.token }),
+    token: readToken,
     ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
     onSessionExpired: (error) => {
-      // Already handled: a second refusal from the same burst of requests must not toast or navigate twice.
-      if (!hasSessionToken()) return;
+      // Already handled: a second refusal from the same burst of requests must not toast or navigate twice. The test is
+      // the reader's *own* source, so the latch and the requests cannot disagree about whether a token exists.
+      if (readToken() === null) return;
 
-      clearSessionToken();
+      forgetToken();
       notifications.error(SESSION_ENDED_MESSAGE, {
         detail: REASON[error.code] ?? 'Sign in again to continue.',
         requestId: error.requestId,

@@ -107,6 +107,34 @@ describe('a toast on screen', () => {
     expect(text).not.toContain('Request');
   });
 
+  it('paints each kind in a colour the document defines', async () => {
+    // The regression test for pass 33's first defect. `info` was a theme key the palette never defined; Vuetify filled
+    // it with its Material blue in both themes (`#2196F3`) and left `on-info` undefined, so the label was derived by
+    // APCA — the heuristic `styles/tokens.ts` exists to replace. Asserting the class rather than the variable because
+    // the class is what reaches the DOM: `bg-<name>` is only a colour if `<name>` is in the theme.
+    const pinia = createPinia();
+    const toasts = useNotifications(pinia);
+    toasts.error('Failed.');
+    toasts.success('Saved.');
+    toasts.push({ message: 'A neutral note.' });
+
+    await mountWith(pinia);
+    await waitForSnackbars(3);
+
+    const painter = (): string[] =>
+      [...document.body.querySelectorAll('.v-snackbar__wrapper')].map((element) =>
+        [...element.classList].filter((name) => name.startsWith('bg-')).join(' '),
+      );
+    const painted = painter();
+
+    expect(painted).toContain('bg-error');
+    expect(painted).toContain('bg-success');
+    expect(painted).toContain('bg-primary');
+    // ...and nothing is painted with a colour `13-ui-ux.md` §2 does not name.
+    expect(painted.join(' ')).not.toContain('bg-info');
+    expect(toasts.items).toHaveLength(3);
+  });
+
   it('is announced by a screen reader, without stealing focus', async () => {
     // §7: `aria-live` for toasts. `polite` rather than `assertive`: the reader is usually mid-keystroke in a form, and
     // an interrupting announcement is how a toast becomes a worse interruption than the error.
@@ -152,6 +180,27 @@ describe('a toast on screen', () => {
 
     expect(document.body.querySelectorAll('.v-snackbar')).toHaveLength(1);
     expect(document.body.textContent).toContain('The disk is full.');
+  });
+
+  it('lets a success expire on its own after three seconds', async () => {
+    // The other half of "success 3 s, error persists" (§5): the error's persistence is asserted above, and this is the
+    // countdown actually running — Vuetify's `startTimeout`, triggered by the model value we pass, dismissing through
+    // the store rather than leaving the toast on screen until the next navigation.
+    vi.useFakeTimers();
+    const pinia = createPinia();
+    const toasts = useNotifications(pinia);
+    toasts.success('Saved.');
+    toasts.error('But this stays.');
+
+    await mountWith(pinia);
+    expect(toasts.items).toHaveLength(2);
+
+    await vi.advanceTimersByTimeAsync(3_200);
+    await nextTick();
+
+    expect(toasts.items.map((item) => item.kind)).toEqual(['error']);
+    expect(document.body.querySelectorAll('.v-snackbar')).toHaveLength(1);
+    vi.useRealTimers();
   });
 
   it('dismisses when the button is pressed', async () => {
