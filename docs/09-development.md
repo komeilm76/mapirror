@@ -379,6 +379,24 @@ computes every contrast ratio the document promises — including the `on-<fill>
 choose with an APCA heuristic while the doc promises WCAG. Change the palette or the document and the two must still
 agree.
 
+**Routing and auth (`P1-WEB-03`).** The router is `13-ui-ux.md` §4 in code, and the two are kept equal by a test rather
+than by care.
+
+| What you want | Write | Not |
+|---|---|---|
+| A new screen | a row in §4 **and** a record in `router/routes.ts` with `meta: { title, screen, owner }` | a route without a documented screen (the law test fails both ways) |
+| A page path | `router/paths.ts` builders, derived from `@mapirror/shared` | a string literal in a component |
+| A protected page | nothing — `/_site/admin/**` is gated by path | a `meta.requiresAuth` flag (the guard has no opt-in and no opt-out) |
+| A session | `readSessionToken`/`writeSessionToken` from `auth/token-storage.ts` | touching `sessionStorage` anywhere else |
+| A post-login destination | `safeRedirectTarget(value)` on the way in **and** out | using the `redirect` parameter as-is |
+
+`apps/web/tests/law-router.test.ts` is L1 for the SPA: it parses §4 and asserts the route table in both directions, that
+every owner id exists in `08-tasks.md`, that every path passes `isLegalPath`, and that redirects really redirect.
+`auth-guard.spec.ts` proves the rule is the path (a route registered *after* the guard is installed is still refused) and
+that public pages are never gated — `/_site/administrators` is the boundary case. The guard is a **navigation
+convenience, not a security boundary**: page shells are inert, and every fact comes from `/_admin/api/*`, which answers
+`401` on its own (L2).
+
 
 - **Layering:** route handler → service → repository. No SQL in handlers, no HTTP in services.
 - **Validation:** Zod schema in `packages/shared` → Fastify `schema` → handler receives typed input.

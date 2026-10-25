@@ -1,42 +1,51 @@
 /**
- * The SPA's router (`P1-WEB-01`).
+ * The SPA's router (`P1-WEB-01`, full tree from `P1-WEB-03`).
  *
- * **Two routes, on purpose.** The full tree — the public pages, the admin shell and its ten children, the login page
- * and the guards that decide who may see them — is `P1-WEB-03`. What this module has to prove now is that the wiring
- * boots: the history mode resolves a real URL, the `/` redirect lands where L1 says the site begins, and an SFC
- * reaches the screen through `App.vue`'s `router-view`.
+ * Twelve lines of assembly over three modules that each own one idea:
  *
- * The one structural decision made here is the one every later route inherits: **`createWebHistory()` with no base**,
- * so the SPA's paths are the browser's paths. The alternative — hash routing — would put `#/_site/` in the address
- * bar and make every deep link unshareable, which is the opposite of what `P3-WEB-03`'s copyable `curl` snippets are
- * for. It also means nginx has to answer unknown paths with `index.html` (`P1-DOCK-03`), and that requirement is
- * stated in `12-deployment.md` rather than discovered in production.
+ * - `routes.ts` — the table, as data, with the screen and owner of each route;
+ * - `guards.ts` — the one rule that decides whether a navigation may proceed (admin paths need a session);
+ * - `titles.ts` — the browser tab, from `meta.title`.
+ *
+ * ## History mode, and what it costs
+ *
+ * `createWebHistory()` with no base, so the SPA's paths are the browser's paths. The alternative — hash routing — would
+ * put `#/_site/` in the address bar and make every deep link unshareable, which is the opposite of what `P3-WEB-03`'s
+ * copyable `curl` snippets are for. The cost is that nginx must answer unknown paths with `index.html` (`P1-DOCK-03`),
+ * and that requirement is stated in `12-deployment.md` rather than discovered in production.
  *
  * @module router/index
  */
 
 import { createRouter, createWebHistory, type Router } from 'vue-router';
 
-import HomePage from '@/pages/public/HomePage.vue';
-import { SITE_ROOT } from './paths';
+import { installAuthGuard } from './guards';
+import { APP_ROUTES } from './routes';
+import { installRouteTitles } from './titles';
 
 /**
  * Builds the router.
  *
- * A factory, not a singleton: `vue-router` holds the current location in the instance, so a module-level router
- * would make every test start wherever the previous one navigated to.
+ * A factory, not a singleton: `vue-router` holds the current location in the instance, so a module-level router would
+ * make every test start wherever the previous one navigated to.
+ *
+ * The guard and the title writer are installed here rather than by the caller for one reason: a router that can be
+ * built without its guard is a router that can be shipped without its guard. `bootstrap.ts` only has to `app.use()` it.
  *
  * @returns A fresh router, ready for `app.use(...)`.
  */
 export function createAppRouter(): Router {
-  return createRouter({
+  const router = createRouter({
     history: createWebHistory(),
-    routes: [
-      // `GET /` is a redirect, not a page (`12-deployment.md` §5: `curl -sI /` expects `302 → /_site/`). Keeping the
-      // home page at exactly one URL means a shared link and the canonical one are the same string.
-      { path: '/', redirect: SITE_ROOT },
-      { path: SITE_ROOT, name: 'home', component: HomePage },
-    ],
-    scrollBehavior: () => ({ left: 0, top: 0 }),
+    routes: [...APP_ROUTES],
+    // Back and forward return to where the reader was; a fresh navigation starts at the top. The reduced-motion
+    // preference is honoured by `tokens.css` zeroing the motion tokens — the browser's own scroll animation is
+    // suppressed there too.
+    scrollBehavior: (_to, _from, savedPosition) => savedPosition ?? { left: 0, top: 0 },
   });
+
+  installAuthGuard(router);
+  installRouteTitles(router);
+
+  return router;
 }

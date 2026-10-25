@@ -1,10 +1,12 @@
 import { flushPromises } from '@vue/test-utils';
 import { afterEach, describe, expect, it } from 'vitest';
 import { nextTick, ref } from 'vue';
+import { createMemoryHistory, createRouter } from 'vue-router';
 
+import { SESSION_TOKEN_KEY } from '../src/auth/token-storage';
 import { createWebApp } from '../src/bootstrap';
 import { createAppVuetify } from '../src/plugins/vuetify';
-import { createAppRouter } from '../src/router';
+import { APP_ROUTES } from '../src/router/routes';
 import { areaForPath, installThemeSync, themeForPath } from '../src/theme/policy';
 import {
   DARK_PALETTE,
@@ -28,9 +30,17 @@ import {
  * by writing to it, which is the only way to test the auth area's "follows the system" rule.
  */
 
-/** A router that has finished its first navigation. */
+/**
+ * A router that has finished its first navigation.
+ *
+ * Built from the real route table but **without the auth guard**, because the theme is a function of the path and this
+ * file is about the mapping. Since `P1-WEB-03` an unsigned visitor never reaches an admin path at all, so a router with
+ * the guard on would answer every admin case here with the login page — a light page about which this file has nothing
+ * to say. The guard is `tests/auth-guard.spec.ts`'s subject, and the mounted-app section below pairs the two by signing
+ * in and then reading the theme off the DOM.
+ */
 async function readyRouter(path = '/') {
-  const router = createAppRouter();
+  const router = createRouter({ history: createMemoryHistory(), routes: [...APP_ROUTES] });
   await router.push(path);
   await router.isReady();
   return router;
@@ -224,6 +234,7 @@ describe('the mounted app', () => {
   afterEach(() => {
     for (const app of mounted.splice(0)) app.unmount();
     document.body.innerHTML = '';
+    sessionStorage.clear();
   });
 
   it('wears the light theme on the public page', async () => {
@@ -257,6 +268,26 @@ describe('the mounted app', () => {
     expect(dark, 'the dark preview subtree must render').not.toBeNull();
     // ...and it is inside the light application, not a second mount.
     expect(container.querySelectorAll('.v-application')).toHaveLength(1);
+  });
+
+  it('wears the dark theme on an admin page, once there is a session', async () => {
+    // The pairing with `tests/auth-guard.spec.ts`: the guard is what gets an admin page rendered at all, and this is
+    // what it looks like when it does. A deep link is the case that matters — a reload on `/_site/admin/catalog` must
+    // not paint light and then flip.
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'token-from-a-login');
+    window.history.replaceState({}, '', '/_site/admin/catalog');
+
+    const container = document.createElement('div');
+    document.body.append(container);
+    const app = createWebApp();
+    mounted.push(app);
+    app.mount(container);
+    await nextTick();
+    await flushPromises();
+
+    expect(container.querySelector('.v-application')?.className).toContain('v-theme--dark');
+    // The admin page itself, not the login page: the placeholder names its §4 screen, and S6 is the catalog.
+    expect(container.textContent).toContain('Screen S6');
   });
 
   it('follows the system with no options injected, which is how the app installs it', async () => {

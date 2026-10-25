@@ -99,8 +99,14 @@ mapirror/
 │     │  ├─ App.vue                # v-app → v-main → router-view (the one shell)
 │     │  ├─ shims-vue.d.ts         # `*.vue` for plain-tsc consumers (ESLint); vue-tsc ignores it
 │     │  ├─ vite-env.d.ts          # Vite's ambient types (the web tsconfig sets `types: []`)
-│     │  ├─ router/index.ts        # `/` → `/_site/` and the home route; the full tree is P1-WEB-03
+│     │  ├─ router/index.ts        # createAppRouter(): the table + the guard + the titles, in one place
+│     │  ├─ router/routes.ts       # All 17 records of 13 §4: 15 pages + 2 redirects, each with screen/owner
+│     │  ├─ router/guards.ts       # Path-keyed admin guard (no per-route flag): 401 → /_auth/login?redirect=…
+│     │  ├─ router/redirect.ts     # The `redirect` parameter, validated on both sides of the round trip
+│     │  ├─ router/titles.ts       # document.title from meta.title ("Cache · MapMirror")
 │     │  ├─ router/paths.ts        # Page path builders, all derived from @mapirror/shared
+│     │  ├─ auth/token-storage.ts  # The session token in sessionStorage; every access wrapped (D-13)
+│     │  ├─ types/vue-router.d.ts  # RouteMeta augmentation: title/screen/owner required on every route
 │     │  ├─ plugins/vuetify.ts     # createAppVuetify(): both themes, built from styles/tokens.ts
 │     │  ├─ plugins/pinia.ts
 │     │  ├─ theme/policy.ts        # Path → theme (admin dark, public light, auth follows the system)
@@ -115,10 +121,11 @@ mapirror/
 │     │  │                         # useConfirm, useByteFormat, useUpdateTicker
 │     │  ├─ layouts/               # AdminLayout, PublicLayout, AuthLayout
 │     │  ├─ pages/
+│     │  │  ├─ PlaceholderPage.vue       # The one screen not built yet: names its §4 row and the owning task
 │     │  │  ├─ auth/LoginPage.vue        # served at /_auth/login (the one page outside /_site)
 │     │  │  ├─ admin/{Dashboard,Catalog,Cache,CountryDetail,Intervals,Import,Jobs,
 │     │  │  │        System,Settings,Audit}Page.vue
-│     │  │  ├─ public/{Home,CountryDetail,ApiDocs,NotFound}Page.vue  # HomePage.vue exists (P1-WEB-01)
+│     │  │  ├─ public/{Home,CountryDetail,ApiDocs,NotFound}Page.vue  # HomePage + NotFoundPage exist
 │     │  ├─ components/
 │     │  │  ├─ common/             # PageHeader, DataTableShell, EmptyState, ErrorState,
 │     │  │  │                      # SkeletonBlock, ConfirmDialog, CopyField, StatCard
@@ -129,8 +136,8 @@ mapirror/
 │     │  │  ├─ charts/             # CpuChart, MemoryChart, DiskChart, TimeWindowSelect
 │     │  │  └─ public/             # CountryCard, VersionList, DownloadButton, LicenseNote
 │     │  ├─ styles/                # tokens.css, typography, overrides
-│     │  └─ types/                 # Re-exports from @mapmirror/shared
-│     └─ tests/                    # Component + store tests (Vitest + jsdom), setup.ts stubs matchMedia/RO
+│     │  └─ types/                 # RouteMeta augmentation + re-exports from @mapmirror/shared
+│     └─ tests/                    # Component + store tests (Vitest + jsdom); law-router.test.ts is L1 for the SPA
 │
 ├─ packages/
 │  └─ shared/                      # Single source of truth for API contracts

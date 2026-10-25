@@ -3,9 +3,48 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 30 passes · 135 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2).
+**Totals:** 31 passes · 139 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 31 — 2026-10-25 (the router tree: a title that named itself twice, and a task board with two holes)
+
+The pass arrived with `P1-WEB-03`, whose whole job is to make `13-ui-ux.md` §4 and the router the same list. Three of the
+four defects below were found by writing the tests that claim it; the fourth by a test that had to be *rewritten* because
+the world it described had stopped existing.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **A route with no title put `MapMirror · MapMirror` in the tab.** `installRouteTitles` fell back with `pageTitle(title ?? TITLE_SUFFIX)` — the fallback was passed through the same formatter that appends the suffix, so the product name was appended to itself. Nothing reachable from `APP_ROUTES` has no title (the `RouteMeta` augmentation makes it a type error), which is exactly why it survived review: the branch is only reachable from an un-navigated router or a redirect-only record, and it was caught the first time a test executed it | `title === undefined ? TITLE_SUFFIX : pageTitle(title)`, with the reason in a comment and the branch pinned by `tests/titles.spec.ts` ("writes the fallback for a route with no title", plus the teardown case). Mutation — restoring `pageTitle(title ?? TITLE_SUFFIX)` — fails both |
+| 2 | **Two screens had no task.** `13-ui-ux.md` §4 S13 (Settings) and S14 (Audit) were named as owners by nothing: `08-tasks.md` had no `P5-ADM-02` or `P5-ADM-04` row, so the two screens were in the router, in the screen inventory, and owed by nobody. The route meta had to invent the ids to fill its required `owner` field, and the new law test — which asserts that every owner id exists — failed on the first run. The board claimed **136** tasks, `08-tasks.md` held 136 rows, and §4 documented 15 rows of which 13 named an owning task that existed | Four rows added to Phase 5 — `P5-ADM-01`/`P5-ADM-02` (settings API + page) and `P5-ADM-03`/`P5-ADM-04` (audit API + page), because a page whose API is another task's is the same kind of hole — and the totals recounted: **140** tasks in `08-tasks.md` line 3 and `00-index.md` line 42, both verified by counting the status-bearing rows (140 rows, 31 done, no duplicate ids) |
+| 3 | **Two tests asserted the world before the router existed.** `bootstrap.spec.ts` carried *"has no catch-all yet, and says so by not matching"* — true when `P1-WEB-01` registered one route, false the moment `P1-WEB-03` added `/_site/:pathMatch(.*)*`, and it would have failed with a message about `matched` being empty that reads like a router bug. Its neighbour, "keeps every route inside the site prefix", would have failed too, on `/_auth/login` — the one page L1 *allows* outside the site | Both rewritten to the contract that now holds: an unknown path under the site renders the not-found page **at the URL that was asked for**; a path outside the site is redirected *into* it; and every route outside `/_site/**` must be a redirect whose target is a page. The rewrite is the interesting part — a test that fails when a planned feature lands is a test that was written as a snapshot of the schedule |
+| 4 | **`theme.spec.ts` was about to start testing the login page.** Six of its cases navigated to `/_site/admin/…` through `createAppRouter()` to read the admin theme off `theme.global.name`. Once the router grew its guard, every one of those navigations began landing on `/_auth/login` — a light page — so the cases failed with "expected `light` to be `dark`", a message that points at the palette. Worse in the other direction: had the assertion been written the loose way (`is a theme name`), the whole file would have gone on passing while testing nothing | Those cases now build a router from the real table **without** the guard — the theme is a function of the path, and auth is not this file's subject — and the mounted-app section gained the pairing case that matters: with a token in `sessionStorage`, a deep link to `/_site/admin/catalog` mounts `v-theme--dark` **and** renders screen S6. The two locks are now in two files, each testing its own rule, and the cross-file failure that revealed it is recorded here |
+
+Probed and found sound rather than assumed:
+
+- **`//_site/admin` cannot be a page path, so the `//` check in `safeRedirectTarget` is provably redundant.** The law
+  refuses every value beginning `//` (it can never start with `/_site/` or equal `/_auth/login`), so removing the check
+  changes no answer — the mutation is *equivalent*, not surviving. Both locks stay, and `tests/redirect.spec.ts` asserts
+  the redundancy (`isPagePath('//_site/admin') === false`) rather than leaving a fantasy mutant in the report. The
+  backslash check, by contrast, **is** load-bearing — `/_site/admin\..\..\evil` passes the law and fails the check —
+  and that case was added after the mutation survived.
+- **`/_site` without its slash is a page, because Vue Router says so.** `strict: false` matches it to the `/_site/`
+  record, so `safeRedirectTarget` accepting it is correct rather than a hole; the test proves it by resolving it through
+  a real router (name `home`) before asserting it survives, instead of writing the expectation I first assumed.
+- **The `redirect` parameter is a query parameter, so it is `unknown`, not `string`.** Vue Router parses `?redirect=a&b`
+  into an array and `?redirect[x]=y` into an object; `.startsWith` on either throws inside a navigation hook, which is a
+  console error and no page. Four non-string cases pin the type check.
+- **A blocked `sessionStorage` throws on the property, not on the call.** Driven through both shapes — the global itself
+  throwing (privacy mode) and a store whose every method throws (frames) — and the sign-out path is asserted not to throw
+  either, because it runs in the same click as a working clear.
+
+Mutation-checked: 12 mutations, 11 killed (the twelfth equivalent, see above) — the admin check deleted from the guard,
+`to.path` instead of `to.fullPath`, protocol-relative URLs allowed, the backslash check deleted, the login-page loop
+allowed, the length bound widened to 2048, the default redirect moved to the catalog, the double-suffix title restored, a
+page moved to an undocumented path, a blank token treated as a token, the read's `catch` removed, and the catch-all moved
+outside the site.
 
 ---
 
@@ -720,7 +759,7 @@ Focus: correctness of the *mechanisms* (not wording), then structure.
 | 11 | Path params drifted (`:id` vs `:countryId`, `:id` vs `:jobId`) across four docs | Normalized everywhere |
 | 12 | `14-security.md` rate table pointed at `/_public/api/.../download` (not a real path) | Full path |
 | 13 | Two docs referenced a task that does not exist (`P2-CACHE-03`) | `P2-JOB-03` |
-| 14 | Counts were stale in four places: 145 tasks (real: 136), 11 tables (15), "15 screens" (14 + 404), and a 41-defect total that ignored the table rows | All recomputed from the files themselves before publishing |
+| 14 | Counts were stale in four places: 145 tasks (real: 136 — 140 since pass 31 added the four Phase 5 admin rows), 11 tables (15), "15 screens" (14 + 404), and a 41-defect total that ignored the table rows | All recomputed from the files themselves before publishing |
 | 15 | A duplicated `### Backup` heading and a restore description that claimed to restore map files the backup never contains | Single heading; restore now explains reconciliation (`ready` + missing file → `failed`) instead of a false claim |
 | 16 | Deployment used `bun run scripts/reset-admin-password.ts` while the dev guide used `make reset-admin` / `bun run admin:reset` | All three forms documented as equivalent, each noting that tokens are revoked |
 

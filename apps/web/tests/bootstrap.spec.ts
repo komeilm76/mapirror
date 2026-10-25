@@ -12,7 +12,7 @@ import { createWebApp, MOUNT_SELECTOR } from '../src/bootstrap';
 import { createAppPinia } from '../src/plugins/pinia';
 import { createAppVuetify } from '../src/plugins/vuetify';
 import { createAppRouter } from '../src/router';
-import { SITE_ROOT } from '../src/router/paths';
+import { LOGIN_PAGE, SITE_ROOT } from '../src/router/paths';
 
 /**
  * The SPA boots (`P1-WEB-01`).
@@ -170,19 +170,43 @@ describe('the router', () => {
     expect(router.currentRoute.value.name).toBe('home');
   });
 
-  it('has no catch-all yet, and says so by not matching', async () => {
-    // `P1-WEB-03` owns the full tree and `P3-WEB-05` the 404 page. Until then an unknown path must *not* be quietly
-    // redirected home: a link that lands on the wrong page and looks fine is worse than one that renders nothing.
+  it('answers an unknown path with the not-found page, at the URL that was asked for', async () => {
+    // `P1-WEB-03` added the catch-all (`P3-WEB-05` owns its copy). Before it, an unmatched path left `matched` empty
+    // and rendered a blank frame — a `200` with nothing in it, which is the failure mode this case exists to prevent
+    // from coming back. The URL is *not* rewritten to `/not-found`: the visitor's typo is the thing they need to see.
     const router = createAppRouter();
-    await router.push('/somewhere-else');
-    expect(router.currentRoute.value.matched).toHaveLength(0);
+    await router.push(`${SITE_ROOT}no-such-page`);
+
+    expect(router.currentRoute.value.name).toBe('not-found');
+    expect(router.currentRoute.value.path).toBe(`${SITE_ROOT}no-such-page`);
   });
 
-  it('keeps every route inside the site prefix', () => {
-    // The L1 half of the eventual router-law test (`10-laws.md`): a page outside `/_site/` is legal only at the login
-    // path, and this router registers no login page yet.
+  it('moves a path outside the site into the site, rather than rendering it', async () => {
+    // L1 has no page outside `/_site/` but `/_auth/login`, so `/somewhere-else` cannot be rendered where it stands; it
+    // is redirected to the not-found page, which is the only honest answer.
+    const router = createAppRouter();
+    await router.push('/somewhere-else');
+
+    expect(router.currentRoute.value.name).toBe('not-found');
+    expect(router.currentRoute.value.path).toBe(`${SITE_ROOT}not-found`);
+  });
+
+  it('keeps every route inside the site prefix, or at the login page', () => {
+    // The L1 half of the router-law test (`tests/law-router.test.ts`, `10-laws.md`): a page outside `/_site/` is legal
+    // only at the login path. Stated here as well because this file mounts the app, and a route table could be edited
+    // without that file ever running.
     for (const route of createAppRouter().getRoutes()) {
-      expect(route.path === '/' || route.path.startsWith(SITE_ROOT), route.path).toBe(true);
+      if (route.path.startsWith(SITE_ROOT) || route.path === LOGIN_PAGE) continue;
+      // The two records outside the namespace are `/` and the global catch-all, and both exist for the same reason: a
+      // URL the law does not allow must *land* inside the site rather than render at an illegal address. They are
+      // redirects, and each one redirects to a page.
+      // A redirect is a string, an object or a function; both of these are strings, which the type has to be told so
+      // the comparison below does not fall back to `[object Object]`.
+      const redirect = route.redirect as string | undefined;
+      expect(typeof redirect, `${route.path} is outside the site and does not redirect`).toBe(
+        'string',
+      );
+      expect(redirect, route.path).toMatch(new RegExp(`^${SITE_ROOT}`, 'u'));
     }
   });
 });

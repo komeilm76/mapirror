@@ -2,7 +2,7 @@
  * Router path builders for the SPA.
  *
  * Every page the Vue router serves is built here, from the prefixes in `@mapirror/shared`, so the law
- * test (`apps/web/tests/law-router.spec.ts`) can walk the table and assert `isLegalPath` for each one
+ * test (`apps/web/tests/law-router.test.ts`) can walk the table and assert `isLegalPath` for each one
  * without hard-coding strings on either side. The login page is the only exception to `/_site/*` (D-19),
  * and it is not built here — it is the single literal imported straight from shared.
  *

@@ -39,7 +39,7 @@ The only page outside `/_site/` is the login page, `/_auth/login` (D-19, ADR-024
 | 05 | [05-flows.md](05-flows.md) | Sequence diagrams for 12 journeys |
 | 06 | [06-diagrams.md](06-diagrams.md) | Context, containers, deployment, state machines |
 | 07 | [07-roadmap.md](07-roadmap.md) | Phases and exit gates |
-| 08 | [08-tasks.md](08-tasks.md) | 136 tasks with IDs, deps, acceptance criteria |
+| 08 | [08-tasks.md](08-tasks.md) | 140 tasks with IDs, deps, acceptance criteria |
 | 09 | [09-development.md](09-development.md) | Setup, commands, env vars, testing, debugging |
 | 10 | [10-laws.md](10-laws.md) | Non-negotiable rules (most are test-enforced) |
 | 11 | [11-project-tree.md](11-project-tree.md) | Target repo tree, storage layout, naming |
