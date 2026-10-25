@@ -366,6 +366,20 @@ and `vue/define-{props,emits}-declaration: type-based`.
     resolves `argon2-linux-x64-gnu`. An Alpine base would need the `musl` variant, and a broken native install
     fails at import time rather than silently falling back to something weaker — which is the failure mode to
     prefer.
+- **Bearer tokens** (`modules/auth/tokens.ts`, `P1-AUTH-02`): never touch the token by hand. `issueToken` returns
+  the plaintext exactly once; everything after that works from `verifyToken`'s verdict.
+  - Only `sha256(token)` is stored. The hash is cheap on purpose (the input is 256 random bits, so there is no
+    dictionary to slow down) and it runs on **every** admin request; the token itself is never persisted, logged or
+    echoed in an error.
+  - Verification is an indexed probe on the digest, not a comparison: there is no secret in application memory to
+    compare against, which is why no `timingSafeEqual` appears anywhere. `token_prefix` is display-only and must
+    never become a lookup key — a test exists solely to keep that true.
+  - Map the verdict, don't invent codes: `valid` → proceed, `expired` → `401 TOKEN_EXPIRED`, `revoked` → `401
+    TOKEN_REVOKED`, `disabled` → `403 ACCOUNT_DISABLED`, `unknown` → `401 UNAUTHENTICATED` (`P1-AUTH-05`).
+  - Revocation is idempotent and keeps the first `revoked_at`; a password reset calls `revokeAllTokens` in the same
+    transaction as the new hash.
+  - `pruneExpiredTokens` runs once at boot (`server.ts`) and deletes rows expired more than 30 days ago; a failure is
+    logged and does not stop the boot, because an old row is not a reason to refuse traffic.
 
 ## 10. Adding a feature (checklist)
 

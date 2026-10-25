@@ -3,9 +3,31 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 20 passes · 117 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3).
+**Totals:** 21 passes · 119 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 21 — 2026-10-25 (adversarial review of `P1-AUTH-02`)
+
+Two defects, and neither is a line of wrong logic. One is a document claiming a mechanism the code does not have; the
+other is a documented behaviour that no task owned, written down as if it existed.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **"Constant-time compare" described a mechanism that is not in the design — and should not be.** The task list and `14-security.md` §3 both said token verification uses a constant-time comparison. It does not, and adding one would be ceremony: verification hashes the presented token and lets the unique index on `token_hash` find the row, so there is no secret in application memory to compare *against*. A `timingSafeEqual` there would compare the same 32 bytes the database has just matched, and a reviewer reading the code against the doc would have concluded something was missing | The doc now states the mechanism that exists — "verified by an indexed probe on the digest, so no secret is ever compared in application code" — and ADR-004 carries the reasoning. The property the phrase was reaching for is now *tested* instead of asserted: the digest is the only lookup key, proved by inserting a row whose `token_prefix` equals a known token's prefix while its digest belongs to a different string, and requiring that token not to authenticate. That test is the one that fails if someone later "optimises" verification to look up by prefix |
+| 2 | **Boot-time pruning was documented and owned by nobody.** `03-data-model.md` §2.2 says "startup housekeeping deletes rows expired > 30 days ago", and there is no task in `08-tasks.md` that mentions pruning. Written down as a behaviour, absent from the plan, absent from the code: the token table would have grown forever while the docs said otherwise | `pruneExpiredTokens` is part of the token service (`P1-AUTH-02`, which owns the lifecycle) and is called once at boot from `server.ts`, after the pipeline proved the database usable and before the socket opens. **Probed with a real process**, because a stub would only prove that a stub can be called: a database seeded with a 40-day-expired row and a 5-day-expired one, then `bun run apps/api/src/server.ts` → log shows `{"pruned":1}` and `expired tokens pruned`, `healthz` 200, and the 40-day row is gone while the 5-day one survives. A failure there is logged and does not stop the boot — an old row is not a reason to refuse traffic |
+
+Also worth recording, because it shaped the tests rather than the code:
+
+- The `last_used_at` throttle is written **into the `WHERE` clause** (`last_used_at IS NULL OR last_used_at < now -
+  60 s`) rather than read-compare-write. Two requests arriving together cannot both decide the write is due, and the
+  verdict then has to report what the row *holds* instead of what the request pretended to record — otherwise `/me`
+  would claim a `lastUsedAt` that no row has.
+- The cheap rejection had to be observable to be testable: the "malformed token never reaches the database" tests pass
+  an executor wrapped in a `Proxy` that throws on any property access. Without that, "does not touch the database" is
+  a comment, not an assertion.
 
 ---
 

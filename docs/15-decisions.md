@@ -60,6 +60,15 @@ in bulk. No JWT, no refresh endpoint.
 **Consequences.** Instant revocation and a database round-trip per admin request (negligible at this
 scale). The client cannot introspect claims — it calls `/_auth/api/me`.
 
+**How verification actually works** (`P1-AUTH-02`): the presented token is hashed and matched against the
+unique index on `token_hash`, in one join that also brings back the account's `is_active`. There is no
+comparison of a secret in application code, so "constant-time compare" — the phrase the task list used —
+describes a mechanism this design does not have and does not need: a `timingSafeEqual` would compare the
+same bytes the database has just matched. What matters instead is that the digest is the only lookup key:
+`token_prefix` is display-only, and a test keeps it that way by presenting a token that shares a prefix
+with a live row. `last_used_at` is written at most once a minute, with the throttle in the `WHERE` clause so
+two concurrent requests cannot both decide the write is due.
+
 ---
 
 ## ADR-005 — One admin in the UI, multi-admin schema (D-4)

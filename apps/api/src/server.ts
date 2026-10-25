@@ -20,6 +20,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { buildApp } from './app';
 import { ConfigError, parseEnv, type AppConfig, type EnvSource } from './config/env';
+import { pruneExpiredTokens } from './modules/auth/tokens';
 
 /** Signals that must shut the process down instead of killing it mid-request. */
 const SHUTDOWN_SIGNALS = ['SIGTERM', 'SIGINT'] as const;
@@ -111,6 +112,17 @@ export async function start(
   const config = parseEnv(source);
 
   const app = await buildApp({ logger: { level: config.logLevel }, config });
+
+  // Housekeeping, once per boot, after the pipeline proved the database usable and before the socket opens
+  // (`03-data-model.md` §2.2: rows expired more than 30 days ago are deleted). A failure is logged and does not stop
+  // the boot: an old row is not a reason to refuse traffic, and the alternative — a process that will not start
+  // because a `DELETE` failed — turns a housekeeping problem into an outage.
+  try {
+    const pruned = await pruneExpiredTokens(app.db.db);
+    if (pruned > 0) app.log.info({ pruned }, 'expired tokens pruned');
+  } catch (error) {
+    app.log.warn({ err: error }, 'could not prune expired tokens; continuing');
+  }
 
   // Registered before `listen` so a signal during startup still drains rather than orphaning a socket.
   const shutdown = createShutdown(app);

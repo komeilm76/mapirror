@@ -45,8 +45,9 @@ mapirror/
 │  │  │  │  ├─ auth/               # /_auth: login, logout, me; token issue/verify/revoke
 │  │  │  │  │  ├─ routes.ts
 │  │  │  │  │  ├─ service.ts
-│  │  │  │  │  └─ password.ts      # Argon2id hash/verify + policy
-│  │  │  │  │                   # weak-passwords.ts: 1 000-entry blocklist (Django, BSD-3)
+│  │  │  │  │  ├─ password.ts       # Argon2id hash/verify + policy
+│  │  │  │  │  ├─ weak-passwords.ts # 1 000-entry blocklist (Django, BSD-3)
+│  │  │  │  │  └─ tokens.ts         # Bearer tokens: mint, digest, verify verdict, revoke, prune
 │  │  │  │  ├─ admin/              # /_admin/api: catalog, cache, versions, imports,
 │  │  │  │  │  │                   # intervals, jobs, metrics, settings, audit
 │  │  │  │  │  ├─ routes/{catalog,cache,versions,imports,intervals,jobs,system,settings,audit}.ts
@@ -71,6 +72,7 @@ mapirror/
 │  │  │  │  ├─ schema.ts           # Kysely table types, phase 1 (measured JS types, no `any`)
 │  │  │  │  ├─ version-check.ts    # Boot gate: disk vs EXPECTED_MIGRATIONS vs kysely_migration (SCHEMA_SKEW)
 │  │  │  │  └─ repositories/       # Typed queries per aggregate
+│  │  │  │     └─ admin-tokens.ts  # Token rows: insert, find-with-admin, touch, revoke, prune
 │  │  │  └─ lib/
 │  │  │     ├─ storage.ts          # Path building, .part files, atomic rename, delete
 │  │  │     ├─ download.ts         # Streamed fetch, resume, progress, checksum

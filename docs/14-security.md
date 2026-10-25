@@ -37,8 +37,8 @@ Trust nothing from: HTTP clients, multipart uploads, Geofabrik HTML/JSON respons
 |---|---|
 | Hashing | Argon2id (memory 64 MiB, iterations 3, parallelism 1) with per-hash salt |
 | Password policy | ≥ 12 chars (code points, NFKC-normalised), ≤ 256 UTF-16 units (the login schema's own limit), reject top-1000 weak list (case-folded, trailing digits/symbols stripped), reject username substring, reject surrounding whitespace. Enforced where passwords are **created**, not on login. No composition rules (NIST SP 800-63B) — see ADR-025 |
-| Tokens | 256-bit random, `mm_` prefix, **SHA-256 hash stored**, constant-time compare, TTL 12 h |
-| Revocation | Logout revokes one; password reset revokes all; expired rows pruned |
+| Tokens | 256-bit random (`randomBytes(32)`), `mm_` prefix, **SHA-256 hash stored** — the token itself is never persisted, logged or echoed. Verified by an indexed probe on the digest, so no secret is ever compared in application code (a constant-time compare would guard nothing: the value compared is the one the database just matched). `token_prefix` is display-only and never a lookup key. TTL 12 h (`AUTH_TOKEN_TTL_HOURS`) |
+| Revocation | Logout revokes one (idempotent; the first `revoked_at` is kept for the audit); password reset revokes all in the same transaction as the new hash; rows expired > 30 days are pruned at boot |
 | Login throttling | ≤ 10 failures / 15 min per (ip, username) → `429` + `Retry-After` (a disabled account gets `403 ACCOUNT_DISABLED` — not `ACCOUNT_LOCKED`, which read like throttling), generic error messages |
 | Transport | Bearer only over HTTPS (TLS terminated by proxy); no cookies, no query tokens |
 | Storage in browser | `sessionStorage` only (D-13) — cleared on tab close |
