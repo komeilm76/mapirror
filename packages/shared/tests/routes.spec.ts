@@ -93,6 +93,50 @@ describe('apiScopeOf', () => {
   });
 });
 
+describe('percent-encoded paths', () => {
+  it('classifies the decoded form too, so the admin guard fails closed', () => {
+    // The guard is prefix-based so new routes are protected automatically (L2); that makes classification
+    // the security boundary. A request for the encoded prefix must still count as admin.
+    expect(apiScopeOf('/_admin/%61pi/cache')).toBe('admin');
+    expect(isAdminApiPath('/_admin/%61pi/cache')).toBe(true);
+    expect(apiScopeOf('/_admin%2Fapi%2Fcache')).toBe('admin');
+    expect(apiScopeOf('/_public/%61pi/countries')).toBe('public');
+  });
+
+  it('still treats an encoded reserved segment as reserved', () => {
+    expect(isPagePath('/_site/%61pi')).toBe(false);
+    expect(isPagePath('/_site/%61pi-docs')).toBe(true);
+  });
+
+  it('does not throw on malformed escapes, and classifies what it can', () => {
+    expect(() => apiScopeOf('/_admin/%ZZ/api')).not.toThrow();
+    expect(apiScopeOf('/_admin/%ZZ/api')).toBeNull();
+    expect(apiScopeOf('/_admin/api/%ZZ')).toBe('admin');
+  });
+
+  it('is case-sensitive, because HTTP paths are', () => {
+    expect(apiScopeOf('/_ADMIN/api')).toBeNull();
+    expect(isAdminApiPath('/_Admin/Api/cache')).toBe(false);
+  });
+});
+
+describe('documented boundaries', () => {
+  it('does not treat a trailing slash as a probe', () => {
+    // `isPathUnder` tolerates a trailing slash; the probes do not. Fastify registers `/healthz` and does
+    // not ignore trailing slashes, so `/healthz/` 404s — and the law test rejects it on the route table.
+    expect(isPathUnder('/healthz/', '/healthz')).toBe(true);
+    expect(isProbePath('/healthz/')).toBe(false);
+    expect(isLegalPath('/healthz/')).toBe(false);
+  });
+
+  it('applies the reserved segment to the first segment only', () => {
+    // Proxies normalise duplicate slashes, so `/_site//api` reaches the app as `/_site/api`; the lexical
+    // rule stays first-segment-only, which keeps a country slug called "api" a legal page.
+    expect(isPagePath('/_site//api')).toBe(true);
+    expect(isPagePath('/_site/countries/api')).toBe(true);
+  });
+});
+
 describe('isAdminApiPath', () => {
   it('is true only for the admin API, which is what the guard keys on (L2)', () => {
     expect(isAdminApiPath('/_admin/api')).toBe(true);

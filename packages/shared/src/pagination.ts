@@ -45,23 +45,41 @@ export interface PaginationOptions {
 }
 
 /**
+ * Plain decimal with an optional sign and fraction. Deliberately **not** `Number(raw)`.
+ *
+ * `Number()` also accepts `0x10`, `1e3`, `Infinity` and `[]`, so `?limit=0x10` would quietly mean 16 and
+ * `?page=1e3` 100 — inputs no client sends, interpreted rather than ignored. Only the form a URL is
+ * documented to carry is accepted; anything else falls back to the default, which is also what a
+ * hand-edited or crawler-generated link deserves.
+ */
+const DECIMAL = /^[+-]?\d+(?:\.\d+)?$/;
+
+/**
  * Converts one raw query value into a bounded positive integer.
  *
  * @param raw - Query value (`string`, number, or `undefined`).
- * @param fallback - Value used when the input is absent or not a finite number.
+ * @param fallback - Value used when the input is absent or not a decimal number.
  * @param min - Smallest legal value.
  * @param max - Largest legal value.
  * @returns The clamped integer.
  */
 function bound(raw: unknown, fallback: number, min: number, max: number): number {
-  const parsed =
-    typeof raw === 'number'
-      ? raw
-      : typeof raw === 'string' && raw.trim() !== ''
-        ? Number(raw)
-        : Number.NaN;
+  const parsed = parseDecimal(raw);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(Math.floor(parsed), min), max);
+}
+
+/**
+ * Reads a finite decimal from a query value.
+ *
+ * @param raw - Candidate value: a number from internal callers, a string from a query string, or absent.
+ * @returns The number, or `NaN` when the input is not a decimal.
+ */
+function parseDecimal(raw: unknown): number {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : Number.NaN;
+  if (typeof raw !== 'string') return Number.NaN;
+  const trimmed = raw.trim();
+  return DECIMAL.test(trimmed) ? Number(trimmed) : Number.NaN;
 }
 
 /**
@@ -79,7 +97,12 @@ export function parsePagination(
   const defaultLimit = Math.min(options.defaultLimit ?? DEFAULT_PAGE_SIZE, maxLimit);
   const page = bound(query.page, DEFAULT_PAGE, 1, Number.MAX_SAFE_INTEGER);
   const limit = bound(query.limit, defaultLimit, 1, maxLimit);
-  return { page, limit, offset: (page - 1) * limit };
+  // `(page - 1) * limit` leaves the safe-integer range long before `page` does: with `limit=100` the
+  // product is already inexact at `page ≈ 9e13`, and an inexact float offset is sent to SQL as
+  // `900719925474099000` — a number that never equals what the caller asked for. Clamping keeps the
+  // bound an integer; such an offset returns an empty page either way, which is the honest answer.
+  const offset = Math.min((page - 1) * limit, Number.MAX_SAFE_INTEGER);
+  return { page, limit, offset };
 }
 
 /**
@@ -92,11 +115,16 @@ export function parsePagination(
  */
 export function buildPageMeta(page: number, limit: number, total: number): PageMeta {
   const safeTotal = Number.isFinite(total) && total > 0 ? Math.floor(total) : 0;
+  // `limit` normally comes from `parsePagination` and is ≥ 1, but this function is exported and a caller
+  // passing 0 divided by zero: `totalPages` became `Infinity`, which `JSON.stringify` turns into `null`,
+  // so the contract's integer field would have shipped as `"totalPages": null`.
+  const safeLimit = Number.isFinite(limit) && limit >= 1 ? Math.floor(limit) : DEFAULT_PAGE_SIZE;
+  const safePage = Number.isFinite(page) && page >= 1 ? Math.floor(page) : DEFAULT_PAGE;
   return {
-    page,
-    limit,
+    page: safePage,
+    limit: safeLimit,
     total: safeTotal,
     // 0 rows means 0 pages, not 1: the UI shows "no results", never "page 1 of 1" over an empty table.
-    totalPages: safeTotal === 0 ? 0 : Math.ceil(safeTotal / limit),
+    totalPages: safeTotal === 0 ? 0 : Math.ceil(safeTotal / safeLimit),
   };
 }

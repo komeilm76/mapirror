@@ -85,6 +85,38 @@ describe('parsePagination', () => {
     expect(parsePagination({ limit: '5000' }, { maxLimit: 5000 }).limit).toBe(MAX_PAGE_SIZE);
   });
 
+  it('never produces an offset outside the safe-integer range', () => {
+    // `(page - 1) * limit` was inexact long before `page` hit its ceiling: page 9007199254740991 with
+    // limit 100 produced 900719925474099000, a float that equals neither the requested offset nor its
+    // neighbour — and that is what would have reached SQL.
+    for (const query of [
+      { page: '9007199254740991', limit: '100' },
+      { page: '9007199254740991', limit: '1' },
+      { page: '1', limit: '100' },
+    ]) {
+      const { offset } = parsePagination(query);
+      expect(Number.isSafeInteger(offset), JSON.stringify(query)).toBe(true);
+      expect(offset).toBeGreaterThanOrEqual(0);
+      expect(Number.isInteger(offset)).toBe(true);
+    }
+  });
+
+  it('accepts only decimal query values, not hex or exponent notation', () => {
+    // `Number('0x10')` is 16 and `Number('1e3')` is 1000; neither is a form a URL carries, and mapping
+    // them onto pagination silently changes the page size. They fall back to the default instead.
+    expect(parsePagination({ limit: '0x10' }).limit).toBe(DEFAULT_PAGE_SIZE);
+    expect(parsePagination({ page: '0x2' }).page).toBe(1);
+    expect(parsePagination({ limit: '1e3' }).limit).toBe(DEFAULT_PAGE_SIZE);
+    expect(parsePagination({ page: '1e1' }).page).toBe(1);
+    expect(parsePagination({ limit: '0b101' }).limit).toBe(DEFAULT_PAGE_SIZE);
+    expect(parsePagination({ limit: 'Infinity' }).limit).toBe(DEFAULT_PAGE_SIZE);
+    expect(parsePagination({ limit: ' ' }).limit).toBe(DEFAULT_PAGE_SIZE);
+    // Still accepted: signed and fractional decimals, which people do type.
+    expect(parsePagination({ limit: '+5' }).limit).toBe(5);
+    expect(parsePagination({ limit: ' 5 ' }).limit).toBe(5);
+    expect(parsePagination({ limit: '5.9' }).limit).toBe(5);
+  });
+
   it('keeps offset consistent with clamped values', () => {
     // If limit is clamped, offset must follow the clamped value — otherwise page 2 would skip rows that
     // were never sent.
@@ -114,6 +146,23 @@ describe('buildPageMeta', () => {
 
   it('floors a fractional total (COUNT(*) is an integer)', () => {
     expect(buildPageMeta(1, 10, 10.9).total).toBe(10);
+  });
+
+  it('does not divide by zero when a caller passes a nonsense limit', () => {
+    // `limit: 0` made `totalPages` Infinity, which JSON.stringify serialises as null — the contract's
+    // integer field would have reached the client as `"totalPages": null`.
+    for (const limit of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const meta = buildPageMeta(1, limit, 10);
+      expect(Number.isFinite(meta.totalPages), String(limit)).toBe(true);
+      expect(meta.totalPages, String(limit)).toBe(1);
+      expect(meta.limit).toBe(25);
+      expect(JSON.stringify(meta)).not.toContain('null');
+    }
+  });
+
+  it('normalises a nonsense page the same way', () => {
+    expect(buildPageMeta(0, 25, 10).page).toBe(1);
+    expect(buildPageMeta(Number.NaN, 25, 10).page).toBe(1);
   });
 
   it('survives the last page exactly full', () => {

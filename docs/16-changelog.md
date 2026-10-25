@@ -3,9 +3,40 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 7 passes · 80 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8).
+**Totals:** 8 passes · 86 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 8 — 2026-10-25 (adversarial review of the shared contracts)
+
+A pass over `P1-REPO-07` with the opposite instinct to the one that wrote it: assume every primitive has an
+input that breaks it. Six defects, each reproduced before the fix and re-probed after.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **`offset` left the safe-integer range.** `?page=9007199254740991&limit=100` produced `900719925474099000` — a float that equals neither the requested offset nor its neighbour, and that is exactly what would have been handed to SQL as `OFFSET`. `page` was bounded; the product was not | The product is clamped to `Number.MAX_SAFE_INTEGER`; the test asserts `Number.isSafeInteger(offset)` for three extreme inputs. Probe: removing the clamp fails `never produces an offset outside the safe-integer range` |
+| 2 | **`buildPageMeta` divided by zero.** The function is exported and `limit` is a parameter, so `buildPageMeta(1, 0, 10)` produced `totalPages: Infinity` — and `JSON.stringify(Infinity)` is `null`, so the contract's integer field would have shipped as `"totalPages": null`. My first fix only guarded the return value and still divided by the raw `limit`; the test caught that within a minute | `limit` and `page` are normalised inside the function and `totalPages` divides by the normalised value; the test also asserts the serialised object contains no `null` |
+| 3 | **Pagination accepted number syntax a URL never carries.** `Number('0x10')` is 16 and `Number('1e3')` is 1000, so `?limit=0x10` silently meant 16 rows and `?limit=1e3` meant 100. Documented input was "a decimal in a query string"; the parser interpreted anything JavaScript could parse | `DECIMAL` (`^[+-]?\d+(?:\.\d+)?$`) replaces `Number()`. Signed and fractional decimals still work (`+5`, `5.9`, `' 5 '`); hex, binary, exponent and `Infinity` fall back to the default |
+| 4 | **Encoded paths were not classified as admin.** `apiScopeOf('/_admin/%61pi/cache')` returned `null`, so the guard that keys on it would not have run. Today Fastify's router matches static segments on the encoded form and the request 404s first — but the guard is prefix-based *precisely so that new routes are protected automatically* (L2), which means classification is a security boundary that must not depend on router behaviour | Classification runs over the raw path **and** its decoded form, so the encoded prefix fails closed. Malformed escapes (`%ZZ`) are handled without throwing. Probe: restricting classification to the raw form fails `classifies the decoded form too, so the admin guard fails closed` |
+| 5 | **`isPagePath` failed open.** My first implementation of the decoded-form check used `.some()`, so `/_site/%61pi` was *a page* — the raw form is not the reserved segment while the decoded form is, and `some` only needs one. The reserved-segment law held for the spelling nobody uses and not for the one an attacker picks | `.every()`: a path is a page only if no form of it is reserved. Probe: flipping it back to `.some()` fails `still treats an encoded reserved segment as reserved` |
+| 6 | **The API re-derived a constant it had just imported.** `apps/api/src/config/prefixes.ts` said in its own doc comment that a second copy was "a second thing to get wrong", then built `API_PREFIXES` from the shared prefixes while `@mapirror/shared` already exported it — a second list whose order also had to match the registration order | Imported from shared and re-exported; probe: pointing the app at its own two-entry list fails the prefix test |
+
+Two further guards added, and two claims verified rather than assumed:
+
+- **Pagination defaults now have a doc-parity test** (`04-api.md` `?page=1&limit=25`, the `meta` shape and
+  `limit` (≤ 100) in every table that takes one), the same treatment env vars and error codes already get.
+- **A dead branch removed**: `pathForms` compared the decoded path to the raw one, which cannot be equal when
+  a `%` was consumed — unreachable code that showed up as uncovered lines, the third instance of this
+  pattern in two passes.
+- **Verified, not assumed: `packages/shared` really cannot leak runtime globals.** `node:fs`, `process.env`,
+  `Bun.version` and `window` were each injected into the package and each failed `typecheck` (exit 2) thanks
+  to `types: []` — so the "no globals, no `node:*`" claim in `09` is enforced by the compiler, and now
+  recorded as verified.
+- **Documented, not changed: probes are exact.** `isPathUnder` tolerates a trailing slash but `isProbePath`
+  does not, so `/healthz/` is not a probe and the route-law test would reject it if anyone registered it.
+  The asymmetry is deliberate (Fastify does not ignore trailing slashes) and now has a test saying so.
 
 ---
 

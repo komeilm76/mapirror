@@ -14,21 +14,18 @@
  */
 
 import {
+  API_PREFIXES,
+  apiScopeOf,
   isAdminApiPath,
   isApiPath,
-  apiScopeOf,
   PROBE_PATHS,
   ROUTE_PREFIXES,
 } from '@mapirror/shared';
 
-export { PROBE_PATHS, ROUTE_PREFIXES };
-
-/** The prefixes the Fastify instance registers its API routes under, in registration order. */
-export const API_PREFIXES = [
-  ROUTE_PREFIXES.authApi,
-  ROUTE_PREFIXES.adminApi,
-  ROUTE_PREFIXES.publicApi,
-] as const;
+// Re-exported, not redefined: this module used to build its own `API_PREFIXES` from the shared prefixes —
+// a second list whose order also had to match. `API_PREFIXES` is shared's list, in shared's order
+// (auth, admin, public), which is the order the Fastify instance will register routes in.
+export { API_PREFIXES, PROBE_PATHS, ROUTE_PREFIXES };
 
 /**
  * Reports whether a request to `url` must carry a Bearer token.

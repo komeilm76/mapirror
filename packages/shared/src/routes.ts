@@ -82,15 +82,47 @@ export function isPathUnder(path: string, prefix: string): boolean {
 }
 
 /**
+ * Forms of a path that must be classified identically: the path as received, plus its decoded form when it
+ * carries percent-escapes.
+ *
+ * Why both: the guard is prefix-based so that routes added later are protected automatically, which means
+ * the classification is the security boundary (L2). A request for `/_admin/%61pi/cache` decodes to an admin
+ * path; today Fastify's router matches static segments on the encoded form, so that request 404s before the
+ * guard matters — but "safe only because of how the router happens to match" is not a property this module
+ * should rely on. Decoding here makes the classification **fail closed**: the encoded form is admin too, so
+ * the token is required whether or not a route matches it.
+ *
+ * `decodeURIComponent` throws on malformed input (`%ZZ`), in which case only the raw form is classified —
+ * a request the server will reject anyway.
+ *
+ * @param path - Request path, with or without a query string.
+ * @returns One or two forms of the path.
+ */
+function pathForms(path: string): string[] {
+  const raw = pathOnly(path);
+  if (!raw.includes('%')) return [raw];
+  try {
+    // No `decoded === raw` shortcut: a path containing `%` always decodes to something else (or throws), so
+    // the branch would be unreachable — and an unreachable branch is uncovered lines in the report, not
+    // extra safety. A duplicate entry would be harmless for both `.some` and `.every`.
+    return [raw, decodeURIComponent(raw)];
+  } catch {
+    return [raw];
+  }
+}
+
+/**
  * Classifies an API path, if it is one.
  *
  * @param path - Request path.
  * @returns The scope, or `null` when the path is not an API route.
  */
 export function apiScopeOf(path: string): ApiScope | null {
-  if (isPathUnder(path, ROUTE_PREFIXES.authApi)) return 'auth';
-  if (isPathUnder(path, ROUTE_PREFIXES.adminApi)) return 'admin';
-  if (isPathUnder(path, ROUTE_PREFIXES.publicApi)) return 'public';
+  for (const form of pathForms(path)) {
+    if (isPathUnder(form, ROUTE_PREFIXES.authApi)) return 'auth';
+    if (isPathUnder(form, ROUTE_PREFIXES.adminApi)) return 'admin';
+    if (isPathUnder(form, ROUTE_PREFIXES.publicApi)) return 'public';
+  }
   return null;
 }
 
@@ -121,8 +153,8 @@ export function isAdminApiPath(path: string): boolean {
  * @returns `true` for `/healthz` and `/readyz` only — not for `/healthz/x`.
  */
 export function isProbePath(path: string): boolean {
-  return Object.values(PROBE_PATHS).some(
-    (probe) => isPathUnder(path, probe) && pathOnly(path) === probe,
+  return pathForms(path).some((form) =>
+    Object.values(PROBE_PATHS).some((probe) => isPathUnder(form, probe) && form === probe),
   );
 }
 
@@ -137,10 +169,13 @@ export function isProbePath(path: string): boolean {
  * @returns `true` for `/_site/*` (except the reserved segment) and for `/_auth/login` exactly.
  */
 export function isPagePath(path: string): boolean {
-  if (!isPathUnder(path, ROUTE_PREFIXES.site)) {
-    return pathOnly(path) === LOGIN_PAGE_PATH;
-  }
-  return !isPathUnder(path, `${ROUTE_PREFIXES.site}/${RESERVED_SEGMENT}`);
+  // `every`, not `some`: a path is a page only if *no* form of it is reserved. With `some`, the encoded
+  // `/_site/%61pi` was a page because its raw form is not reserved while its decoded form is — the
+  // reserved segment failed open, which is the one direction a law check must never fail in.
+  return pathForms(path).every((form) => {
+    if (!isPathUnder(form, ROUTE_PREFIXES.site)) return form === LOGIN_PAGE_PATH;
+    return !isPathUnder(form, `${ROUTE_PREFIXES.site}/${RESERVED_SEGMENT}`);
+  });
 }
 
 /**

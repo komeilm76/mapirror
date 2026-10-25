@@ -22,6 +22,19 @@ passes. Patch releases (`0.1.1`, …) are corrections to an already-tagged phase
 
 ## [Unreleased] — 0.2.0-dev (Phase 1)
 
+### Fixed
+- **Pagination could produce a non-integer offset** (review pass 8): `?page=9007199254740991&limit=100`
+  gave `900719925474099000`, which is what would have reached SQL as `OFFSET`. The product is now clamped to
+  the safe-integer range.
+- `buildPageMeta(…, limit: 0, …)` divided by zero and serialised `totalPages` as `null`; `limit` and `page`
+  are normalised inside the function.
+- Pagination read **any** number JavaScript accepts: `?limit=0x10` meant 16 and `?page=1e3` meant 100. Only
+  plain decimals are parsed now; everything else falls back to the default.
+- **The admin guard's classification ignored percent-encoding**, so `/_admin/%61pi/...` was not an admin
+  path. Classification now decodes first and fails closed (L2), and the reserved `api` segment uses `.every`
+  so `/_site/%61pi` cannot pass as a page.
+- `apps/api/src/config/prefixes.ts` re-derived `API_PREFIXES` that `@mapirror/shared` already exported.
+
 ### Added
 - **Shared contracts** (`P1-REPO-07`), the first code both apps depend on: `@mapirror/shared` now owns the
   route law (`routes`), the error vocabulary (`errors`), pagination (`pagination`), the ODbL attribution

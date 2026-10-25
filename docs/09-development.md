@@ -249,13 +249,14 @@ Rules:
 ### Shared contracts (`@mapirror/shared`)
 
 The one place a contract is written. **No runtime dependencies and no globals** — it is bundled for the
-browser, so `Bun.*`, `process`, `window` and `node:*` are compile errors there.
+browser, so `Bun.*`, `process`, `window` and `node:*` are compile errors there; `types: []` in the package
+`tsconfig` is what enforces it, verified by injecting each of the four (all exit 2 at `typecheck`).
 
 | Module | Owns |
 |---|---|
-| `routes` | L1 prefixes, the single login page, probes, segment-aware `isPathUnder`, and the reserved `api` segment (`/_site/api` is not a page; `/_site/api-docs` is) |
+| `routes` | L1 prefixes, the single login page, probes, segment-aware `isPathUnder`, and the reserved `api` segment as the first segment below a prefix (`/_site/api` is not a page; `/_site/api-docs` is). Percent-escapes are decoded before classification, so an encoded prefix fails closed |
 | `errors` | 25 HTTP codes with their statuses + 4 internal (job/startup) codes + `ErrorEnvelope` |
-| `pagination` | `parsePagination` / `buildPageMeta` — page 1, limit 25, ceiling 100, out-of-range clamped |
+| `pagination` | `parsePagination` / `buildPageMeta` — page 1, limit 25, ceiling 100; out-of-range **clamped**, non-decimal input ignored, offset always a safe integer |
 | `license` | ODbL 1.0 + "© OpenStreetMap contributors" + Geofabrik, and the list/detail response blocks |
 | `constants` | `mm_` token format, sort fields, and the 9 vocabularies the DB types mirror |
 

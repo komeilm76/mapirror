@@ -26,8 +26,11 @@ Rules:
   may be served from `/_admin/*`, `/_public/*` or root.
 - **Every API lives under its prefix**, and APIs are JSON only — `/_admin/api/*` and `/_public/api/*`
   never return HTML.
-- `api` is a reserved segment: it appears only in API prefixes. The human-readable documentation page
-  is `/_site/api-docs` (never `/_site/api`), so no page URL can be mistaken for an endpoint.
+- `api` is a reserved segment **as the first segment below a prefix**: it appears only in API prefixes.
+  The human-readable documentation page is `/_site/api-docs` (never `/_site/api`), so no page URL can be
+  mistaken for an endpoint. A *later* segment is unaffected, so a country slug that happened to be `api`
+  (`/_site/countries/api`) is still a legal page. Classification compares whole segments, and decodes
+  percent-escapes first: `/_admin/%61pi/...` is the admin API, not an unknown path.
 - `/` returns `302` to `/_site/`.
 - SPA deep links (`/_site/admin/cache/finland`) are rewritten by Nginx to `index.html`; unknown
   `/_site/*` paths render the in-app 404 page, not a server error.

@@ -31,7 +31,7 @@ This table is the single normative source for route placement. `00-index.md` sum
 | Auth (admin) | `Authorization: Bearer mm_…` on **every** `/_admin/api/*` request |
 | Auth (public) | none |
 | IDs | UUIDv4 strings; `countryId` is the local UUID; `sourceId` is the Geofabrik id (`europe/finland`) |
-| Pagination | `?page=1&limit=25` → envelope `{ data, meta: { page, limit, total, totalPages } }` |
+| Pagination | `?page=1&limit=25` → envelope `{ data, meta: { page, limit, total, totalPages } }`; values are **clamped** (never rejected) and only plain decimals are read — `?limit=0x10` or `?page=1e3` fall back to the defaults |
 | Sorting | `?sort=name|size|updated|created&order=asc|desc` |
 | Time | ISO-8601 UTC strings; byte counts are integers |
 | Nullability | absent/null means "unknown", never 0 |

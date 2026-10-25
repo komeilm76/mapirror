@@ -10,6 +10,9 @@ import {
   INTERVAL_FREQUENCIES,
   JOB_STATUSES,
   JOB_TYPES,
+  DEFAULT_PAGE,
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE_SIZE,
   ROUTE_PREFIXES,
   RUN_ITEM_STATUSES,
   UPDATE_STATES,
@@ -178,6 +181,24 @@ describe('enums (03-data-model.md ↔ constants)', () => {
       JSON.stringify([...list].sort()),
     );
     expect(new Set(sets).size).toBe(sets.length);
+  });
+});
+
+describe('pagination defaults (04-api.md §0.2 ↔ pagination)', () => {
+  it('uses the page/limit pair the conventions table documents', () => {
+    const api = read('docs/04-api.md');
+    expect(api).toContain(`?page=${DEFAULT_PAGE}&limit=${DEFAULT_PAGE_SIZE}`);
+    expect(api).toContain('meta: { page, limit, total, totalPages }');
+  });
+
+  it('documents the same ceiling the parser enforces', () => {
+    const api = read('docs/04-api.md');
+    // The documented form, verbatim — `limit` (≤ 100) — in every table that takes a limit. Counting the
+    // needle is clearer than escaping backticks and parentheses through a RegExp template.
+    const needle = `\`limit\` (≤ ${MAX_PAGE_SIZE})`;
+    expect(api).toContain(needle);
+    expect(api.split(needle).length - 1).toBeGreaterThan(1);
+    expect(MAX_PAGE_SIZE).toBe(100);
   });
 });
 
