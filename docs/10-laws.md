@@ -39,8 +39,13 @@ Rules:
   probes. **`/_auth/api/*` must be matched before the `/_auth/login` location** so the API is never
   swallowed by the SPA fallback. So the law is enforced in two tests:
   - `apps/api/tests/law-routes.test.ts` — walks the Fastify route table: every URL matches
-    `^(/_auth/api/|/_admin/api/|/_public/api/|/healthz$|/readyz$)`, every `/_admin/api/*` route rejects a
-    request without a Bearer token, and no API route answers `text/html`.
+    `^(/_auth/api/|/_admin/api/|/_public/api/|/healthz$|/readyz$)`, the classifiers the guards use agree with the
+    table, no page path is served by the API, and no API route answers `text/html`.
+  - `apps/api/tests/integration/admin-guard.spec.ts` — walks the same table and proves every `/_admin/api/*` route
+    refuses a request without a Bearer token, and that a valid one is let through (a gate, not a wall).
+  - `apps/api/tests/integration/credential-transport.spec.ts` — offers a **live** token in a cookie, the query
+    string, a body field, `Basic` credentials and other headers on every admin route, and gets `401` each time:
+    the credential is only ever the `Authorization` header (`14-security.md` §3).
   - `apps/web/tests/law-router.test.ts` — walks the Vue router table: every page path starts with
     `/_site/` or is exactly `/_auth/login`, the admin routes are children of `/_site/admin`, and no
     page path collides with an API prefix.

@@ -194,8 +194,8 @@ recorded here so a future reviewer does not "fix" the missing token check.
 
 - [ ] Admin password ≥ 12 chars enforced, weak list rejected, Argon2id verified
 - [ ] Token hash-only storage confirmed in DB inspection
-- [ ] Every `/_admin/api/*` route returns 401 without a token (law test)
-- [ ] Cookie auth, query-token auth, and Basic auth all rejected
+- [x] Every `/_admin/api/*` route returns 401 without a token (law test, `P1-API-08`)
+- [x] Cookie auth, query-token auth, and Basic auth all rejected (`P1-API-08`: a live token offered in each place)
 - [x] Logout revokes; password reset revokes all sessions (`P1-AUTH-04`, `P1-AUTH-07`)
 - [ ] No JWT anywhere (tokens are opaque): the client never decodes or trusts token contents
 - [ ] Path traversal attempts rejected (unit test with `../`, absolute paths, URL-encoded input)

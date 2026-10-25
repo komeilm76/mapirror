@@ -641,15 +641,23 @@ security headers and `x-request-id` are on probe responses exactly as everywhere
 ## 5. Route law verification
 
 ```
-apps/api/tests/law-routes.test.ts        (Fastify route table)
+apps/api/tests/law-routes.test.ts                 (Fastify route table, no database)
   ├─ every route matches ^(/_auth/api/|/_admin/api/|/_public/api/|healthz$|readyz$)
-  ├─ every /_admin/api/* route returns 401 without a Bearer token
-  ├─ no API route returns text/html
-  ├─ cookie-only request to an admin route → 401
-  ├─ ?token= query auth → 401
-  └─ /_public/api/* routes never return an unpublished country
+  ├─ the guard classifiers (isApiPath / isProbePath) agree with the table
+  ├─ no page path (/, /_site/*, /_auth/login) is served by the API
+  └─ no API route returns text/html
 
-apps/web/tests/law-router.test.ts        (Vue router table)
+apps/api/tests/integration/admin-guard.spec.ts    (the same table, walked again)
+  ├─ every /_admin/api/* route returns 401 without a Bearer token
+  └─ every one of them is reachable with a valid one
+
+apps/api/tests/integration/credential-transport.spec.ts   (a live token, in the wrong places)
+  ├─ cookie-only request to an admin route → 401 UNAUTHENTICATED
+  ├─ ?token= / ?access_token= query auth → 401
+  ├─ Basic, X-Api-Key, a bare header value, a body field → 401
+  └─ the same token in `Authorization: Bearer` → let through
+
+apps/web/tests/law-router.test.ts        (Vue router table — `P1-WEB-03`)
   └─ every page path starts with /_site/ (admin pages under /_site/admin)
 ```
 
