@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { parseOptions } from '@node-rs/argon2';
+import { LOGIN_PASSWORD_MAX, LoginRequestSchema } from '@mapirror/shared';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -148,18 +149,26 @@ describe('passwordProblems', () => {
     expect(passwordProblems('a'.repeat(PASSWORD_POLICY.maxLength))).toEqual([]);
   });
 
-  it('measures the ceiling the way the login schema measures it, not in characters', () => {
-    // Both of these pass a 256-**character** ceiling and are refused by the login endpoint, whose Zod `.max()`
-    // counts UTF-16 code units of the submitted string. An account created with one could never be logged into —
-    // the bug is invisible until the next login, and the recovery path is a password reset nobody expects.
-    const emoji = '😀'.repeat(200); // 200 characters, 400 units
+  it('measures the ceiling in code points of the submitted string, which is what the login schema measures', () => {
+    // Pass 20 assumed Zod's `.max()` counted UTF-16 units and changed this check to match; measurement in pass 23
+    // showed Zod 4 counts **code points** (`'😀'.repeat(200)` is 400 units, 200 code points, and passes `.max(256)`).
+    // The policy had therefore become stricter than the documented rule and rejected emoji a login accepts.
+    const emoji = '😀'.repeat(200);
     expect([...emoji].length).toBe(200);
     expect(emoji.length).toBe(400);
-    expect(passwordProblems(emoji).map((p) => p.rule)).toEqual(['too-long']);
+    expect(passwordProblems(emoji)).toEqual([]); // 200 characters is under the 256 ceiling
 
-    // And the direction NFKC moves: 300 units that normalise down to 150 characters.
+    // 257 emoji is over it, and the message counts characters rather than UTF-16 units.
+    const tooMany = '😀'.repeat(PASSWORD_POLICY.maxLength + 1);
+    expect(passwordProblems(tooMany).map((p) => p.rule)).toEqual(['too-long']);
+    expect(passwordProblems(tooMany).at(0)?.message).toContain('has 257');
+  });
+
+  it('counts the raw string, not the normalised one, so `e` + combining accent cannot slip past', () => {
+    // 150 × "e◌́" is 300 code points as typed and 150 once normalised. The login schema sees the raw 300 and refuses it,
+    // so the policy has to refuse it too — otherwise the account is created and can never be used.
     const decomposed = 'e\u0301'.repeat(150);
-    expect(decomposed.length).toBe(300);
+    expect([...decomposed].length).toBe(300);
     expect([...decomposed.normalize('NFKC')].length).toBe(150);
     expect(passwordProblems(decomposed).map((p) => p.rule)).toEqual(['too-long']);
   });
@@ -314,11 +323,44 @@ describe('documentation matches the code', () => {
   });
 
   it('documents a login password limit that a created password can satisfy', () => {
-    // The bug this prevents: a policy that allows 256 characters while the login schema allows 200 — an account
-    // whose password can be set and never used.
+    // Three numbers that must agree: the document's, the login schema's and this policy's.
     const api = readDoc('04-api.md');
     const limit = Number(/password 1–(\d+) chars/u.exec(api)?.[1]);
 
     expect(limit).toBe(PASSWORD_POLICY.maxLength);
+    expect(LOGIN_PASSWORD_MAX).toBe(PASSWORD_POLICY.maxLength);
+  });
+
+  it('never accepts a password the login schema would refuse', () => {
+    // The invariant, as a property over the inputs that make units and characters disagree: anything creation accepts
+    // must be usable at login. It guards the **dangerous** direction — an account that can be created and never used —
+    // and it fires if the ceiling is measured on the normalised string (the decomposed case below is accepted by the
+    // policy then, and refused by the login schema). The *opposite* mistake, being stricter than the login schema, is
+    // caught by the emoji test above; between them, both directions are covered.
+    const awkward = [
+      'correct horse battery staple',
+      '😀'.repeat(200), // 200 code points, 400 UTF-16 units
+      '😀'.repeat(PASSWORD_POLICY.maxLength), // exactly at the ceiling
+      'e\u0301'.repeat(150), // 300 code points, 150 after NFKC
+      'a'.repeat(PASSWORD_POLICY.maxLength),
+      '\ud800' + 'a'.repeat(PASSWORD_POLICY.maxLength - 1), // a lone surrogate, which JSON can carry
+      '🎉'.repeat(10) + ' long passphrase',
+    ];
+
+    for (const password of awkward) {
+      const problems = passwordProblems(password);
+      const acceptedHere = problems.every((problem) => problem.rule !== 'too-long');
+      const acceptedAtLogin = LoginRequestSchema.safeParse({ username: 'admin', password }).success;
+
+      if (acceptedHere) {
+        expect(acceptedAtLogin, JSON.stringify([...password]).slice(0, 60)).toBe(true);
+      }
+    }
+
+    // ...and the other direction is checked too, so the test cannot pass by accepting nothing: at least one of these
+    // awkward strings really is accepted for creation.
+    expect(
+      awkward.filter((password) => passwordProblems(password).length === 0).length,
+    ).toBeGreaterThan(2);
   });
 });

@@ -139,10 +139,12 @@ describe('CORS', () => {
       method: 'POST',
       url: '/_auth/api/login',
       headers: { origin: 'http://localhost:8080', 'content-type': 'application/json' },
-      payload: { username: 'admin', password: 'x' },
+      // An *invalid* body on purpose: it reaches the handler and is answered `400` without touching the database, which
+      // is all this test needs — the point is that the request was not refused for its `Origin`.
+      payload: { username: 'admin' },
     });
 
-    expect(response.statusCode).toBe(503);
+    expect(response.statusCode).toBe(400);
     await instance.close();
   });
 
@@ -297,8 +299,8 @@ describe('the JSON body limit', () => {
       payload: { username: 'x', padding: 'y'.repeat(JSON_BODY_LIMIT_BYTES - 2048) },
     });
 
-    // The stub route answers 503: the request got through the parser and reached a handler.
-    expect(response.statusCode).toBe(503);
+    // The handler answers 400 (no password in the body): the request got through the parser and reached a handler.
+    expect(response.statusCode).toBe(400);
     await instance.close();
   });
 });

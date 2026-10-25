@@ -51,14 +51,24 @@ sequenceDiagram
   A->>SPA: open /_auth/login
   A->>SPA: username + password
   SPA->>API: POST /_auth/api/login
-  API->>DB: lookup admin, verify argon2id
-  alt valid
-    API->>DB: INSERT token (sha256 hash, expiresAt)
-    API-->>SPA: { token, expiresAt, admin }
-    SPA->>SPA: sessionStorage.setItem('mm.token')
-    SPA->>SPA: router → /_site/admin/
-  else invalid
-    API-->>SPA: 401 INVALID_CREDENTIALS (generic)
+  API->>API: throttle check (ip, username) — no hash, no DB
+  alt locked out
+    API-->>SPA: 429 RATE_LIMITED + Retry-After
+  else allowed
+    API->>DB: lookup admin; verify argon2id (dummy hash if absent)
+    alt wrong password or unknown user
+      API->>DB: INSERT audit auth.login_failed
+      API-->>SPA: 401 INVALID_CREDENTIALS (identical either way)
+    else password correct
+      alt account deactivated
+        API-->>SPA: 403 ACCOUNT_DISABLED (not counted as a failure)
+      else valid
+        API->>DB: BEGIN — INSERT token (sha256 hash, expiresAt), last_login_at, audit auth.login
+        API-->>SPA: { token, expiresAt, admin } (cache-control: no-store)
+        SPA->>SPA: sessionStorage.setItem('mm.token')
+        SPA->>SPA: router → /_site/admin/
+      end
+    end
   end
   SPA->>API: GET /_auth/api/me (Bearer)
   SPA->>API: GET /_admin/api/system/status (Bearer)
@@ -66,8 +76,10 @@ sequenceDiagram
 
 **Rules:** token only in `sessionStorage` (not `localStorage`); every API call attaches the header;
 `401` anywhere ⇒ clear state + redirect to `/_auth/login`; no auto-refresh (D-3).
-**Tests:** login happy path, wrong password, expired token, revoked token, cookie-only rejected,
-`?token=` rejected, SPA guard redirects when `sessionStorage` is empty or `/me` fails.
+**Tests:** login happy path, wrong password, unknown user, deactivated account, lockout (`429` with `Retry-After`),
+expired token, revoked token, cookie-only rejected, `?token=` rejected, SPA guard redirects when `sessionStorage` is
+empty or `/me` fails. The throttle is checked **before** the hash on purpose: a locked-out client costs a map lookup,
+not a 64 MiB Argon2 verify.
 
 ---
 

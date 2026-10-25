@@ -7,7 +7,9 @@
   "exports": {
     ".": "./src/index.ts"
   },
-  "dependencies": {},
+  "dependencies": {
+    "zod": "4.6.7"
+  },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
   }

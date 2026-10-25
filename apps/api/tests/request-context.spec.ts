@@ -66,10 +66,12 @@ describe('x-request-id is returned on every response', () => {
   it('uses the same id in the header and in the error envelope', async () => {
     const instance = await buildTestApp();
 
+    // Any error path will do; the login route is the cheapest one that answers the envelope without a database (an
+    // empty body fails validation before a handler could query).
     const response = await instance.inject({ method: 'POST', url: '/_auth/api/login' });
     const body = response.json<{ error: { requestId: string } }>();
 
-    expect(response.statusCode).toBe(503);
+    expect(response.statusCode).toBe(400);
     expect(body.error.requestId).toBe(response.headers[REQUEST_ID_HEADER]);
     await instance.close();
   });

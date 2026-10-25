@@ -42,13 +42,12 @@ afterEach(async () => {
 });
 
 describe('the three API prefixes are registered', () => {
-  const namespaces: [string, 'GET' | 'POST', string][] = [
-    ['auth', 'POST', '/_auth/api/login'],
+  const stubs: [string, 'GET' | 'POST', string][] = [
     ['admin', 'GET', '/_admin/api/catalog'],
     ['public', 'GET', '/_public/api/countries'],
   ];
 
-  for (const [scope, method, url] of namespaces) {
+  for (const [scope, method, url] of stubs) {
     it(`${scope} namespace answers under its prefix`, async () => {
       const response = await (await app()).inject({ method, url });
 
@@ -57,6 +56,16 @@ describe('the three API prefixes are registered', () => {
       expect(response.headers['content-type']).toMatch(/^application\/json/);
     });
   }
+
+  it('auth answers under its prefix with a real handler, not a stub', async () => {
+    // `P1-AUTH-03` replaced the `503`. An empty body is answered `400 VALIDATION_ERROR` by the shared schema, which
+    // proves the route exists *and* that it validates before it queries.
+    const response = await (await app()).inject({ method: 'POST', url: '/_auth/api/login' });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json<{ error: { code: string } }>().error.code).toBe('VALIDATION_ERROR');
+    expect(response.headers['content-type']).toMatch(/^application\/json/);
+  });
 
   it('returns the documented error envelope, with a request id and the owning task', async () => {
     const response = await (await app()).inject({ method: 'GET', url: '/_public/api/countries' });
@@ -78,7 +87,8 @@ describe('the three API prefixes are registered', () => {
       expect(isApiPath(url), route).toBe(true);
       expect(task, route).toMatch(/^P[0-9]-[A-Z]+-[0-9]+$/);
     }
-    expect(Object.keys(STUB_ROUTES)).toHaveLength(3);
+    // Two stubs remain; each disappears from this map as its module lands, and `_auth/api/login` is the first to go.
+    expect(Object.keys(STUB_ROUTES)).toHaveLength(2);
   });
 
   it('serves nothing outside the three prefixes — no root, no bare prefix, no page', async () => {
@@ -96,6 +106,7 @@ describe('the three API prefixes are registered', () => {
       ['/_admin/api/catalog', 'GET'],
       ['/_public/api/countries', 'GET'],
     ] as const) {
+      // Every route in every namespace, stub or not: a JSON API never answers HTML, including for a bad request.
       const response = await instance.inject({ method, url: route });
       expect(response.headers['content-type'], route).toMatch(/^application\/json/);
       expect(response.body).not.toContain('<html');

@@ -25,6 +25,8 @@ import { PLUGIN_ORDER, registerPipeline, type PluginSlot } from './plugins/order
 import { REQUEST_ID_HEADER, resolveRequestId } from './plugins/request-context';
 import { JSON_BODY_LIMIT_BYTES } from './plugins/security';
 import { assertRouteLaw, installRouteLawHook } from './plugins/route-law';
+import type { LoginThrottle } from './modules/auth/login-throttle';
+import { loginThrottleFromConfig } from './modules/auth/login-throttle';
 
 /** Options accepted by {@link buildApp}. */
 export interface BuildAppOptions {
@@ -60,6 +62,15 @@ export interface BuildAppOptions {
    * the fast gate must not need a migrated database. Production omits it.
    */
   schemaCheck?: SchemaCheck;
+  /**
+   * Login throttle to use instead of building one from `config`. Tests only: a lockout test drives the window with an
+   * injected clock rather than waiting fifteen minutes, and a route test that wants a fresh counter should not depend
+   * on the order suites run in.
+   *
+   * The instance is per **process**, not per request, which is the whole point — building one inside the handler would
+   * reset the counter on every attempt.
+   */
+  loginThrottle?: LoginThrottle;
 }
 
 /**
@@ -110,6 +121,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       // above pass while the `db` stage quietly opened a real pool against the default DSN.
       ...(options.database === undefined ? {} : { database: options.database }),
       ...(options.schemaCheck === undefined ? {} : { schemaCheck: options.schemaCheck }),
+      // One throttle for the process, built from `AUTH_MAX_LOGIN_ATTEMPTS` / `AUTH_LOCKOUT_MINUTES`. A supplied one
+      // wins so a test can control its clock; nothing else in production passes it.
+      loginThrottle: options.loginThrottle ?? loginThrottleFromConfig(config),
     });
 
     // Enforced after the boot, because a throwing `onRoute` hook stalls `ready()` forever — see the module

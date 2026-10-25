@@ -30,10 +30,10 @@ open http://localhost:8080            # public site
 open http://localhost:8080/_auth/login # admin login
 ```
 
-> **Where we are today:** the API boots and serves its three namespaces (`P1-API-01`), but nothing in this
-> section works end to end yet — there is no database, no login and no SPA. `bun run dev:api` starts it on
-> `:3000`; every route answers `503 NOT_READY` until its module lands (see `04-api.md` §0.3).
-> The rest arrives with `P1-DOCK-04`, `P1-WEB-01` and the database tasks.
+> **Where we are today:** the API boots, talks to PostgreSQL, and `POST /_auth/api/login` is real — throttled,
+> audited, and answering `200`/`400`/`401`/`403`/`429` as `04-api.md` §1 describes (`P1-AUTH-03`). Two routes are
+> still stubs answering `503 NOT_READY` (`04-api.md` §0.3). There is no SPA yet, so `bun run dev:web` shows an empty
+> shell; `bun run dev:api` serves the API on `:3000`, and `logout`/`me` arrive with `P1-AUTH-04`.
 
 ## 3. First run (local dev, hot reload)
 
@@ -301,9 +301,13 @@ Rules:
 
 ### Shared contracts (`@mapirror/shared`)
 
-The one place a contract is written. **No runtime dependencies and no globals** — it is bundled for the
-browser, so `Bun.*`, `process`, `window` and `node:*` are compile errors there; `types: []` in the package
-`tsconfig` is what enforces it, verified by injecting each of the four (all exit 2 at `typecheck`).
+The one place a contract is written. **`zod` is its only runtime dependency** (added in `P1-AUTH-03`, ADR-026:
+the login schema is the boundary both the SPA form and the API must agree on, and hand-written validation in two
+places is how the two drift), and there are **no globals** — it is bundled for the browser, so `Bun.*`, `process`,
+`window` and `node:*` are compile errors there; `types: []` in the package `tsconfig` is what enforces that, verified
+by injecting each of the four (all exit 2 at `typecheck`). That `types: []` is also why the test that compares a schema
+to the prose in `04-api.md` lives in `apps/api/tests/auth-contract.spec.ts`: reading a file needs `node:fs`, which this
+package may not import.
 
 | Module | Owns |
 |---|---|
@@ -312,10 +316,11 @@ browser, so `Bun.*`, `process`, `window` and `node:*` are compile errors there; 
 | `pagination` | `parsePagination` / `buildPageMeta` — page 1, limit 25, ceiling 100; out-of-range **clamped**, non-decimal input ignored, offset always a safe integer |
 | `license` | ODbL 1.0 + "© OpenStreetMap contributors" + Geofabrik, and the list/detail response blocks |
 | `constants` | `mm_` token format, sort fields, and the 9 vocabularies the DB types mirror |
+| `auth` | `LoginRequestSchema`, `LoginResponseSchema`, `LoginRateLimitDetailsSchema`, `AdminProfileSchema` and the four bounds (`P1-AUTH-03`). The login form and the login endpoint validate with the *same* objects; the creation policy's ceiling is asserted equal to `LOGIN_PASSWORD_MAX` |
 
-Both apps consume it in real code, not in a re-export: `apps/api/src/config/prefixes.ts` is what
-`requiresAdminToken` will key the L2 guard on, and `apps/web/src/router/paths.ts` is the table the router
-law test walks. Zod schemas are **additive** and arrive with the API contract tasks.
+Both apps consume it in real code, not in a re-export: `apps/api/src/config/prefixes.ts` is what the L2 guard keys
+on, `apps/web/src/router/paths.ts` is the table the router law test walks, and the auth schemas are parsed by the
+route and will be parsed by the login form. Each further contract arrives with its own API task, as `auth` did.
 
 ## 9. Code conventions
 
@@ -349,9 +354,11 @@ and `vue/define-{props,emits}-declaration: type-based`.
   `hashPassword` and `verifyPassword` — and both normalise with NFKC, so use them instead of calling the addon.
   - The **policy runs where a password is created** (launch and reset scripts), never on login: a stored account
     created under an older, weaker policy must stay usable, and login must not tell an attacker what the policy is.
-  - The **floor counts characters** (code points of the NFKC form); the **ceiling counts UTF-16 units of what was
-    submitted**, because that is what the login schema's `.max()` measures. Mixing the two up creates an account
-    that can be set and never used — a test parses both numbers out of the docs and compares them to the constants.
+  - The **floor counts characters** (code points of the NFKC form); the **ceiling counts code points of what was
+    submitted** — the unit Zod's `.max()` measures, established by measurement in pass 23 (pass 20 assumed UTF-16
+    units and made the policy reject passwords login accepts). Mixing the two up creates an account that can be set
+    and never used — a test parses both numbers out of the docs and compares them to the constants, and a second one
+    asserts the invariant directly: anything the policy accepts, the login schema accepts.
   - Surrounding whitespace is **rejected, not trimmed**: trimming changes the password the person set, and the next
     login fails with no explanation.
   - The blocklist is 1 000 lines of Django's `common-passwords.txt.gz`, taken verbatim in frequency order, licence

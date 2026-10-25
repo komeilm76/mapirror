@@ -58,17 +58,20 @@ export const PASSWORD_POLICY = {
   /** Minimum length in characters (Unicode code points, after NFKC normalisation). */
   minLength: 12,
   /**
-   * Maximum length, in the unit the login schema counts.
+   * Maximum length, counted the way the login schema counts.
    *
    * Not an arbitrary bound: `04-api.md` §`/_auth/api/login` accepts a password of at most 256 characters, so a
    * longer one could be *set* and never *used*. A cap here and a limit in the login schema that disagree produce
    * an account nobody can log into — the kind of bug that shows up in production, once. A test parses that
    * sentence out of `04-api.md` and compares it to this number, so the two cannot drift.
    *
-   * The unit is **UTF-16 code units**, which is what Zod's `.max()` counts on the submitted string — not
-   * characters. Measured: the obvious implementation compares *code points* (correct for the length floor, see
-   * {@link characterCount}) and therefore accepts 200 emoji, which are 400 UTF-16 units and which the login
-   * endpoint then refuses forever.
+   * The unit is **code points of the submitted string**, because that is what Zod 4's `.max()` measures — verified
+   * by measurement in pass 23 (`'😀'.repeat(200)` is 400 UTF-16 units, 200 code points, and passes `.max(256)`).
+   * Pass 20 assumed the opposite, counted units here, and made the policy reject 129 emoji that login accepts; the
+   * invariant "anything accepted for creation is accepted at login" is now a test rather than a comment.
+   *
+   * Deliberately the **raw** string, not the NFKC form: the login schema sees what the client sends, so comparing
+   * the normalised length would accept `150 × "e+◌́"` (300 raw code points, 150 after NFKC) that login then refuses.
    */
   maxLength: 256,
   /**
@@ -186,24 +189,23 @@ export function passwordProblems(
   }
 
   const problems: PasswordProblem[] = [];
+  // The floor counts code points of the **normalised** form: that is what the person sees and types. Normalisation
+  // only ever shortens, so a password that clears the floor here also clears it unnormalised.
   const characters = characterCount(value);
-
-  // The floor counts **characters** (code points after NFKC): that is what the person sees, and it is the unit
-  // the policy is written in. The ceiling counts **UTF-16 code units of what was submitted**, because that is
-  // what the login schema measures — see `PASSWORD_POLICY.maxLength`. Two units, on purpose, for two different
-  // jobs; the `else if` is safe because a password cannot plausibly be both (that would need a string that NFKC
-  // shrinks by more than 20×) and "too short *and* too long" is a worse message than naming one.
-  const submittedUnits = password.length;
+  // The ceiling counts code points of the **submitted** string, which is the value the login schema measures (see
+  // `PASSWORD_POLICY.maxLength`). The `else if` is a message choice, not a safety one: a string cannot be both too
+  // short and too long, and naming one problem is more useful than naming two.
+  const submittedCharacters = characterCount(password);
 
   if (characters < PASSWORD_POLICY.minLength) {
     problems.push({
       rule: 'too-short',
       message: `Use at least ${String(PASSWORD_POLICY.minLength)} characters — this one has ${String(characters)}.`,
     });
-  } else if (submittedUnits > PASSWORD_POLICY.maxLength) {
+  } else if (submittedCharacters > PASSWORD_POLICY.maxLength) {
     problems.push({
       rule: 'too-long',
-      message: `Use at most ${String(PASSWORD_POLICY.maxLength)} characters — this one has ${String(submittedUnits)}.`,
+      message: `Use at most ${String(PASSWORD_POLICY.maxLength)} characters — this one has ${String(submittedCharacters)}.`,
     });
   }
 

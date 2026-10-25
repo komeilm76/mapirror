@@ -25,6 +25,8 @@ import type { FastifyInstance } from 'fastify';
 import { parseEnv, type AppConfig } from '../config/env';
 import type { SqlDatabase } from '../db/client';
 import type { SchemaCheck } from '../db/version-check';
+import type { LoginThrottle } from '../modules/auth/login-throttle';
+import { loginThrottleFromConfig } from '../modules/auth/login-throttle';
 
 import { registerRoutes } from '../routes/index';
 
@@ -65,6 +67,16 @@ export interface PipelineContext {
    * runs. It is not an ownership heuristic — that mistake is recorded in `16-changelog.md` pass 14.
    */
   readonly schemaCheck?: SchemaCheck;
+  /**
+   * One login throttle for the process (`P1-AUTH-03`).
+   *
+   * Built by `buildApp` from `config` and threaded here rather than created inside the route plugin, for one reason:
+   * the limiter has to outlive a request. A new instance per registration would still be per-process, but a new one
+   * inside the handler — the shape that is easy to write by accident — would reset the count on every attempt, i.e. no
+   * limiter at all. Passing it in makes the lifetime explicit, and making it **required** means it cannot be passed in
+   * only sometimes: a second instance would double every limit while looking correct.
+   */
+  readonly loginThrottle: LoginThrottle;
 }
 
 /** One stage of the pipeline. */
@@ -140,9 +152,14 @@ export const PLUGIN_ORDER: readonly PluginSlot[] = [
     task: null,
     // Routes *are* a plugin: they want encapsulation, so the three prefixes stay separate subtrees.
     install: (app, context) => {
-      // The routes need the cache directory for the readiness probe: a stage that reads configuration may not
-      // read `process.env` behind the pipeline's back (`P1-API-02`), so it arrives as an option.
-      app.register(registerRoutes, { cacheDir: context.config.cacheDir });
+      // The routes need three things from the process: the cache directory for the readiness probe, the validated
+      // configuration for the auth limits, and the login throttle. A stage that reads configuration may not read
+      // `process.env` behind the pipeline's back (`P1-API-02`), so all three arrive as options.
+      app.register(registerRoutes, {
+        cacheDir: context.config.cacheDir,
+        config: context.config,
+        loginThrottle: context.loginThrottle,
+      });
     },
   },
 ];
@@ -168,13 +185,25 @@ export function pendingPlugins(): PluginId[] {
  * @param slots - Pipeline to install; defaults to {@link PLUGIN_ORDER}.
  * @throws When a plugin fails, including an L1 violation thrown from the route-law hook.
  */
+/**
+ * The context a pipeline gets when the caller supplies none: the defaults an empty environment parses to, plus the
+ * login throttle those defaults describe.
+ *
+ * The configuration comes from an **empty** source, not from `process.env`: a stage that reads configuration must
+ * produce the same behaviour in a test as in CI, and a test that inherits the developer's environment is a test that
+ * fails only on the machine that did not write it.
+ *
+ * @returns A complete {@link PipelineContext}.
+ */
+export function defaultPipelineContext(): PipelineContext {
+  const config = parseEnv({});
+  return { config, loginThrottle: loginThrottleFromConfig(config) };
+}
+
 export async function registerPipeline(
   app: FastifyInstance,
   slots: readonly PluginSlot[] = PLUGIN_ORDER,
-  // The default is computed from an **empty** source, not from `process.env`: a stage that reads configuration
-  // must produce the same behaviour in a test as in CI, and a test that inherits the developer's environment is
-  // a test that fails only on the machine that did not write it.
-  context: PipelineContext = { config: parseEnv({}) },
+  context: PipelineContext = defaultPipelineContext(),
 ): Promise<void> {
   for (const slot of slots) {
     // Not awaited: a slot's install may call `app.register()`, whose return value is a thenable that boots the

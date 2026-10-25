@@ -1,6 +1,6 @@
 # 15 — Architecture Decision Records
 
-**TL;DR** — 25 ADRs recording *why*. The owner's decision table (D-1…D-19) lives in `PROMPT.md` §24 and
+**TL;DR** — 27 ADRs recording *why*. The owner's decision table (D-1…D-19) lives in `PROMPT.md` §24 and
 is the authority on *what*; each ADR below explains the reasoning and consequences. If a doc contradicts
 `PROMPT.md` §24, that table wins; if two docs disagree with each other, the ADR decides.
 
@@ -345,7 +345,7 @@ effective space than a long passphrase. NIST SP 800-63B §5.1.1.2 drops composit
 |---|---|---|
 | Hash | Argon2id, 64 MiB, 3 passes, parallelism 1, 16-byte random salt, PHC-encoded | The reference algorithm, from the Rust reference implementation; the stored string carries its own parameters |
 | Floor | 12 characters, counted as Unicode code points of the NFKC form | What a person counts; `'😀'.length` is 2 and would let six emoji through |
-| Ceiling | 256 UTF-16 units of the submitted string | The login schema's own `.max()`. A ceiling in different units creates an account that can be set and never used |
+| Ceiling | 256 code points of the submitted string | The login schema's own `.max()`. A ceiling in different units creates an account that can be set and never used |
 | Blocklist | 1 000 most-used passwords (Django's list, verbatim), matched case-folded and with trailing digits/symbols stripped | A floor against the first thing anyone tries; the stem rule is what makes it fire at a 12-character floor |
 | Username | Rejected as a substring, when the username is ≥ 3 characters | Short usernames appear inside ordinary words |
 | Whitespace | Surrounding whitespace rejected, not trimmed | Trimming changes the password that was set |
@@ -365,6 +365,64 @@ effective space than a long passphrase. NIST SP 800-63B §5.1.1.2 drops composit
   and one libuv thread for ~74 ms, so an unthrottled endpoint would be a memory-amplification lever.
 - Raising `ARGON2_PARAMS` later does not invalidate existing rows — verification reads the parameters from
   each stored hash.
+
+---
+
+## ADR-026 — The login contract lives in `@mapirror/shared`, which now depends on `zod`
+
+**Context.** `P1-AUTH-03` has two consumers for the same shape: the SPA's login form and the API's login route. Both
+must agree about the bounds (username 1–64, password 1–256) and about the response envelope, and they must agree
+*before* either is written. `09-development.md` had stated a rule for `packages/shared`: no runtime dependencies, so it
+stays trivially bundleable for the browser.
+
+**Decision.** The contract is a Zod schema in `packages/shared/src/auth.ts`, and `zod` becomes that package's only
+runtime dependency. The API parses `LoginRequestSchema` in the handler (throwing the `ZodError`, which the one error
+handler already maps to `400 VALIDATION_ERROR` with `details.issues[].path`); the SPA parses the same object. The
+package keeps `types: []`, so `node:*`, `process`, `Bun` and `window` remain compile errors — `zod` is the single
+exception, and it is a pure ESM library with no platform globals.
+
+**Consequences.**
+
+- Adding a runtime dependency to `shared` is no longer forbidden outright, but it is now an ADR per dependency: the
+  default stays "none", and the exception has to buy agreement between two consumers. A form validator written by hand
+  in the SPA and a hand-rolled check in the route is exactly the drift this prevents.
+- The API does not use Fastify's JSON-Schema validation. Translating Zod to JSON Schema needs a type provider this
+  project does not depend on (ADR-021 keeps the contract in one place), so validation is a parse in the handler — one
+  mechanism for both sides rather than two that have to be kept equal.
+- `zod` is pinned (`4.6.7`) like every other dependency, and a measured fact is recorded with it: Zod 4's `.max()`
+  counts **code points**, not UTF-16 units (see `16-changelog.md`, pass 23 — an assumption to the contrary cost a
+  defect in the password policy).
+- The `shared` package's `types: []` is why the test that compares a schema with the prose in `04-api.md` lives in
+  `apps/api/tests/auth-contract.spec.ts`: reading a file needs `node:fs`.
+
+---
+
+## ADR-027 — Login throttling is in memory, sliding, doubly keyed, and one per process
+
+**Context.** AUTH-2 requires a lockout after N failed attempts and a `Retry-After` header. The obvious
+implementations differ in three places that matter: where the counters live (memory, Redis, a table), how the window
+moves (fixed or sliding), and what the key is (address, username, or both).
+
+**Decision.**
+
+| Question | Answer | Why |
+|---|---|---|
+| Storage | In memory, per process | `14-security.md` §7 already documents that limiter for every limiter in this app. A Redis or a table buys durability the threat model does not need, at the cost of a write on every failed login — and puts an availability dependency on the login path |
+| Window | Sliding (the instants of the failures, pruned on read) | A fixed window gives an attacker `2N` attempts around every boundary |
+| Keys | `(ip, username)` at 10 / 15 min **and** `ip` alone at 30 | The pair counter stops guessing one password; spraying one password across many usernames fails each pair once, so only the per-IP counter can see it. 3× the pair limit so three colleagues behind one office address are not locked out by each other |
+| On success | Clear the **pair** counter, keep the IP counter | A valid login says nothing about attempts on other accounts from that address |
+| Bound | 10 000 keys; expired keys pruned, then the oldest evicted | An unbounded counter is a memory-exhaustion lever aimed at the endpoint it protects. The cost of eviction is a resettable counter for someone already failing |
+| `0` limits | Rejected at construction (`RangeError`) | A `0` limit is silence, not safety — and a comparison of `0 >= 0` once locked every login out |
+| Instances | Exactly one, built in `app.ts` and required by the pipeline | Two counters in one process would double every limit while looking correct; the option is required so it cannot be passed only sometimes |
+
+**Consequences.**
+
+- The limits reset on restart and are not shared between replicas. The design is a single container; a second replica
+  makes this ADR wrong before it makes the limits wrong, and the revisit trigger is "more than one API container".
+- The state is per-process, so a restart during an attack forgives the attacker up to N attempts. Accepted: the
+  alternative is a durable write on the unauthenticated path.
+- Counters are keyed on the **normalised** address (`lib/client-ip.ts`), so a junk `X-Forwarded-For` cannot mint a new
+  bucket per request — the pass 22 defect.
 
 ---
 

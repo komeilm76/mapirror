@@ -1,8 +1,10 @@
 /**
  * `@mapirror/shared` — the single source of truth for contracts between the API and the web app.
  *
- * Imported by both applications and bundled for the browser, so this package has **no runtime
- * dependencies** and touches no globals: no `Bun.*`, no `process`, no `window`, no `node:*`.
+ * Imported by both applications and bundled for the browser, so this package touches no globals: no
+ * `Bun.*`, no `process`, no `window`, no `node:*`. Its **only runtime dependency is `zod`** — pure JavaScript,
+ * itself dependency-free, and the contract requires it: ADR-021 makes these schemas the contract, and a schema the
+ * SPA cannot run is not a contract. (Until `P1-AUTH-03` the package had none at all; that is now one, not several.)
  *
  * What lives here and why it is one copy:
  *
@@ -13,13 +15,15 @@
  * | `pagination` | D-16 — `{ data, meta }`, defaults and the `limit` ceiling |
  * | `license` | ODbL attribution that must appear on every public surface |
  * | `constants` | token format, sort fields and the enums the DB `CHECK`s mirror |
+ * | `auth` | login request/response shapes and their bounds (`P1-AUTH-03`) |
  *
- * Zod schemas for request/response bodies build on these and land with the API contract tasks; they are
- * additive, so nothing here changes shape when they arrive.
+ * Zod schemas for request/response bodies build on these and land with the API contract tasks (`auth` is the first);
+ * they are additive, so nothing here changes shape when they arrive.
  *
  * @module
  */
 
+export * from './auth';
 export * from './constants';
 export * from './errors';
 export * from './license';

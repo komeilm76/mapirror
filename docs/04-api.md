@@ -24,15 +24,15 @@ This table is the single normative source for route placement. `00-index.md` sum
 
 ### 0.3 Bootstrap state (temporary)
 
-The server is running before the modules are. Exactly three routes exist today, each at a path this
-document already defines, and each answers `503 NOT_READY` with the standard envelope naming the task that
-implements it:
+The server is running before the modules are. Exactly two routes are still stubs, each at a path this document
+already defines, and each answers `503 NOT_READY` with the standard envelope naming the task that implements it:
 
 | Route | Replaced by |
 |---|---|
-| `POST /_auth/api/login` | `P1-AUTH-03` |
 | `GET /_admin/api/catalog` | `P2-API-01` |
 | `GET /_public/api/countries` | `P3-API-03` |
+
+`POST /_auth/api/login` used to be the third; it is implemented as of `P1-AUTH-03` and documented in §1.
 
 No stub is registered at a bare prefix: `/_auth/api` with no trailing slash is not a route, which keeps the
 route table exactly as wide as the law allows. `apps/api/tests/app.spec.ts` asserts this set, so adding a
@@ -141,8 +141,13 @@ Body: `{ "username": "admin", "password": "…" }` (Zod: username 1–64 chars, 
 }
 ```
 
-Errors: `401 INVALID_CREDENTIALS` (generic, no user enumeration), `429 RATE_LIMITED` with
-`details.lockedUntil` after N failures (default 10 attempts / 15 min, per IP + username), and
+Headers: `cache-control: no-store` on **every** answer in this namespace, and never a `set-cookie` — the token
+travels in the body and nowhere else (a token in a shared cache is a session handed to the next caller).
+
+Errors: `400 VALIDATION_ERROR` with `details.issues[]` naming the field, `401 INVALID_CREDENTIALS` (generic, no
+user enumeration), `429 RATE_LIMITED` with `details.lockedUntil` + `details.retryAfterSeconds` **and** a matching
+`Retry-After` header (whole seconds, ≥ 1; no other answer carries that header) after N failures (default 10
+attempts / 15 min, per IP + username, 30 / IP), and
 `403 ACCOUNT_DISABLED` only when the admin account itself is deactivated (rate limiting is **not** a 403,
 and the code name says what it means — an earlier `ACCOUNT_LOCKED` read like a lockout and invited emitting
 403 for throttling).
