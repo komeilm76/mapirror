@@ -31,12 +31,20 @@ sequenceDiagram
   Entry->>Entry: start Fastify + worker
 ```
 
-**Rules:** password from `ADMIN_PASSWORD`, `ADMIN_PASSWORD_FILE`, or hidden prompt; the creation policy of
+**Rules:** password from `ADMIN_PASSWORD`, `ADMIN_PASSWORD_FILE`, or a hidden prompt (in that order — a flag is
+deliberately absent, because an argument is visible in `ps` and in the shell's history); the creation policy of
 `14-security.md` §3 applies (≥ 12 characters, not on the blocklist, no username inside it — enforced by
-`modules/auth/password.ts`, `P1-AUTH-01`); never logged; re-running never overwrites an existing password (use
-the reset script).
-**Tests:** `scripts/tests/init-admin.spec.ts` — create, idempotent re-run, weak password rejected,
-missing env + non-interactive → clear error, exit code 1.
+`modules/auth/password.ts`, `P1-AUTH-01`); never logged or echoed, on any stream; re-running never overwrites an
+existing password (use the reset script, `P1-AUTH-07`) and never re-enables a deactivated account — it says so and
+leaves it alone. The insert and its `auth.admin_created` audit row commit together, in
+`modules/auth/admin-accounts.ts`, which is also where the reset script and a future "add admin" endpoint will get the
+same rules.
+**Tests:** `scripts/tests/init-admin.spec.ts` — create, idempotent re-run (including a different password and a
+different case), weak password rejected with every rule listed, missing source + non-interactive → one line and exit 1,
+the secret absent from both streams; `scripts/tests/secret-prompt.spec.ts` — raw mode before reading, restored
+afterwards, backspace/Ctrl-C/Ctrl-D/escape sequences; `apps/api/tests/integration/admin-accounts.spec.ts` — the
+transaction (a forced audit failure leaves no account), the concurrent boot (one account, one audit row), a `23505`
+that is not ours re-thrown.
 
 ---
 

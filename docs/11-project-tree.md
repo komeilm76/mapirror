@@ -46,6 +46,7 @@ mapirror/
 │  │  │  │  │  ├─ routes.ts
 │  │  │  │  │  ├─ service.ts
 │  │  │  │  │  ├─ password.ts       # Argon2id hash/verify + policy
+│  │  │  │  │  ├─ admin-accounts.ts # Create the first admin: validate, hash, insert + audit, idempotent
 │  │  │  │  │  ├─ weak-passwords.ts # 1 000-entry blocklist (Django, BSD-3)
 │  │  │  │  │  ├─ session.ts        # Authorization header → session; verdict → 401/403 (shared with the guard)
 │  │  │  │  │  ├─ login-throttle.ts # sliding-window failures: (ip, username) + ip, bounded map
@@ -136,7 +137,9 @@ mapirror/
 │  ├─ check-hygiene.ts             # Gate stage 2: ignore matrix, env-doc parity, .dockerignore safelist
 │  ├─ check-workspaces.ts          # Gate stage 1: workspace wiring assertions
 │  ├─ tests/                       # CLI tests (scripts project in Vitest)
-│  ├─ init-admin.ts                # Launch script: create admin from ADMIN_PASSWORD*
+│  ├─ init-admin.ts                # Launch script: create admin from ADMIN_PASSWORD* (idempotent, never echoes)
+│  ├─ lib/
+│  │  └─ secret-prompt.ts         # Hidden terminal input: raw mode first, no echo, Ctrl-C/Ctrl-D
 │  ├─ reset-admin-password.ts      # Reset + revoke tokens (D: AUTH-4)
 │  ├─ migrate.ts                   # Run Kysely migrations (also run on boot)
 │  ├─ sync-catalog.ts              # Manual catalog sync (cron-friendly)

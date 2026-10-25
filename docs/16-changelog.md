@@ -3,9 +3,33 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 25 passes · 125 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1).
+**Totals:** 26 passes · 127 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 26 — 2026-10-25 (adversarial review of `P1-AUTH-06`)
+
+Two defects, both found by running the code instead of reading it, and both in the category this project keeps
+rediscovering: **the code said it was safe, and the machine disagreed.**
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The concurrent-boot path crashed instead of reporting the account.** `ensureAdmin` caught the `23505` from the `lower(username)` unique index *inside* its transaction and re-read the row there to report it — the natural way to write it, and wrong: PostgreSQL marks a transaction aborted after the first failed statement, so the re-read failed with `current transaction is aborted, commands ignored until end of transaction block`, and two containers booting at once would have failed the second boot instead of logging "already exists". Nothing about the code reads as broken; only two live connections racing can show it | The catch moved **outside** `withTransaction`, so the re-read runs on the base connection after the rollback, and the outcome is `exists` with the winner's row. The test opens a second pool — a single handle serialises its own statements and can never reach the branch — and asserts a sorted `['created', 'exists']`, one admin row, one audit row, and one id either way. Re-probed: both orders pass, repeatedly |
+| 2 | **The hidden password prompt echoed the first password typed.** `secret-prompt.ts` used `node:readline` with a discarding `Writable` as its output, so readline itself echoed nothing — and the *terminal* echoed everything, because under Bun the interface's `setRawMode(true)` lands before the TTY is initialised. Measured in a real PTY: the first prompt printed the password, the second and third were silent (once the terminal has been in raw mode, it stays controllable). The unit tests could not see it: an in-memory stream has no terminal driver to echo anything, which is exactly why they passed | The prompt reads the line itself — `setRawMode(true)` **before** the first read, `setEncoding('utf8')`, a loop over the characters — and restores raw mode in a `finally`, so Ctrl-C or Ctrl-D cannot leave a shell without line editing. It handles backspace, Ctrl-C (`cancelled`), Ctrl-D (finish, or `no input` when the line is empty) and drops CSI/SS3 escape sequences so a stray arrow key does not append `[A` to a secret the operator cannot retype. The suite pins the *mechanism* (`raw:on` → `read` → `raw:off`, in that order) and that nothing but the question and a newline is written; the end-to-end check was a PTY driving `bun run admin:init`, whose output is `Password: \r\nRepeat password: \r\nadmin 'admin' created (password from prompt)` with no keystrokes in it. The account and its `auth.admin_created` audit row were confirmed in the database afterwards |
+
+Mutation-checked: 20 mutations, all caught — the audit insert disabled, the race not caught, the policy check removed,
+the username not trimmed, the control-character test disabled, the injected clock dropped from the audit row, `exists`
+reported as `created`, a foreign `23505` swallowed, `--username` ignored, the prompt-mismatch check disabled, the file's
+trailing newline kept, `isTTY` read as truthy, raw mode never set, raw mode never restored, characters written to the
+output, and Ctrl-C / backspace / escape-sequence handling removed. `modules/auth/admin-accounts.ts` is at 100 %
+statements, branches, functions and lines; `scripts/lib/secret-prompt.ts` and `scripts/init-admin.ts` are covered by
+their own suites. The repository is at 633 tests / 47 files, coverage 97.8 % statements.
+
+One thing deliberately *not* fixed: line 203 of `admin-accounts.ts` (`if (raced === null) throw error`) was uncovered
+until a test was written for it. The test raises `23505` from a `BEFORE INSERT` trigger — the only way to get the code
+with no row behind it — and asserts the original error is re-thrown rather than reported as "already exists".
 
 ---
 

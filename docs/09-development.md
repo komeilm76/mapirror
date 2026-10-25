@@ -83,7 +83,7 @@ Scripts marked ✅ exist today; ⬜ are created by the task named in `08-tasks.m
 | `bun run test:api` / `test:web` / `test:shared` / `test:scripts` | Single project | ✅ P1-REPO-04 |
 | `bun run db:migrate` | Apply migrations (`scripts/migrate.ts`) | ✅ P1-DB-01 |
 | `bun run db:reset` | Drop the `public` schema, then migrate (dev only, refuses when `NODE_ENV=production`) | ✅ P1-DB-01 |
-| `bun run admin:init` | Create admin from env | ⬜ P1-AUTH-06 |
+| `bun run admin:init` | Create the admin account: `ADMIN_PASSWORD`, `ADMIN_PASSWORD_FILE`, or a hidden prompt; `--username`; idempotent, never overwrites | ✅ P1-AUTH-06 |
 | `bun run admin:reset` | Reset password (interactive) | ⬜ P1-AUTH-07 |
 | `bun run seed:dev` | Dev fixtures (needs the phase-2 catalog tables, so it lands with them) | ⬜ P2-DB-01 |
 | `bun run sync:catalog` | Manual Geofabrik catalog sync | ⬜ P2-SRC-06 |

@@ -1,7 +1,7 @@
 /**
- * Typed queries for `admins` (`03-data-model.md` §2.1, task `P1-AUTH-03`).
+ * Typed queries for `admins` (`03-data-model.md` §2.1, tasks `P1-AUTH-03`, `P1-AUTH-06`).
  *
- * Two queries, and one of them is not as obvious as it looks: the lookup is **case-insensitive**, because the unique
+ * Three queries, and the lookup is not as obvious as it looks: the lookup is **case-insensitive**, because the unique
  * index is `admins_username_key ON admins (lower(username))`. Matching `username = $1` would compile, run, and give a
  * different answer from the one the index enforces — `admin` would log in while `Admin` said "no such user" even
  * though the database would refuse to store both. It would also not use the index.
@@ -56,4 +56,34 @@ export async function recordLogin(
     .set({ last_login_at: now, updated_at: now })
     .where('id', '=', adminId)
     .execute();
+}
+
+/**
+ * Inserts an account and returns the row as stored.
+ *
+ * The unique index is on `lower(username)`, so a duplicate arrives as a Postgres `23505` rather than as a `select`
+ * that could have missed the row in a race. Callers that must be idempotent (the bootstrap script, `P1-AUTH-06`) treat
+ * that error as "somebody else created it" rather than as a failure — see `modules/auth/admin-accounts.ts`.
+ *
+ * @param executor - Kysely instance or transaction.
+ * @param values - Username as it should be stored, and an Argon2id digest (never a plaintext password).
+ * @param now - Creation instant; the caller's clock, so `created_at` and `updated_at` agree with an audit row.
+ * @returns The inserted row.
+ * @throws A `23505` unique-violation error when the username exists in any case.
+ */
+export async function insertAdmin(
+  executor: TokenExecutor,
+  values: { readonly username: string; readonly passwordHash: string },
+  now: Date = new Date(),
+) {
+  return executor
+    .insertInto('admins')
+    .values({
+      username: values.username,
+      password_hash: values.passwordHash,
+      created_at: now,
+      updated_at: now,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
 }

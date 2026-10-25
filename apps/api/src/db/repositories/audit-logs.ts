@@ -33,6 +33,7 @@ export const AUDIT_ACTIONS = {
   login: 'auth.login',
   loginFailed: 'auth.login_failed',
   logout: 'auth.logout',
+  adminCreated: 'auth.admin_created',
   passwordReset: 'auth.password_reset',
 } as const;
 
@@ -54,6 +55,13 @@ export interface NewAuditLog {
   readonly metadata?: JsonValue;
   /** Already normalised (`lib/client-ip.ts`); `inet` refuses anything else. */
   readonly ip?: string | null;
+  /**
+   * When it happened; the column defaults to `now()` and callers that serve a request leave this out.
+   *
+   * Supplied by a script (`P1-AUTH-06`), which creates the account and records it in one transaction: passing the same
+   * instant to both inserts keeps the two rows pointing at one moment even when a test supplies the clock.
+   */
+  readonly at?: Date;
 }
 
 /**
@@ -74,6 +82,7 @@ export async function insertAuditLog(executor: TokenExecutor, entry: NewAuditLog
       target_type: entry.targetType ?? null,
       target_id: entry.targetId ?? null,
       ...(entry.metadata === undefined ? {} : { metadata: entry.metadata }),
+      ...(entry.at === undefined ? {} : { created_at: entry.at }),
       ip: entry.ip ?? null,
     })
     .returningAll()
