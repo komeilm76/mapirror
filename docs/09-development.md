@@ -62,8 +62,8 @@ Scripts marked ✅ exist today; ⬜ are created by the task named in `08-tasks.m
 | Script | Does | Status |
 |---|---|---|
 | `bun run typecheck` | `tsc --noEmit` for `scripts/` plus every workspace (`P1-REPO-02`) | ✅ |
-| `bun run check:workspaces` | 20 assertions on the workspace wiring (`P1-REPO-01`) | ✅ |
-| `bun run check:hygiene` | 40 assertions: ignore matrix, nothing ignored is tracked, env-doc parity, `.dockerignore` safelist (`P1-REPO-06`) | ✅ |
+| `bun run check:workspaces` | 21 assertions on the workspace wiring (`P1-REPO-01`) | ✅ |
+| `bun run check:hygiene` | 54 assertions: ignore matrix, nothing ignored is tracked, credential parity across both ignore files, env-doc parity (names **and** defaults), `.dockerignore` safelist, no orphan tests (`P1-REPO-04/06`) | ✅ |
 | `bun run dev` | API + web in watch mode | ⬜ P1-API-01 / P1-WEB-01 |
 | `bun run dev:api` / `dev:web` | One side only | ⬜ P1-API-01 / P1-WEB-01 |
 | `bun run build` | Build web bundle | ⬜ P1-DOCK-02 |
@@ -73,9 +73,9 @@ Scripts marked ✅ exist today; ⬜ are created by the task named in `08-tasks.m
 | `bun run lint:fix` | ESLint with `--fix` | ✅ P1-REPO-03 |
 | `bun run format` | Prettier write | ✅ P1-REPO-03 |
 | `bun run format:check` | Prettier verify (used by `check`) | ✅ P1-REPO-03 |
-| `bun run test` | Vitest, all three projects | ✅ P1-REPO-04 |
+| `bun run test` | Vitest, all four projects | ✅ P1-REPO-04 |
 | `bun run test:watch` / `test:coverage` | Watch mode / v8 coverage with thresholds | ✅ P1-REPO-04 |
-| `bun run test:api` / `test:web` / `test:shared` | Single project | ✅ P1-REPO-04 |
+| `bun run test:api` / `test:web` / `test:shared` / `test:scripts` | Single project | ✅ P1-REPO-04 |
 | `bun run db:migrate` | Apply migrations | ⬜ P1-DB-01 |
 | `bun run db:reset` | Drop + recreate + migrate + seed (dev only, refuses when `NODE_ENV=production`) | ⬜ P1-DB-01 |
 | `bun run admin:init` | Create admin from env | ⬜ P1-AUTH-06 |
@@ -98,15 +98,15 @@ sibling are mutually exclusive, and the hygiene check counts commented declarati
 | `NODE_ENV` | `development` | ✅ | `development` / `production` / `test` |
 | `PORT` | `3000` | — | API port |
 | `HOST` | `0.0.0.0` | — | Bind address |
-| `DATABASE_URL` | `postgres://mapirror:mapirror@localhost:5432/mapirror` | ✅ | Postgres DSN |
+| `DATABASE_URL` | `postgres://mapirror:mapirror@localhost:5432/mapirror` | ✅ | DSN the API boots with; **compose derives its own** from `POSTGRES_PASSWORD` + `db`, so `.env`'s copy serves native dev/tests |
 | `DATABASE_URL_TEST` | `postgres://mapirror:mapirror@localhost:5432/mapirror_test` | — | Test DB (integration tests create/truncate) |
 | `DB_POOL_MAX` | `10` | — | Pool size |
 | `CORS_ORIGINS` | *(empty = same-origin)* | — | Comma-separated allow-list; never `*` |
 | `IP_HASH_SALT` | *(generated on first boot, stored in `settings`)* | — | Salt for hashed download IPs |
-| `POSTGRES_PASSWORD` | `mapirror` | ✅ (compose) | Password for the `db` container |
+| `POSTGRES_PASSWORD` | `mapirror` | ✅ (compose) | Password for the `db` container — the one place it is written |
 | `POSTGRES_PASSWORD_FILE` | — | — | Docker-secret alternative to `POSTGRES_PASSWORD` |
-| `CACHE_DIR` | `/data/cache` | ✅ | Artifact storage root |
-| `TMP_DIR` | `/data/tmp` | ✅ | Uploads + `.part` files |
+| `CACHE_DIR` | `./data/cache` | ✅ | Artifact storage root (compose: `/data/cache` volume) |
+| `TMP_DIR` | `./data/tmp` | ✅ | Uploads + `.part` files (compose: `/data/tmp` volume) |
 | `ADMIN_USERNAME` | `admin` | — | Bootstrap username |
 | `ADMIN_PASSWORD` | — | ✅ (first boot) | Bootstrap password (never logged) |
 | `ADMIN_PASSWORD_FILE` | — | — | Alternative to env (Docker secret) |
@@ -162,17 +162,24 @@ bun run db:reset                                              # dev only
 
 ### Projects
 
-`vitest.config.ts` defines three projects in one config — no `vitest.workspace.ts` (deprecated in
-Vitest 3.2+):
+`vitest.config.ts` defines four projects in one config — no `vitest.workspace.ts` (deprecated in
+Vitest 3.2+). The project table lives in **`vitest.projects.ts`** so the config and the hygiene check
+read the same list:
 
 | Project | Root | Environment | Why |
 |---|---|---|---|
 | `shared` | `packages/shared` | node | Contract tests; must stay DOM-free because it is bundled for the browser |
 | `api` | `apps/api` | node | Services, schedulers, storage, route handler tests |
 | `web` | `apps/web` | jsdom | Stores and components (`sessionStorage`, `document`) |
+| `scripts` | `scripts` | node | Operator CLI (`05-flows`: `scripts/tests/init-admin.spec.ts`) |
+
+Test files are collected as `tests/**/*.{spec,test}.ts` — **both suffixes**, so the law tests keep the
+names the specification gives them. `check:hygiene` fails if any test file in the repository sits
+outside a declared project: a test that is never collected passes by not running, which is the most
+expensive kind of green.
 
 ```bash
-bun run test            # all three projects
+bun run test            # all four projects
 bun run test:api        # one project
 bun run test:web
 bun run test:shared
@@ -200,6 +207,8 @@ Behaviour verified by deliberately breaking one stage at a time:
 | hygiene (dropped env var) | exit 1, `every documented variable is in .env.example …` |
 | hygiene (`.dockerignore` exclusion) | exit 1, `.dockerignore keeps … in the build context` |
 | hygiene (ignored file tracked) | exit 1, `no ignored artefacts are tracked: .env` |
+| hygiene (orphan test file) | exit 1, `every test file is collected by a vitest project: …` |
+| hygiene (default drifts from docs) | exit 1, `documented defaults match .env.example: DB_POOL_MAX: …` |
 | TypeScript | exit 2, `error TS####` |
 | ESLint | exit 1 — warnings also fail, because lint runs with `--max-warnings=0` |
 | Prettier | exit 1, `Code style issues found` |

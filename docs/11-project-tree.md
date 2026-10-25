@@ -11,7 +11,8 @@ mapirror/
 ├─ eslint.config.js                # Flat ESLint config (JS + type-aware TS + Vue)
 ├─ prettier.config.js              # Formatting (code only)
 ├─ .prettierignore / .editorconfig # Formatting scope + editor defaults
-├─ vitest.config.ts                # One config, three projects (shared, api, web)
+├─ vitest.config.ts                # One config, four projects (shared, api, web, scripts)
+├─ vitest.projects.ts              # The project table — read by the config and by check:hygiene
 ├─ compose.yaml                    # db + api + web (+ backup profile)
 ├─ compose.override.yaml           # Dev-only: hot reload, exposed DB port
 ├─ .env.example                    # Every env var, documented, no real secrets
@@ -115,6 +116,7 @@ mapirror/
 ├─ scripts/                        # Operator-facing CLI + repo checks (bun run …)
 │  ├─ check-hygiene.ts             # Gate stage 2: ignore matrix, env-doc parity, .dockerignore safelist
 │  ├─ check-workspaces.ts          # Gate stage 1: workspace wiring assertions
+│  ├─ tests/                       # CLI tests (scripts project in Vitest)
 │  ├─ init-admin.ts                # Launch script: create admin from ADMIN_PASSWORD*
 │  ├─ reset-admin-password.ts      # Reset + revoke tokens (D: AUTH-4)
 │  ├─ migrate.ts                   # Run Kysely migrations (also run on boot)

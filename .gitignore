@@ -9,9 +9,15 @@ coverage/
 *.tsbuildinfo
 
 # Environment and secrets
+# Keep the pattern set in sync with `.dockerignore` — `bun run check:hygiene` asserts both files cover
+# the same credential shapes, because a key ignored by one and not the other is a key in git.
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.p12
+secrets/
 
 # Runtime data (map artifacts, database, uploads) — volumes in production
 data/

@@ -22,11 +22,28 @@ passes. Patch releases (`0.1.1`, …) are corrections to an already-tagged phase
 
 ## [Unreleased] — 0.2.0-dev (Phase 1)
 
+### Fixed
+- **Tests could be silently skipped** (review pass 6). Vitest collected only `tests/**/*.spec.ts`, so the
+  two route-law tests the specification names `*.test.ts` — and the `scripts/tests/*.spec.ts` promised for
+  the launch script — would have passed by never running. Projects now live in `vitest.projects.ts`,
+  collect both suffixes, include a fourth `scripts` project, and `check:hygiene` fails if any test file
+  sits outside a declared project. Probes: a failing `law-routes.test.ts` went from exit 0 to exit 1.
+- **`cp .env.example .env` was not enough for Docker.** The template carried `DATABASE_URL` pointing at
+  `localhost` plus a second copy of the database password, while `12` tells operators to change that
+  password. Compose now derives the DSN from `POSTGRES_PASSWORD` (acceptance criterion of `P1-DOCK-05`),
+  and the template's storage paths are relative so native dev no longer needs write access to `/`.
+- **`.gitignore` missed `*.pem` / `*.key` / `*.p12` / `secrets/`** that `.dockerignore` already blocked,
+  and the hygiene check now requires both files to cover the same credential shapes.
+- `check:hygiene` compared env **names** only (a changed default passed), matched `.dockerignore` without
+  honouring `!` re-inclusion, and checked tracked-and-ignored files against a copied rule list instead of
+  asking git. All three now do what the file claims.
+
 ### Added
 - Repository hygiene (`P1-REPO-06`): `.env.example` (32 documented variables, `*_FILE` secret
   variants commented out), `.dockerignore` (secrets and build junk out, build inputs explicitly kept),
-  and `bun run check:hygiene` — 40 assertions covering the git ignore matrix, "nothing ignored is
-  tracked", `.env.example` ↔ `docs/09` §5 parity in both directions, and `.dockerignore` safe-listing.
+  and `bun run check:hygiene` — 54 assertions covering the git ignore matrix, "nothing ignored is
+  tracked", `.env.example` ↔ `docs/09` §5 parity (names and defaults, both directions), credential parity
+  across both ignore files, `.dockerignore` safe-listing, and orphan-test detection.
   It is now stage 2 of `bun run check`, so a leaked secret or a template that forgot a variable fails
   the gate instead of surviving review. Verified by probe: dropping `.env` from `.gitignore`, deleting
   `WORKER_CONCURRENCY` from the template, adding `packages` to `.dockerignore`, and force-adding a
@@ -35,12 +52,13 @@ passes. Patch releases (`0.1.1`, …) are corrections to an already-tagged phase
   `apps/api`, `apps/web`, `packages/shared`, `bun.lock`, `.gitignore`.
 - `bun run check:workspaces` — 12 assertions covering workspace declaration, privacy, naming,
   `workspace:*` wiring and real package resolution from a consumer.
-- The quality gate (`P1-REPO-05`): `bun run check` runs workspaces → typecheck → lint → format:check →
-  test, fail-fast; `bun run check:full` adds coverage thresholds. Each stage was verified to fail the
-  gate on its own.
-- Test infrastructure (`P1-REPO-04`): one `vitest.config.ts` with three projects (`shared`/`api` in
-  node, `web` in jsdom — no deprecated `vitest.workspace.ts`), v8 coverage with thresholds, and
-  scripts `test`, `test:watch`, `test:coverage`, `test:api`, `test:web`, `test:shared`.
+- The quality gate (`P1-REPO-05`): `bun run check` runs workspaces → hygiene → typecheck → lint →
+  format:check → test, fail-fast; `bun run check:full` adds coverage thresholds. Each stage was verified
+  to fail the gate on its own.
+- Test infrastructure (`P1-REPO-04`): one `vitest.config.ts` with a project table in
+  `vitest.projects.ts` — four projects (`shared`/`api`/`scripts` in node, `web` in jsdom — no deprecated
+  `vitest.workspace.ts`), v8 coverage with thresholds, and scripts `test`, `test:watch`, `test:coverage`,
+  `test:api`, `test:web`, `test:shared`, `test:scripts`.
   First tests pin the project environments themselves (DOM absence on the server, `sessionStorage` in
   the browser project, workspace resolution under both runners).
 - Code quality toolchain (`P1-REPO-03`): ESLint 9 flat config (JS + type-aware TypeScript via the

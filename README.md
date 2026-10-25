@@ -46,10 +46,10 @@ private and versionless. Dependency graph: `apps/* → packages/shared` (no othe
 bun install                 # links the three workspaces
 bun run typecheck           # strict tsc across scripts + all workspaces
 bun run lint                # ESLint (type-aware, Vue, zero warnings tolerated)
-bun run test                # Vitest: shared + api + web projects
+bun run test                # Vitest: shared + api + web + scripts projects
 bun run format:check        # Prettier, code only — markdown stays hand-authored
-bun run check:workspaces    # verifies the workspace wiring (20 checks)
-bun run check:hygiene       # ignore matrix + env-doc parity + .dockerignore safelist (40 checks)
+bun run check:workspaces    # verifies the workspace wiring (21 checks)
+bun run check:hygiene       # ignore matrix + env-doc parity + .dockerignore + no orphan tests (54 checks)
 bun run check               # the gate: workspaces + hygiene + typecheck + lint + format + tests
 ```
 

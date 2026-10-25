@@ -1,8 +1,10 @@
 /**
  * Vitest root configuration (task `P1-REPO-04`).
  *
- * One root config, three projects — `shared`, `api`, `web` — so a single `bun run test` exercises every
- * workspace with the right environment, and `bun run test:api` / `test:web` can target one.
+ * One root config, four projects — `shared`, `api`, `web`, `scripts` — so a single `bun run test`
+ * exercises every workspace with the right environment, and `bun run test:api` / `test:web` can target
+ * one. The project table itself lives in `vitest.projects.ts`, because `scripts/check-hygiene.ts`
+ * asserts that no test file escapes it.
  *
  * Environment choices:
  * - `shared` and `api`: Node. They run on the server; a DOM would hide accidental browser assumptions.
@@ -18,34 +20,18 @@
 
 import { defineConfig } from 'vitest/config';
 
+import { TEST_INCLUDE, TEST_PROJECTS } from './vitest.projects';
+
 export default defineConfig({
   test: {
-    projects: [
-      {
-        test: {
-          name: 'shared',
-          root: './packages/shared',
-          environment: 'node',
-          include: ['tests/**/*.spec.ts'],
-        },
+    projects: TEST_PROJECTS.map((project) => ({
+      test: {
+        name: project.name,
+        root: project.root,
+        environment: project.environment,
+        include: [...TEST_INCLUDE],
       },
-      {
-        test: {
-          name: 'api',
-          root: './apps/api',
-          environment: 'node',
-          include: ['tests/**/*.spec.ts'],
-        },
-      },
-      {
-        test: {
-          name: 'web',
-          root: './apps/web',
-          environment: 'jsdom',
-          include: ['tests/**/*.spec.ts'],
-        },
-      },
-    ],
+    })),
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],

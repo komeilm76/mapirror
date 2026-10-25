@@ -49,6 +49,8 @@ docker compose ps
 docker compose logs -f api
 ```
 
+**Do not edit `DATABASE_URL`.** Inside the containers it is derived — `postgres://mapirror:<POSTGRES_PASSWORD>@db:5432/mapirror` — so changing `POSTGRES_PASSWORD` is enough and the two can never disagree. The copy in `.env` is for running the API outside Docker (native dev, tests). The same rule applies to `CACHE_DIR` / `TMP_DIR`, which compose points at the mounted volumes (`/data/cache`, `/data/tmp`).
+
 First boot performs, in order: wait for DB → run migrations → create the admin (idempotent) → start
 the API, worker and scheduler. Nothing manual is required (DOCK-2).
 

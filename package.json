@@ -28,7 +28,8 @@
     "test:coverage": "vitest run --coverage",
     "test:api": "vitest run --project api",
     "test:web": "vitest run --project web",
-    "test:shared": "vitest run --project shared"
+    "test:shared": "vitest run --project shared",
+    "test:scripts": "vitest run --project scripts"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

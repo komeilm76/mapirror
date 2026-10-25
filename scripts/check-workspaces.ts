@@ -5,7 +5,8 @@
  * Checks, in order:
  * 1. the root manifest declares `dir/*` workspaces and every workspace is private and named;
  * 2. names are unique, the three expected packages exist, and each directory follows the
- *    `@<root-name>/<dir>` convention (`apps/api` → `@mapirror/api`);
+ *    `@mapirror/<dir>` convention (`apps/api` → `@mapirror/api`). The scope is a constant, not derived
+ *    from the root name, so the root manifest is asserted to still be `mapirror`;
  * 3. both apps depend on `@mapirror/shared` through the `workspace:` protocol;
  * 4. every workspace has a `typecheck` script, so the root chain actually covers it;
  * 5. `@mapirror/shared` resolves from `apps/api` into the local package, not a registry copy.
@@ -108,6 +109,10 @@ async function main(): Promise<void> {
     'root package.json declares workspaces',
   );
   check(root.private === true, 'root package.json is private');
+  check(
+    root.name === 'mapirror',
+    `root package.json is named mapirror (found "${root.name ?? ''}")`,
+  );
 
   const dirs = expandWorkspaces(root.workspaces ?? []);
   const entries = dirs
