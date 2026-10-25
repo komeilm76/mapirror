@@ -3,9 +3,33 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 21 passes · 119 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2).
+**Totals:** 22 passes · 121 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 22 — 2026-10-25 (adversarial review of the working tree after `P1-AUTH-02`)
+
+Two defects, and both are the kind that a passing test suite cannot show: a code path that was only reached by *not*
+having a lock, and a value whose type lies about its trustworthiness. Neither was found by reading; both were found by
+reproducing the thing the code assumes cannot happen.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **Boot-time housekeeping could stop the API from ever listening.** Pass 21 added token pruning and called it from `start()` **before** `listen()`, unbounded. A `DELETE` waits for a row lock, and nothing in the path said otherwise — so one long-lived transaction holding any expired token row kept the process in boot: it had run the schema check, it held its port mapping, and it answered nothing. Reproduced with a real process and a real lock (`begin; select … for update; pg_sleep(30)`): `healthz` returned `000` after 8 s of a 20 s budget, and the log stopped at `database schema matches this build`. Docker would see a container that is up and unhealthy, restart it, and hit the same lock again — a restart loop whose cause is a transaction somewhere else entirely | Two changes, both asserted. The prune now runs through `lib/housekeeping.ts` with `statementTimeoutMs` (via the existing `withTransaction`), so a contended statement is **abandoned** rather than waited on, and it is called **after** `listen` and not awaited — housekeeping is optional work, so nothing a client asks for may wait for it. `runHousekeeping` returns `number \| null`, because "nothing to do" and "we gave up" are different answers and a caller that saw only `0` could not tell them apart. Re-probed with the lock still held: `healthz` 200 within six seconds, `readyz` `{\"status\":\"ok\"}`, a `statement timeout` warning, and the row still present; re-run after the lock released → `{\"pruned\":1}` and the table empty. Dropping the `statementTimeoutMs` option makes the new lock test fail |
+| 2 | **`request.ip` was trusted as a fact, and it is a header.** `lib/client-ip` did not exist; `issueToken` wrote `options.ip` straight into an `inet` column. With `trustProxy` on — which this API needs — `request.ip` is whatever the trusted peer forwarded, and `proxy-addr` validates nothing: measured, `X-Forwarded-For: not-an-ip` arrives as the string `not-an-ip`, and so does `<script>`. Postgres refuses those with `22P02`, so `POST /_auth/api/login` answered **`500`** to any request carrying a junk header — an unauthenticated, one-line way to make the login endpoint error. The same value is a rate-limiting key, where a fresh junk string per request is a fresh bucket per request, i.e. no limit at all. And it was not only hostile input: `203.0.113.9:8080`, a form real proxies emit, threw too | `lib/client-ip.ts` parses instead of trusting: a bare IPv4/IPv6 literal is kept, a port is stripped (`203.0.113.9:8080` and `[2001:db8::1]:443` yield the address), and anything else — a hostname, a chain, a payload, an empty string, an over-long value — becomes `null`, which the schema already allows. Losing an address is a diagnostics loss; storing it was a `500` and a bypass. Wired into `issueToken`, with a 27-case table plus an integration case proving a junk address is *stored as null* rather than thrown. Probed before the fix (`22P02` for `not-an-ip`, `<script>` and `203.0.113.9:8080`) and after (all three stored as `null`, addresses kept without the port) |
+
+Two smaller things came out of the same probes and are worth recording because they changed the code rather than just
+the notes:
+
+- The first draft of `normaliseIp` used a capture group per form, which needs a `?? ''` fallback for the type checker —
+  a branch no input can reach, and coverage said so (85% branches with every case in the table passing). Rewritten with
+  `indexOf`/`slice`; the missing cases (half-open bracket, bracket without a port, a non-numeric port, a hostname with a
+  port) were added to the table, and the module is now 100% lines and branches. This is the fourth time in this project
+  that "the table passes" and "every branch is exercised" turned out to be different statements.
+- `housekeeping` was only ever called by tests that passed an explicit clock, so the `now` default — the one production
+  uses — was dead in the suite. A test now calls it exactly as `start()` does, with no options at all.
 
 ---
 

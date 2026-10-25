@@ -42,6 +42,7 @@ Trust nothing from: HTTP clients, multipart uploads, Geofabrik HTML/JSON respons
 | Login throttling | ≤ 10 failures / 15 min per (ip, username) → `429` + `Retry-After` (a disabled account gets `403 ACCOUNT_DISABLED` — not `ACCOUNT_LOCKED`, which read like throttling), generic error messages |
 | Transport | Bearer only over HTTPS (TLS terminated by proxy); no cookies, no query tokens |
 | Storage in browser | `sessionStorage` only (D-13) — cleared on tab close |
+| Client address | `request.ip` is an **unvalidated forwarded header** when a proxy is trusted (`X-Forwarded-For: not-an-ip` arrives verbatim, measured). Parsed by `lib/client-ip.ts` before it reaches `inet` or any rate-limit key: a port is stripped, only IPv4/IPv6 literals are kept, anything else is stored as `null`. Without this, a junk header is a `500` on login and a fresh rate-limit bucket per request |
 | Enumeration | Same response and timing profile for unknown user vs wrong password |
 
 ## 4. Authorization

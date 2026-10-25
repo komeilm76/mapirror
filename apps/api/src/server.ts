@@ -20,7 +20,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { buildApp } from './app';
 import { ConfigError, parseEnv, type AppConfig, type EnvSource } from './config/env';
-import { pruneExpiredTokens } from './modules/auth/tokens';
+import { runHousekeeping } from './lib/housekeeping';
 
 /** Signals that must shut the process down instead of killing it mid-request. */
 const SHUTDOWN_SIGNALS = ['SIGTERM', 'SIGINT'] as const;
@@ -113,17 +113,6 @@ export async function start(
 
   const app = await buildApp({ logger: { level: config.logLevel }, config });
 
-  // Housekeeping, once per boot, after the pipeline proved the database usable and before the socket opens
-  // (`03-data-model.md` §2.2: rows expired more than 30 days ago are deleted). A failure is logged and does not stop
-  // the boot: an old row is not a reason to refuse traffic, and the alternative — a process that will not start
-  // because a `DELETE` failed — turns a housekeeping problem into an outage.
-  try {
-    const pruned = await pruneExpiredTokens(app.db.db);
-    if (pruned > 0) app.log.info({ pruned }, 'expired tokens pruned');
-  } catch (error) {
-    app.log.warn({ err: error }, 'could not prune expired tokens; continuing');
-  }
-
   // Registered before `listen` so a signal during startup still drains rather than orphaning a socket.
   const shutdown = createShutdown(app);
   for (const signal of SHUTDOWN_SIGNALS) {
@@ -133,6 +122,13 @@ export async function start(
   }
 
   await app.listen({ port: config.port, host: config.host });
+
+  // Housekeeping after the socket is open, never before (`03-data-model.md` §2.2: rows expired more than 30 days ago
+  // are deleted). Not awaited, and bounded inside `runHousekeeping` — measured: with a row lock held on an expired
+  // token, running this *before* `listen` left the process booted, holding its port, and answering nothing until the
+  // lock went away. Housekeeping is optional work, so nothing a client asks for may wait for it.
+  void runHousekeeping(app.db.db, app.log);
+
   return { app, config };
 }
 

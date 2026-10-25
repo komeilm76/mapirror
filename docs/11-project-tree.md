@@ -74,6 +74,8 @@ mapirror/
 │  │  │  │  └─ repositories/       # Typed queries per aggregate
 │  │  │  │     └─ admin-tokens.ts  # Token rows: insert, find-with-admin, touch, revoke, prune
 │  │  │  └─ lib/
+│  │  │     ├─ client-ip.ts        # Untrusted forwarded address → a value `inet` accepts, or null
+│  │  │     ├─ housekeeping.ts     # Boot-time token pruning: bounded, off the boot path, never fatal
 │  │  │     ├─ storage.ts          # Path building, .part files, atomic rename, delete
 │  │  │     ├─ download.ts         # Streamed fetch, resume, progress, checksum
 │  │  │     ├─ checksum.ts         # MD5/SHA-256 streaming

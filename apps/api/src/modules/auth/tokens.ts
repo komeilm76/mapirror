@@ -27,6 +27,7 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 
+import { normaliseIp } from '../../lib/client-ip';
 import {
   deleteExpiredTokens,
   findTokenWithAdmin,
@@ -129,7 +130,13 @@ export interface IssueTokenOptions {
   readonly now?: Date;
   /** User-Agent of the request that logged in, for the sessions list. */
   readonly userAgent?: string | null;
-  /** Client address (`inet` text form), for the sessions list and for an operator investigating a session. */
+  /**
+   * Client address, typically `request.ip` — **untrusted**, and normalised here before it reaches the `inet` column.
+   *
+   * Pass it raw. `request.ip` is whatever a trusted proxy forwarded, with no validation of its own (measured:
+   * `X-Forwarded-For: not-an-ip` arrives verbatim), and `inet` rejects it with `22P02` — which would make login answer
+   * `500` for a header. A value that is not an address is stored as `null` instead (`lib/client-ip.ts`).
+   */
   readonly ip?: string | null;
 }
 
@@ -170,7 +177,7 @@ export async function issueToken(
     tokenPrefix: generated.tokenPrefix,
     expiresAt,
     userAgent: options.userAgent ?? null,
-    ip: options.ip ?? null,
+    ip: normaliseIp(options.ip),
   });
 
   return {

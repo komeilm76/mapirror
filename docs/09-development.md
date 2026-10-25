@@ -378,8 +378,13 @@ and `vue/define-{props,emits}-declaration: type-based`.
     TOKEN_REVOKED`, `disabled` → `403 ACCOUNT_DISABLED`, `unknown` → `401 UNAUTHENTICATED` (`P1-AUTH-05`).
   - Revocation is idempotent and keeps the first `revoked_at`; a password reset calls `revokeAllTokens` in the same
     transaction as the new hash.
-  - `pruneExpiredTokens` runs once at boot (`server.ts`) and deletes rows expired more than 30 days ago; a failure is
-    logged and does not stop the boot, because an old row is not a reason to refuse traffic.
+  - `pruneExpiredTokens` runs once at boot through `lib/housekeeping.ts`, **after** `listen`, bounded by
+    `statement_timeout`, and is never awaited. Measured reason: run before the socket with no bound, a row lock held
+    on an expired token kept the process booted and answering nothing. A failure is a `warn` and never fatal.
+  - **Client addresses are untrusted input.** `request.ip` is whatever a trusted proxy forwarded, with no validation
+    (measured: `X-Forwarded-For: not-an-ip` arrives verbatim), and the `inet` columns refuse it with `22P02` — which
+    is a `500` on login. Every `inet` write and every rate-limit key goes through `normaliseIp` (`lib/client-ip.ts`),
+    which strips a port, accepts IPv4/IPv6 literals only, and returns `null` for anything else.
 
 ## 10. Adding a feature (checklist)
 

@@ -91,6 +91,34 @@ describe.skipIf(skipReason !== null)('issueToken', () => {
     });
   });
 
+  it('stores an unusable client address as null instead of failing the login', async () => {
+    // `request.ip` is whatever a trusted proxy forwarded, unvalidated (measured: `X-Forwarded-For: not-an-ip` reaches
+    // the handler verbatim), and `inet` refuses it with 22P02. Without normalisation this call — the one login makes —
+    // threw, so `POST /_auth/api/login` answered 500 to a request that merely carried a junk header.
+    await withAdmin(async ({ db, adminId }) => {
+      const cases: readonly (readonly [string | null, string | null])[] = [
+        ['203.0.113.9', '203.0.113.9'],
+        ['2001:db8::1', '2001:db8::1'],
+        ['203.0.113.9:8080', '203.0.113.9'], // a form real proxies emit: kept, without the port
+        ['[2001:db8::1]:443', '2001:db8::1'],
+        ['not-an-ip', null],
+        ['<script>alert(1)</script>', null],
+        ['', null],
+      ];
+
+      for (const [sent, expected] of cases) {
+        const issued = await issueToken(db, adminId, { ttlHours: 1, now: NOW, ip: sent });
+        const row = await db
+          .selectFrom('admin_tokens')
+          .select('ip')
+          .where('id', '=', issued.tokenId)
+          .executeTakeFirstOrThrow();
+
+        expect(row.ip, `sent ${String(sent)}`).toBe(expected);
+      }
+    });
+  });
+
   it('can mint inside a transaction, so the token and the audit entry commit together', async () => {
     await withAdmin(async ({ db, adminId }) => {
       const issued = await withTransaction(db, (trx) =>
