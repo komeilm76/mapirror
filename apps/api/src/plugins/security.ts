@@ -104,6 +104,9 @@ function corsHeaders(
     'access-control-allow-origin': origin,
     'access-control-allow-methods': ALLOWED_METHODS,
     'access-control-allow-headers': ALLOWED_REQUEST_HEADERS,
+    // Without this a browser hides every response header except the CORS-safelisted ones, so an allowed origin
+    // could not read `x-request-id` — the id `04-api.md` §0.2 tells clients to quote in a bug report.
+    'access-control-expose-headers': 'x-request-id',
     'access-control-max-age': String(PREFLIGHT_MAX_AGE_SECONDS),
   };
 }

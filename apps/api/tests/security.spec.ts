@@ -163,6 +163,9 @@ describe('CORS', () => {
     expect(response.headers.vary).toContain('Origin');
     // Bearer tokens travel in a header, so the allow-headers list has to include authorization.
     expect(response.headers['access-control-allow-headers']).toContain('authorization');
+    // …and the id the contract tells clients to quote must be readable by a browser, which by default hides
+    // every header except the CORS-safelisted ones.
+    expect(response.headers['access-control-expose-headers']).toBe('x-request-id');
     await instance.close();
   });
 

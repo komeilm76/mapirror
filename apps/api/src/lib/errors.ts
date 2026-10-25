@@ -15,8 +15,14 @@
  * @module lib/errors
  */
 
+import { randomUUID } from 'node:crypto';
+import type { Socket } from 'node:net';
+
 import { ERROR_STATUS, statusFor, type ErrorCode, type ErrorEnvelope } from '@mapirror/shared';
+import type { FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
+
+import { describeError } from './logger';
 
 /** The envelope body plus the status it must be sent with. */
 export interface MappedError {
@@ -203,4 +209,77 @@ export function notFoundEnvelope(requestId: string): MappedError {
       error: { code: 'NOT_FOUND', message: SYNTHESISED_MESSAGES.NOT_FOUND, requestId },
     },
   };
+}
+
+/** What Node reports for a request that never became a valid HTTP request. */
+interface ConnectionError extends Error {
+  /** e.g. `HPE_HEADER_OVERFLOW`, `ERR_HTTP_REQUEST_TIMEOUT`, `ECONNRESET`. */
+  readonly code?: string;
+}
+
+/** Header names on a socket-level error response; the rest of the stack is not available yet. */
+const CLIENT_ERROR_HEADERS = ['content-type', 'x-request-id', 'x-content-type-options'] as const;
+
+/**
+ * Answers a request that failed **before** it became an HTTP request.
+ *
+ * Node emits `clientError` for a malformed request line or an oversized header, and Fastify's default handler
+ * answers `{"error":"Bad Request","message":"Client Error","statusCode":400}` — a second response shape, with no
+ * `code`, no request id and no security headers. The contract says every non-2xx is the envelope, and a request
+ * a pentest tool sends first is exactly this one.
+ *
+ * Two constraints come from the socket, not from us: there is no `request` object (so the id is generated here
+ * and appears only in the header and the log), and the connection must be closed afterwards — the parser has
+ * already given up on the byte stream, so keeping it open would mean re-parsing garbage.
+ *
+ * The status is `400 BAD_REQUEST` even for the timeout and header-overflow cases, because `ERROR_STATUS` has no
+ * 408 or 431 and a status outside the documented vocabulary is the bug this function exists to remove.
+ *
+ * @param error - The connection error Node reported.
+ * @param socket - The socket the bytes arrived on.
+ * @this The Fastify instance, for its logger.
+ */
+export function clientErrorHandler(
+  this: FastifyInstance,
+  error: ConnectionError,
+  socket: Socket,
+): void {
+  // A reset connection has nothing to answer, and a destroyed socket cannot be written to.
+  if (error.code === 'ECONNRESET' || socket.destroyed || !socket.writable) {
+    socket.destroy();
+    return;
+  }
+
+  const requestId = randomUUID();
+  const { body } = toErrorEnvelope(
+    new AppError('BAD_REQUEST', SYNTHESISED_MESSAGES.BAD_REQUEST),
+    requestId,
+  );
+  const payload = JSON.stringify(body);
+
+  // `warn`, not `info`: a malformed request is worth noticing (a broken client, a scanner, a proxy bug) and it
+  // never reached the request log. The error is scrubbed like any other (L9).
+  this.log.warn({ err: describeError(error), code: 'BAD_REQUEST', requestId }, 'malformed request');
+
+  const head = [
+    'HTTP/1.1 400 Bad Request',
+    ...CLIENT_ERROR_HEADERS.map(
+      (name) =>
+        `${name}: ${
+          name === 'content-type'
+            ? 'application/json; charset=utf-8'
+            : name === 'x-request-id'
+              ? requestId
+              : 'nosniff'
+        }`,
+    ),
+    // Bytes, not characters: `Content-Length` is a byte count by definition.
+    `content-length: ${Buffer.byteLength(payload)}`,
+    'connection: close',
+    '',
+    '',
+  ].join('\r\n');
+
+  socket.write(head + payload);
+  socket.destroy();
 }

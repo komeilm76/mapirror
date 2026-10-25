@@ -17,6 +17,7 @@
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 
 import { parseEnv, type AppConfig } from './config/env';
+import { clientErrorHandler } from './lib/errors';
 import { withRedaction } from './lib/logger';
 import { PLUGIN_ORDER, registerPipeline, type PluginSlot } from './plugins/order';
 import { REQUEST_ID_HEADER, resolveRequestId } from './plugins/request-context';
@@ -67,6 +68,8 @@ export interface BuildAppOptions {
  * @throws When a plugin fails to register, or any registered route violates L1.
  */
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
+  const config = options.config ?? parseEnv({});
+
   const app = Fastify({
     logger: withRedaction(options.logger),
     // One decision about an id, made once: the header's value when it is safe to repeat, otherwise a UUIDv4.
@@ -74,6 +77,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     // a second, unvalidated path into the same field.
     requestIdHeader: false,
     genReqId: (request) => resolveRequestId(request.headers[REQUEST_ID_HEADER]),
+    // A request that is not valid HTTP never reaches a hook, so the envelope for it is configured here.
+    clientErrorHandler,
+    // Who may assert a client address. Without this every request behind the documented proxy looks like the
+    // proxy: per-IP rate limits become one global bucket and hashed download IPs become identical for everyone.
+    // Default `loopback` is correct for the same-host proxy `12-deployment.md` describes; see `config/env.ts`.
+    trustProxy: config.trustProxy,
     // Instance-level, because Fastify reads it while parsing a request — long before any hook could set it.
     // Uploads stream through multipart with their own cap, so this bounds JSON only (`P1-API-05`).
     bodyLimit: JSON_BODY_LIMIT_BYTES,

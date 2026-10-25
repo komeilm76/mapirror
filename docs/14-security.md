@@ -100,6 +100,29 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains   # set at the TL
   HTTP on a private port and its headers are not what a browser sees).
 - Downloads: `Content-Type: application/x-protobuf`, `X-Content-Type-Options: nosniff`.
 
+### Client identity
+
+Everything per-IP — the limits below, and the salted hashes stored for downloads — reads `request.ip`. Behind
+the reverse proxy this document mandates, the socket address belongs to the **proxy**, so identity has to be
+configured or every client collapses into one:
+
+| `TRUST_PROXY` | Meaning |
+|---|---|
+| `loopback` (default) | Trust `X-Forwarded-For` only when the peer is local — the documented same-host Caddy/Nginx. A remote client cannot spoof its address, because its peer is not loopback |
+| an address / CIDR / list | For a proxy in a container network, e.g. `172.16.0.0/12` |
+| `none` | Trust nothing; only correct when the API is reached directly |
+
+Two values are **refused at boot** because Fastify's behaviour for them is not what an operator expects:
+
+- **a hop count (`1`, `2`)** — Fastify returns a trust function that is always false for numeric input; there is
+  no error and no warning, so the proxy would look configured and do nothing.
+- **`true` / `*`** — trusts every peer, which lets any client choose its own address and defeat both the limits
+  and the hashes.
+
+Without this setting the consequences are silent and security-relevant: `POST /_auth/api/login` at 10 attempts
+per 15 minutes becomes a **global** budget, so one attacker locks every administrator out, and every hashed
+download IP is identical, making per-visitor statistics meaningless.
+
 ## 7. Rate limiting & abuse
 
 | Endpoint | Limit |

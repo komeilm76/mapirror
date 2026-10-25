@@ -21,6 +21,7 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { isIP } from 'node:net';
 
 import { z } from 'zod';
 
@@ -200,6 +201,89 @@ function httpUrl(fallback: string) {
 }
 
 /**
+ * Values Fastify understands as a proxy preset, in the spelling it uses.
+ *
+ * `loopback` covers the documented deployment (`12-deployment.md`: a Caddy/Nginx on the same host proxying to
+ * `127.0.0.1:8080`); the other two exist for container networks.
+ */
+const PROXY_PRESETS = ['loopback', 'linklocal', 'uniquelocal'] as const;
+
+/**
+ * Whether a token is an IP address or a CIDR block, the two other things Fastify accepts here.
+ *
+ * @param token - One entry of the comma-separated list.
+ * @returns `true` for `127.0.0.1`, `172.16.0.0/12`, `::1`, `fd00::/8`.
+ */
+function isAddressOrSubnet(token: string): boolean {
+  const [address = '', prefix, ...rest] = token.split('/');
+  if (rest.length > 0 || isIP(address) === 0) return false;
+  if (prefix === undefined) return true;
+  if (!/^[0-9]+$/.test(prefix)) return false;
+  const max = isIP(address) === 4 ? 32 : 128;
+  const value = Number(prefix);
+  return value >= 0 && value <= max;
+}
+
+/**
+ * Reads `TRUST_PROXY`: which peers may assert a client address, or `false` to trust none.
+ *
+ * **Why this is not just passed through to Fastify.** Fastify accepts a number of hops, but its implementation
+ * *fails closed* for numbers: `trustProxy: 1` returns a function that trusts nothing, silently, because a hop
+ * count cannot validate the immediate peer. An operator writing the most natural value (`TRUST_PROXY=1`) would
+ * get no proxy support at all and no warning. So numbers are rejected here with an explanation, as is `true`
+ * (which trusts *every* peer, i.e. any client can invent its own address).
+ *
+ * The default is `loopback`: correct for the documented same-host proxy, and it never trusts a remote peer's
+ * `X-Forwarded-For`. Without it every client behind the proxy shares one address, which would make the per-IP
+ * rate limits in `14-security.md` §7 a single global bucket and every hashed download IP identical.
+ *
+ * @param fallback - Value used when the variable is absent.
+ * @returns The Fastify `trustProxy` value.
+ */
+function trustProxySetting(fallback: string | false) {
+  return z
+    .string()
+    .trim()
+    .transform((raw, ctx) => {
+      if (raw === 'none' || raw === 'false') return false as const;
+      const tokens = raw
+        .split(',')
+        .map((token) => token.trim())
+        .filter((token) => token.length > 0);
+      if (tokens.length === 0) return false as const;
+
+      const problems: string[] = [];
+      for (const token of tokens) {
+        if (/^[0-9]+$/.test(token)) {
+          problems.push(
+            `${token}: a hop count is not supported — Fastify fails closed for numbers, so it would trust ` +
+              'nothing; list the proxy address or subnet instead (e.g. 172.16.0.0/12)',
+          );
+        } else if (token === 'true' || token === '*') {
+          problems.push(
+            `${token}: would trust every peer, letting any client choose its own address; list the proxy address instead`,
+          );
+        } else if (
+          !PROXY_PRESETS.includes(token as (typeof PROXY_PRESETS)[number]) &&
+          !isAddressOrSubnet(token)
+        ) {
+          problems.push(
+            `${token}: expected an address, a CIDR block, or one of ${PROXY_PRESETS.join(' | ')}`,
+          );
+        }
+      }
+
+      if (problems.length > 0) {
+        ctx.addIssue({ code: 'custom', message: problems.join('; ') });
+        return z.NEVER;
+      }
+      // Fastify parses a comma-separated string itself, so the list is handed over as written.
+      return tokens.join(',');
+    })
+    .default(fallback);
+}
+
+/**
  * The environment schema.
  *
  * Keys are the variable names an operator writes, so an issue's path is already the thing to go and fix. Every
@@ -246,6 +330,8 @@ const ENV_SCHEMA = z.object({
     // The default belongs on the whole variable, not inside the pipe: an absent key must skip the split too.
     .default([]),
   IP_HASH_SALT: z.string().optional(),
+
+  TRUST_PROXY: trustProxySetting('loopback'),
 
   POSTGRES_PASSWORD: z.string().optional(),
   POSTGRES_PASSWORD_FILE: z.string().optional(),
@@ -303,6 +389,12 @@ export interface AppConfig {
   readonly corsOrigins: readonly string[];
   /** Salt for hashed download IPs; empty until first boot generates one. */
   readonly ipHashSalt?: string;
+  /**
+   * Which peers may assert a client address in `X-Forwarded-For`, or `false` for none.
+   *
+   * Handed to Fastify as-is; see {@link trustProxySetting} for why numbers are refused.
+   */
+  readonly trustProxy: string | false;
   /** Password for the bundled PostgreSQL container (compose only). */
   readonly postgresPassword?: string;
   /** Docker-secret alternative to {@link postgresPassword}. */
@@ -462,6 +554,7 @@ export function parseEnv(source: EnvSource = process.env): AppConfig {
     dbPoolMax: env.DB_POOL_MAX,
     corsOrigins: env.CORS_ORIGINS,
     ...(env.IP_HASH_SALT === undefined ? {} : { ipHashSalt: env.IP_HASH_SALT }),
+    trustProxy: env.TRUST_PROXY,
     ...(env.POSTGRES_PASSWORD === undefined ? {} : { postgresPassword: env.POSTGRES_PASSWORD }),
     ...(env.POSTGRES_PASSWORD_FILE === undefined
       ? {}

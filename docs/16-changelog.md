@@ -3,9 +3,33 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 12 passes · 96 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1).
+**Totals:** 13 passes · 99 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 13 — 2026-10-25 (adversarial review across the completed API stages)
+
+Three defects, none of them visible from the tests that existed. Each was found by asking what the *deployment*
+does (a proxy, a browser, a malformed packet) rather than what `inject()` does.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **Every client behind the documented proxy had the same identity.** `trustProxy` was never set, so `request.ip` was the proxy's address for all traffic. Nothing reads `request.ip` yet, which is why no test failed — but `14-security.md` §7 defines per-IP limits and the download design stores salted IP hashes. Shipping as-is would have made 10 login attempts / 15 min a **global** budget (one attacker locks out every administrator) and made every hashed IP identical (per-visitor statistics meaningless). Measured: a request with `X-Forwarded-For: 203.0.113.7` reported `127.0.0.1` | A `TRUST_PROXY` setting (default `loopback`, correct for the same-host proxy `12-deployment.md` mandates) is handed to Fastify, documented in `09` §5, `.env.example` and `14` §6, and covered by tests that use a **real socket** — `inject()` bypasses proxy resolution entirely and reported `remoteAddress` for every setting, so a test written against it would have passed whatever the code did. Probe: `loopback` → `203.0.113.7`; `none` → `127.0.0.1`; a spoofed leading hop is ignored |
+| 2 | **A hop count silently disables trust.** The natural value for an operator — `TRUST_PROXY=1`, "one proxy" — makes Fastify return a trust function that is **always false** (`lib/request.js`: "Hop-count-only trust cannot validate the immediate peer. Fail closed"). No error, no warning: the proxy would look configured and do nothing, which is worse than the bug above because it is invisible | Numeric values are refused at boot with a message naming the behaviour and suggesting an address or subnet; `true`/`*` are refused too, since they let any client choose its own address. Both are tested, and the boot message is the documentation |
+| 3 | **A malformed request answered in a second response shape.** A bad request line or an oversized header fails in Node's parser, before any hook, so Fastify's default handler replied `{"error":"Bad Request","message":"Client Error","statusCode":400}` — no `code`, no `requestId`, no security headers. `04-api.md` promises the envelope for every non-2xx, and this is the first thing a scanner sends. Measured with raw bytes over a socket | A `clientErrorHandler` answers the documented envelope with a generated id in both the header and the body, logs it at `warn` with the error scrubbed, and closes the connection (the parser has already given up on the stream). The status stays `400 BAD_REQUEST` even for header-overflow and timeout, because the vocabulary has no `408`/`431`. Guarded by tests over a real socket, plus a unit test that the handler never writes to a destroyed or read-only socket — writing there throws inside a Node event handler and kills the process |
+
+One smaller fix in the same pass:
+
+- **A cross-origin client could not read `x-request-id`.** The allowed-origin response carried
+  `access-control-allow-origin` but no `access-control-expose-headers`, and a browser hides every non-safelisted
+  response header from JavaScript — so the id `04-api.md` §0.2 tells clients to quote in a bug report was
+  unreachable from the only place that can read it. Now exposed, and asserted.
+
+Both new tests were verified by restoring the defect: hardcoding `trustProxy: false` fails the two forwarded-address
+tests, and deleting the expose-header fails the CORS test. A mutation check is cheap and it is the only evidence
+that a test would have caught the bug it describes.
 
 ---
 

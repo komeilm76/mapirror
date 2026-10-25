@@ -1,3 +1,5 @@
+import { connect } from 'node:net';
+
 import { ERROR_STATUS } from '@mapirror/shared';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
@@ -6,6 +8,7 @@ import { z } from 'zod';
 import {
   AppError,
   buildApp,
+  clientErrorHandler,
   installErrorHandlers,
   installRequestContext,
   INTERNAL_MESSAGE,
@@ -279,4 +282,103 @@ describe('client-caused failures map to their documented codes', () => {
     expect(response.json<{ error: { code: string } }>().error.code).toBe('FILE_TOO_LARGE');
     await instance.close();
   });
+});
+
+describe('clientErrorHandler leaves an unwritable socket alone', () => {
+  /** A socket double that records anything written to it. */
+  function fakeSocket(overrides: { destroyed?: boolean; writable?: boolean } = {}) {
+    const written: string[] = [];
+    return {
+      written,
+      socket: {
+        destroyed: overrides.destroyed ?? false,
+        writable: overrides.writable ?? true,
+        write: (chunk: string) => written.push(chunk),
+        destroy: () => undefined,
+      },
+    };
+  }
+
+  /** The `this` the handler is bound to: only `log` is used. */
+  const fakeApp = { log: { warn: () => undefined } };
+
+  it.each([
+    ['a reset connection', { code: 'ECONNRESET' }, {}],
+    ['a destroyed socket', { code: 'HPE_INVALID_METHOD' }, { destroyed: true }],
+    ['a read-only socket', { code: 'HPE_INVALID_METHOD' }, { writable: false }],
+  ])('does not write to %s', (_label, errorOverrides, socketOverrides) => {
+    // Writing to a destroyed socket throws from inside a Node event handler, where nothing catches it and the
+    // process dies. The guard is one branch and it is the difference between a 400 and a crash.
+    const { written, socket } = fakeSocket(socketOverrides);
+    const error = Object.assign(new Error('boom'), errorOverrides);
+
+    clientErrorHandler.call(fakeApp as never, error, socket as never);
+
+    expect(written).toEqual([]);
+  });
+});
+
+describe('a request that is not valid HTTP still gets the envelope', () => {
+  /**
+   * Writes raw bytes and collects the reply.
+   *
+   * A real socket is required: `inject()` builds a request object, so it cannot exercise the path where Node
+   * gives up on the byte stream — which is the path this test exists for.
+   *
+   * @param port - Listening port.
+   * @param payload - Bytes to write.
+   * @returns The raw response text.
+   */
+  function rawRequest(port: number, payload: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const chunks: string[] = [];
+      const socket = connect(port, '127.0.0.1', () => socket.write(payload));
+      socket.setEncoding('utf8');
+      socket.on('data', (chunk: string) => chunks.push(chunk));
+      socket.on('close', () => resolve(chunks.join('')));
+      socket.on('error', reject);
+    });
+  }
+
+  it('answers a garbage request line with the documented envelope and a request id', async () => {
+    const instance = await buildApp();
+    const address = await instance.listen({ port: 0, host: '127.0.0.1' });
+    const port = Number(new URL(address).port);
+    try {
+      const raw = await rawRequest(port, 'GARBAGE\r\n\r\n');
+
+      // Fastify's default here is `{"error":"Bad Request","message":"Client Error","statusCode":400}`.
+      expect(raw).toContain('HTTP/1.1 400');
+      const [head = '', body = ''] = raw.split('\r\n\r\n');
+      const parsed = JSON.parse(body) as {
+        error: { code: string; message: string; requestId: string };
+      };
+
+      expect(parsed.error.code).toBe('BAD_REQUEST');
+      expect(parsed.error.message).toBe('The request could not be read.');
+      expect(parsed.error.requestId).toMatch(/^[0-9a-f-]{36}$/);
+      // The id in the header is the id in the body, so the two can be matched.
+      expect(head.toLowerCase()).toContain(`x-request-id: ${parsed.error.requestId}`);
+      expect(head.toLowerCase()).toContain('x-content-type-options: nosniff');
+      expect(head.toLowerCase()).toContain('connection: close');
+    } finally {
+      await instance.close();
+    }
+  }, 15_000);
+
+  it('answers an oversized header the same way, and closes the connection', async () => {
+    const instance = await buildApp();
+    const address = await instance.listen({ port: 0, host: '127.0.0.1' });
+    const port = Number(new URL(address).port);
+    try {
+      const raw = await rawRequest(
+        port,
+        `GET /_public/api/countries HTTP/1.1\r\nHost: x\r\nX-Big: ${'a'.repeat(20_000)}\r\n\r\n`,
+      );
+      const body = raw.split('\r\n\r\n')[1] ?? '';
+      expect((JSON.parse(body) as { error: { code: string } }).error.code).toBe('BAD_REQUEST');
+    } finally {
+      await instance.close();
+    }
+  }, 15_000);
 });

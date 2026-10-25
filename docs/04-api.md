@@ -53,7 +53,7 @@ lands.
 | Time | ISO-8601 UTC strings; byte counts are integers |
 | Nullability | absent/null means "unknown", never 0 |
 | Request id | UUIDv4, returned in `x-request-id`, echoed in every error and used as `reqId` in every log line. An inbound `x-request-id` is repeated only if it matches `[A-Za-z0-9._-]{8,64}`; anything else is replaced, so a caller cannot write into our log stream |
-| CORS | same-origin by default. `CORS_ORIGINS` is an explicit allow-list: an allowed origin gets `access-control-allow-origin` and a `204` preflight; a preflight from any other origin is `403 FORBIDDEN`; an actual request from any other origin is answered without the header. Never `*` |
+| CORS | same-origin by default. `CORS_ORIGINS` is an explicit allow-list: an allowed origin gets `access-control-allow-origin` (plus `access-control-expose-headers: x-request-id`, so the browser can read the id this table tells clients to quote) and a `204` preflight; a preflight from any other origin is `403 FORBIDDEN`; an actual request from any other origin is answered without the header. Never `*` |
 | Rate limits | `429` + `retry-after`; login and public downloads are limited |
 
 ### Error envelope
@@ -90,6 +90,12 @@ the response ever describing the server's internals. `details` is omitted entire
 | 500 | `INTERNAL_ERROR` |
 | 502 | `SOURCE_UNAVAILABLE` (upstream failed — retryable) |
 | 503 | `DB_UNAVAILABLE`, `DISK_FULL`, `NOT_READY` |
+
+The same envelope is used for a request that never became a valid HTTP request — a malformed request line or an
+oversized header, which Node reports before any route exists. There is no route context to log it against, so the
+id is generated for that response and appears in the header and in the log line, and the connection is closed
+afterwards. Its code is `BAD_REQUEST`/`400` even for the timeout and header-overflow cases, because `ERROR_STATUS`
+has no `408`/`431` and a status outside the documented vocabulary is the defect this rule removes.
 
 `VALIDATION_ERROR` puts the failing fields in `details.issues`, each with a dotted `path` and the rule it broke —
 what a form needs to mark the right input:
