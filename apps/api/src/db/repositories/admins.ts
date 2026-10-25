@@ -1,7 +1,7 @@
 /**
- * Typed queries for `admins` (`03-data-model.md` §2.1, tasks `P1-AUTH-03`, `P1-AUTH-06`).
+ * Typed queries for `admins` (`03-data-model.md` §2.1, tasks `P1-AUTH-03`, `P1-AUTH-06`, `P1-AUTH-07`).
  *
- * Three queries, and the lookup is not as obvious as it looks: the lookup is **case-insensitive**, because the unique
+ * Four queries, and the lookup is not as obvious as it looks: the lookup is **case-insensitive**, because the unique
  * index is `admins_username_key ON admins (lower(username))`. Matching `username = $1` would compile, run, and give a
  * different answer from the one the index enforces — `admin` would log in while `Admin` said "no such user" even
  * though the database would refuse to store both. It would also not use the index.
@@ -56,6 +56,38 @@ export async function recordLogin(
     .set({ last_login_at: now, updated_at: now })
     .where('id', '=', adminId)
     .execute();
+}
+
+/**
+ * Replaces an account's password hash.
+ *
+ * `returningAll()` rather than a count: a reset script has to distinguish "updated this row" from "the account was
+ * deleted between the lookup and the update", and reporting success for the second is how an operator ends up with a
+ * password they believe is in effect and an account that does not exist.
+ *
+ * `updated_at` moves, `created_at` does not; `is_active`, `last_login_at` and the username are not touched — a password
+ * reset changes exactly one thing.
+ *
+ * @param executor - Kysely instance or transaction.
+ * @param adminId - Account to update.
+ * @param passwordHash - New Argon2id digest (never a plaintext password).
+ * @param now - Reset instant; the caller's clock, so the audit row and `updated_at` agree.
+ * @returns The updated row, or `null` when no such account exists.
+ */
+export async function updateAdminPassword(
+  executor: TokenExecutor,
+  adminId: string,
+  passwordHash: string,
+  now: Date = new Date(),
+): Promise<Admin | null> {
+  const row = await executor
+    .updateTable('admins')
+    .set({ password_hash: passwordHash, updated_at: now })
+    .where('id', '=', adminId)
+    .returningAll()
+    .executeTakeFirst();
+
+  return row ?? null;
 }
 
 /**

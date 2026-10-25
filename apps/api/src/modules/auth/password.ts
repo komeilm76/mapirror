@@ -15,7 +15,11 @@
  * 2. **Verification answers `false`, it does not throw.** A stored hash that cannot be decoded — a truncated
  *    column, a row edited by hand — must not turn every login into a `500` describing its own internals. It is
  *    indistinguishable from a wrong password by design; the recovery path is the reset script (`P1-AUTH-07`).
- * 3. **The stored form is the hash, and the hash carries its own parameters.** `verify` reads `m=`, `t=`, `p=`
+ * 3. **Generated passwords are a policy input, not a separate scheme.** `--generate` (`P1-AUTH-07`) draws from an
+ *    unambiguous alphabet with `crypto.randomInt` and then passes the result through the *same* policy check every
+ *    other password goes through, regenerating if it somehow fails. A generator that emits *almost* valid passwords is
+ *    a generator whose output the reset script has to special-case.
+ * 4. **The stored form is the hash, and the hash carries its own parameters.** `verify` reads `m=`, `t=`, `p=`
  *    out of the PHC string, so the numbers in `ARGON2_PARAMS` govern *new* hashes only. Raising them later is
  *    therefore a one-line change that does not invalidate existing accounts; `P1-AUTH-01` does not add a
  *    "needs rehash" path because nothing yet changes the parameters, and an unused upgrade path is a path no
@@ -25,6 +29,7 @@
  */
 
 import { hash as argonHash, verify as argonVerify } from '@node-rs/argon2';
+import { randomInt } from 'node:crypto';
 
 import { WEAK_PASSWORD_SET } from './weak-passwords';
 
@@ -252,6 +257,85 @@ export function passwordProblems(
  * @param context - The username, when known.
  * @throws {PasswordPolicyError} With every problem found attached.
  */
+/**
+ * Alphabet for generated passwords: no `0/O`, `1/l/I`, `5/S`, `2/Z` pairs.
+ *
+ * The generated password is printed once, to be read off a terminal and typed into a browser — possibly by someone
+ * photographing the screen or reading it to a colleague. Excluding lookalikes costs 4 characters of alphabet (58 instead
+ * of 62) and saves the "is that an O or a zero" round trip that ends with a second reset.
+ */
+const GENERATED_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+
+/** Default generated length: 24 characters from a 58-character alphabet ≈ 140 bits. */
+export const GENERATED_PASSWORD_LENGTH = 24;
+
+/** How a generated password is drawn. */
+export interface GeneratePasswordOptions {
+  /**
+   * Characters to draw from; defaults to {@link GENERATED_ALPHABET}.
+   *
+   * A parameter rather than a constant buried in the function for one reason: the retry loop and its exhaustion error
+   * are unreachable with the real alphabet (a 24-character draw cannot be on a 1 000-word blocklist or contain the
+   * username), and a test that cannot reach the code cannot prove it works. A degenerate alphabet — a single repeated
+   * character — drives the loop to its limit deterministically.
+   */
+  readonly alphabet?: string;
+}
+
+/**
+ * Generates a password that the policy accepts.
+ *
+ * `crypto.randomInt` (rejection-sampled, unbiased) rather than `Math.random` or `randomBytes % alphabet.length`: modulo
+ * bias is small but real, and a password generator is exactly the place not to accept it.
+ *
+ * The loop is not defensive padding: the policy rejects a password containing the username, and an account called
+ * `admin2` could in principle draw a password containing `admin2`. Ten attempts at 24 characters makes that
+ * unreachable in practice, and the throw keeps the failure honest rather than returning a password the caller will be
+ * told to change.
+ *
+ * @param length - Characters to generate; must be within the policy's bounds.
+ * @param context - Username to keep out of the result (the policy's rule), if any.
+ * @param options - Alphabet to draw from; see {@link GeneratePasswordOptions}.
+ * @returns A password that {@link assertPasswordAcceptable} accepts.
+ * @throws {RangeError} When `length` is outside the policy's bounds.
+ * @throws {Error} When ten attempts all break the policy — practically impossible with the real alphabet, and exactly
+ * what a degenerate one produces.
+ * @throws {RangeError} When the alphabet is empty.
+ */
+export function generateStrongPassword(
+  length: number = GENERATED_PASSWORD_LENGTH,
+  context: PasswordPolicyContext = {},
+  options: GeneratePasswordOptions = {},
+): string {
+  if (
+    !Number.isInteger(length) ||
+    length < PASSWORD_POLICY.minLength ||
+    length > PASSWORD_POLICY.maxLength
+  ) {
+    // Both ends, because both are policy: a 300-character generation would loop ten times and then throw a message about
+    // randomness, when the actual problem is the argument.
+    throw new RangeError(
+      `a generated password must be ${String(PASSWORD_POLICY.minLength)}–${String(PASSWORD_POLICY.maxLength)} characters, got ${String(length)}`,
+    );
+  }
+
+  const alphabet = options.alphabet ?? GENERATED_ALPHABET;
+  if (alphabet.length === 0)
+    throw new RangeError('the alphabet must contain at least one character');
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    let password = '';
+    for (let index = 0; index < length; index += 1) {
+      password += alphabet[randomInt(alphabet.length)];
+    }
+    if (passwordProblems(password, context).length === 0) return password;
+  }
+
+  throw new Error(
+    'could not generate a password that satisfies the policy; this should be impossible',
+  );
+}
+
 export function assertPasswordAcceptable(
   password: string,
   context: PasswordPolicyContext = {},

@@ -140,7 +140,7 @@ mapirror/
 │  ├─ init-admin.ts                # Launch script: create admin from ADMIN_PASSWORD* (idempotent, never echoes)
 │  ├─ lib/
 │  │  └─ secret-prompt.ts         # Hidden terminal input: raw mode first, no echo, Ctrl-C/Ctrl-D
-│  ├─ reset-admin-password.ts      # Reset + revoke tokens (D: AUTH-4)
+│  ├─ reset-admin-password.ts      # Reset + revoke all sessions (--generate / --password-stdin / prompt)
 │  ├─ migrate.ts                   # Run Kysely migrations (also run on boot)
 │  ├─ sync-catalog.ts              # Manual catalog sync (cron-friendly)
 │  ├─ backup.sh / restore.sh       # pg_dump + cache manifest

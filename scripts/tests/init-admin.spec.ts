@@ -307,6 +307,23 @@ describe.skipIf(skipReason !== null)('main — against a real database', () => {
     });
   });
 
+  it('creates the account named by ADMIN_USERNAME, not always "admin"', async () => {
+    // The default is `admin`, so a script that ignored the variable would pass every other test in this file.
+    await onFreshDatabase(async (database, env) => {
+      const result = await run(
+        [],
+        { ...env, ADMIN_PASSWORD: SECRET, ADMIN_USERNAME: 'owner' },
+        {
+          database,
+        },
+      );
+
+      expect(result.code).toBe(0);
+      const rows = await database.db.selectFrom('admins').select('username').execute();
+      expect(rows).toEqual([{ username: 'owner' }]);
+    });
+  });
+
   it('honours --username over ADMIN_USERNAME, and trims what it stores', async () => {
     await onFreshDatabase(async (database, env) => {
       const result = await run(

@@ -197,7 +197,10 @@ docker compose exec -T api bun run admin:reset --username admin --generate
 docker compose exec api bun run scripts/reset-admin-password.ts --username admin
 ```
 
-All three forms revoke the admin's existing tokens, so any open admin tab is signed out immediately.
+All three forms revoke the admin's existing tokens, so any open admin tab is signed out immediately, and print how
+many sessions were ended. `--generate` prints the new password **once**, after the change has committed — it is not
+stored anywhere, so copy it before the terminal scrolls. `--password-stdin` reads the password from a pipe (writing the
+generated password to a secret store, for example); it refuses a terminal, where the shell would echo what is typed.
 
 ### Backup
 

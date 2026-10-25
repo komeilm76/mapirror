@@ -107,9 +107,23 @@ sequenceDiagram
   R-->>Op: "Password updated. N sessions revoked."
 ```
 
-**Options:** `--generate` prints a strong password **once**; `--password-stdin` for automation.
-**Tests:** old token stops working, new password logs in, audit row `auth.password_reset` written,
-password that breaks the policy rejected (with every reason listed, not one per attempt).
+**Options:** `--generate` draws a 24-character password from an alphabet without lookalikes and prints it **once, after
+the commit** (a run that fails prints nothing); `--password-stdin` for automation, refused when stdin is a terminal
+because the terminal would echo it; no source at all means a hidden prompt, asked twice. There is deliberately **no**
+`ADMIN_PASSWORD` fallback — a reset that reused the container's environment would put the `.env` value back, which is
+the opposite of a reset — and no `--password` flag, which would be visible in `ps`.
+
+**One transaction:** the new hash, `revoked_at` on every open token for that account, and the `auth.password_reset` audit
+row (with `metadata.revokedTokens`) commit together, so a failure leaves the old password working *and* the sessions
+alive — never one without the other. Another account's password and sessions are untouched; an already-revoked token
+keeps its first `revoked_at`, so a second reset reports `0 sessions revoked` rather than claiming work it did not do. A
+deactivated account can be reset and is **not** re-enabled (the script says so). A locked-out address stays locked out:
+the login throttle lives in the API process's memory and expires on its own — the script runs in a different process and
+cannot, and should not, reach into it.
+
+**Tests:** old token stops working (401 `TOKEN_REVOKED` over HTTP), new password logs in, old password is rejected,
+audit row `auth.password_reset` written once per reset with the revoked count, a password that breaks the policy
+rejected with every reason listed, unknown username rejected before the password is asked for.
 
 ---
 

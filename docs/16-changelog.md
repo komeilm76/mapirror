@@ -3,9 +3,48 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 26 passes · 127 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2).
+**Totals:** 27 passes · 129 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 27 — 2026-10-25 (adversarial review of `P1-AUTH-07`)
+
+Two defects this pass, and both are the kind that ship without ever failing: **a documented behaviour that no test
+could lose.** The product code of this task behaved correctly under every probe — the transaction's three statements,
+the revocation count, the per-account scope, the concurrent resets, the printed-once rule, a failed commit printing
+nothing — so the findings are in the suite that is supposed to keep it that way.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **Nothing tested that the reset script targets `ADMIN_USERNAME`.** The variable is documented (`09-development.md` §5) and the script reads it (`args.username ?? config.adminUsername`), but every case passed `--username` or relied on the default — which happens to be `admin`. A regression that hard-coded `'admin'` would have passed the whole suite and reset the wrong account in a deployment that renamed it: the operator's own account untouched, a password they do not control set on an account they may not look at. Found by asking, for each promised behaviour, "which test would fail if this were wrong?" | A case creates `owner` **and** `admin`, runs with `ADMIN_USERNAME=owner` and no flag, and asserts that `owner` has the new password and `admin` still has the old one. Mutation-checked: `args.username ?? 'admin'` fails exactly that test |
+| 2 | **The same gap in `init-admin.ts`, from pass 26.** Its suite created `owner` only through `--username`, so `ADMIN_USERNAME` — the default an operator actually relies on in `docker compose` — was equally unpinned | A case sets `ADMIN_USERNAME=owner` with no flag and asserts the single row is `owner`. Mutation-checked the same way |
+
+Three things were probed rather than assumed, and each changed something:
+
+- **The generator's retry loop was unreachable and therefore unprovable.** With the real alphabet a 24-character draw
+  cannot be on the 1 000-word blocklist or contain the username, so the `for` loop's exhaustion branch could not be
+  executed by any test. The alphabet is now a documented option, and a degenerate one (`'a'`) with the username `'aaa'`
+  drives all ten attempts and the throw. The same review added the policy's **upper** bound: a 300-character request now
+  fails as a `RangeError` naming the bounds, instead of looping ten times and blaming randomness.
+- **`--password-stdin` on a terminal is refused, before the database is opened.** A TTY on stdin means the "pipe" is a
+  person typing, and the terminal echoes every character — the one case where a pipe is required. The check was
+  originally inside the password step, i.e. after a connection and a lookup; it is now with the other "this run cannot
+  succeed" checks, so the operator gets one sentence and no SQL.
+- **A printed password is always an applied password.** The generated value is written to stdout only after the
+  transaction returns, and a test forces the failure path (drop `audit_logs`) to assert that nothing is printed and the
+  old password still works. The accepted cost is stated in the script's docstring: if stdout is lost *after* a
+  successful commit, the password is lost with it and the reset must be run again — the alternative, printing before the
+  commit, would hand an operator a credential that was never stored.
+
+Mutation-checked: 19 mutations, all caught — revocation removed, the audit action swapped, `metadata.revokedTokens`
+dropped, the "account vanished" branch re-thrown as a generic error, the missing-account guard removed, the `UPDATE`'s
+`WHERE` removed (every admin would be reset), `withTransaction` replaced by a bare call, the generator's character pick
+fixed to one character, its policy check removed, its upper bound removed, the print suppressed, the TTY refusal
+removed, stdin not stripped, empty stdin accepted, the plural hard-coded, the two prompts not compared, and the two
+`ADMIN_USERNAME` regressions above. `modules/auth/admin-accounts.ts` and `modules/auth/password.ts` are at 100 %
+statements, branches, functions and lines; the repository is at 681 tests / 49 files, coverage 97.9 % statements.
 
 ---
 

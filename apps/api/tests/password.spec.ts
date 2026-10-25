@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest';
 import {
   ARGON2_PARAMS,
   assertPasswordAcceptable,
+  generateStrongPassword,
+  GENERATED_PASSWORD_LENGTH,
   hashPassword,
   passwordProblems,
   PasswordPolicyError,
@@ -33,6 +35,72 @@ const GOOD = 'correct horse battery staple';
 function readDoc(name: string): string {
   return readFileSync(resolve(import.meta.dirname, '../../../docs', name), 'utf8');
 }
+
+describe('generateStrongPassword', () => {
+  it('produces a password the policy accepts, for an account name that must be kept out of it', () => {
+    // The generator's only contract is the policy: a reset script that has to check and retry would be a reset script
+    // that sometimes stores a password it then refuses to use.
+    const password = generateStrongPassword(undefined, { username: 'admin' });
+
+    expect(passwordProblems(password, { username: 'admin' })).toEqual([]);
+    expect([...password]).toHaveLength(GENERATED_PASSWORD_LENGTH);
+  });
+
+  it('uses only characters an operator can read off a screen without confusing them', () => {
+    // The password is printed once, to be typed into a browser later. `0/O`, `1/l/I`, `5/S` and `2/Z` cost a second
+    // reset when someone guesses wrong.
+    const password = generateStrongPassword(64);
+
+    expect(password).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789]+$/u);
+  });
+
+  it('does not repeat itself', () => {
+    // A generator seeded from a constant would pass every assertion above. 200 draws of a 24-character password: a
+    // collision here means the source is not random at all.
+    const seen = new Set(
+      Array.from({ length: 200 }, () => generateStrongPassword(undefined, { username: 'admin' })),
+    );
+    expect(seen.size).toBe(200);
+  });
+
+  it('rejects a length outside the policy bounds instead of generating a password the policy will refuse', () => {
+    expect(() => generateStrongPassword(PASSWORD_POLICY.minLength - 1)).toThrow(RangeError);
+    expect(() => generateStrongPassword(0)).toThrow(RangeError);
+    expect(() => generateStrongPassword(12.5)).toThrow(RangeError);
+    // The ceiling too: ten attempts at 300 characters would fail every time, and the error would blame randomness.
+    expect(() => generateStrongPassword(PASSWORD_POLICY.maxLength + 1)).toThrow(RangeError);
+    // The floor itself is accepted.
+    expect(passwordProblems(generateStrongPassword(PASSWORD_POLICY.minLength))).toEqual([]);
+  });
+
+  it('honours a supplied alphabet', () => {
+    // The alphabet is a parameter; with a degenerate one the output is fully predictable, which is also how the retry
+    // limit below is reached rather than hoped for.
+    expect(generateStrongPassword(12, {}, { alphabet: 'a' })).toBe('aaaaaaaaaaaa');
+  });
+
+  it('refuses an empty alphabet instead of looping on it', () => {
+    expect(() => generateStrongPassword(12, {}, { alphabet: '' })).toThrow(/alphabet/u);
+  });
+
+  it('gives up after ten attempts rather than returning a password the policy refuses', () => {
+    // A single-character alphabet, and a username made of it: every candidate contains the username, which the policy
+    // refuses for names of three characters or more (`PASSWORD_POLICY.minUsernameLength`), so the loop must exhaust and
+    // say so. Without the bound this is an infinite loop inside the reset script.
+    expect(() => generateStrongPassword(12, { username: 'aaa' }, { alphabet: 'a' })).toThrow(
+      /could not generate/u,
+    );
+  });
+
+  it('keeps the account name out of the generated value', () => {
+    // The policy rejects a password containing the username. With a name that *is* part of the alphabet this could in
+    // principle collide, and the loop is what turns that into a retry instead of a password the policy refuses.
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const password = generateStrongPassword(12, { username: 'abc' });
+      expect(password.toLowerCase()).not.toContain('abc');
+    }
+  });
+});
 
 describe('hash format', () => {
   it('produces an Argon2id v19 PHC string with the documented parameters', async () => {
