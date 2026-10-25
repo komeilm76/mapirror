@@ -69,9 +69,11 @@ export class AppError<Details = unknown> extends Error {
    * @param code - A code from `ERROR_STATUS`.
    * @param message - Client-facing sentence.
    * @param details - Optional structured context, e.g. the field that failed.
+   * @param options - Passed to `Error`; `cause` keeps the underlying exception for the log without exposing it in
+   * the response.
    */
-  constructor(code: ErrorCode, message: string, details?: Details) {
-    super(message);
+  constructor(code: ErrorCode, message: string, details?: Details, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'AppError';
     this.code = code;
     if (details !== undefined) this.details = details;

@@ -17,6 +17,7 @@
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 
 import { parseEnv, type AppConfig } from './config/env';
+import type { SqlDatabase } from './db/client';
 import { clientErrorHandler } from './lib/errors';
 import { withRedaction } from './lib/logger';
 import { PLUGIN_ORDER, registerPipeline, type PluginSlot } from './plugins/order';
@@ -47,6 +48,12 @@ export interface BuildAppOptions {
    * that silently read the developer's environment would pass here and fail in CI.
    */
   config?: AppConfig;
+  /**
+   * Database handle to adopt. Tests pass a stub; `server.ts` passes nothing and the `db` stage creates the real
+   * pool from `config.databaseUrl`. It exists so the *whole* pipeline — including the boot-time connectivity
+   * check — can be exercised without a server on the other end.
+   */
+  database?: SqlDatabase;
 }
 
 /**
@@ -90,9 +97,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   const routeLaw = installRouteLawHook(app);
 
-  await registerPipeline(app, options.slots ?? PLUGIN_ORDER, {
-    config: options.config ?? parseEnv({}),
-  });
+  try {
+    await registerPipeline(app, options.slots ?? PLUGIN_ORDER, {
+      config: options.config ?? parseEnv({}),
+      // Threaded through, not just declared: an option that is accepted and then dropped would make every test
+      // above pass while the `db` stage quietly opened a real pool against the default DSN.
+      ...(options.database === undefined ? {} : { database: options.database }),
+    });
+  } catch (error) {
+    // A partial boot owns resources — the `db` stage has already opened a pool, and the failed instance is never
+    // returned, so nothing else can close them. A supervisor retries a failed boot in a loop; without this, every
+    // attempt leaves connections behind until Postgres refuses new ones. Closing here also runs the stages'
+    // `onClose` hooks in order, which is the same path a clean shutdown takes.
+    await app.close().catch(() => undefined);
+    throw error;
+  }
 
   // Enforced after the boot, because a throwing `onRoute` hook stalls `ready()` forever — see the module
   // comment in `plugins/route-law.ts`. Booting first also lets the error list every offending route.

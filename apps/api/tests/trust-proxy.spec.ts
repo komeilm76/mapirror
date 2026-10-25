@@ -2,13 +2,13 @@ import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
 
 import {
-  buildApp,
   installErrorHandlers,
   installRequestContext,
   parseEnv,
   type AppConfig,
   type PluginSlot,
 } from '../src/index';
+import { buildTestApp } from './helpers/test-app';
 
 /**
  * `request.ip` decides two documented behaviours: the per-IP rate limits in `14-security.md` §7 and the hashed
@@ -51,7 +51,7 @@ async function withServer(
     },
   ];
 
-  const app = await buildApp({ config: configWithTrust(trustProxy), slots });
+  const app = await buildTestApp({ config: configWithTrust(trustProxy), slots });
   const address = await app.listen({ port: 0, host: '127.0.0.1' });
   try {
     await probe(app, address);

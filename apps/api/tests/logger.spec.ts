@@ -3,7 +3,6 @@ import { Writable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 
 import {
-  buildApp,
   describeError,
   LOG_REDACT_PATHS,
   REDACT_CENSOR,
@@ -12,6 +11,7 @@ import {
   scrubSecrets,
   withRedaction,
 } from '../src/index';
+import { buildTestApp } from './helpers/test-app';
 
 /**
  * L9 says redaction happens "at the logger level, not per call site", so these tests never configure
@@ -51,7 +51,7 @@ describe('the logger redacts credentials at the logger level', () => {
     // the one that matters. Not nested under `req`/`res`: Fastify registers serializers for those keys, and a
     // hand-built object there is emptied by the request serializer before redaction ever runs.
     const captured = captureLines();
-    const instance = await buildApp({ logger: { level: 'info', stream: captured.stream } });
+    const instance = await buildTestApp({ logger: { level: 'info', stream: captured.stream } });
 
     instance.log.info(
       {
@@ -80,7 +80,7 @@ describe('the logger redacts credentials at the logger level', () => {
     // header and a cookie must not put them in the log stream. If a future serializer starts including headers,
     // this is the test that keeps redaction honest — the one above proves the paths work.
     const captured = captureLines();
-    const instance = await buildApp({ logger: { level: 'info', stream: captured.stream } });
+    const instance = await buildTestApp({ logger: { level: 'info', stream: captured.stream } });
 
     await instance.inject({
       method: 'GET',
@@ -96,7 +96,7 @@ describe('the logger redacts credentials at the logger level', () => {
 
   it('never writes a password logged from a call site, one or two levels deep', async () => {
     const captured = captureLines();
-    const instance = await buildApp({ logger: { level: 'info', stream: captured.stream } });
+    const instance = await buildTestApp({ logger: { level: 'info', stream: captured.stream } });
 
     // The point of the law: these call sites do not know about redaction, and must not have to.
     instance.log.info(
@@ -117,7 +117,7 @@ describe('the logger redacts credentials at the logger level', () => {
 
   it('keeps unrelated fields intact', async () => {
     const captured = captureLines();
-    const instance = await buildApp({ logger: { level: 'info', stream: captured.stream } });
+    const instance = await buildTestApp({ logger: { level: 'info', stream: captured.stream } });
 
     instance.log.info(
       {
@@ -227,7 +227,7 @@ describe('the err serializer is installed by the logger, for every call site', (
     // `log.error({ err })` is how every call site logs a caught exception — including `server.ts`'s shutdown
     // path, which is why the scrubbing belongs to the serializer rather than to one handler.
     const captured = captureLines();
-    const instance = await buildApp({ logger: { level: 'info', stream: captured.stream } });
+    const instance = await buildTestApp({ logger: { level: 'info', stream: captured.stream } });
 
     instance.log.error(
       { err: new Error('connect ECONNREFUSED postgres://user:hunter2@db:5432/app') },

@@ -7,13 +7,13 @@ import { isApiPath, isProbePath, statusFor } from '@mapirror/shared';
 
 import {
   assertRouteLaw,
-  buildApp,
   installRouteLawHook,
   pendingPlugins,
   PLUGIN_ORDER,
   registerPipeline,
   type PluginSlot,
 } from '../src/index';
+import { buildTestApp } from './helpers/test-app';
 import { STUB_ROUTES } from '../src/routes/not-implemented';
 import Fastify, { type FastifyInstance } from 'fastify';
 
@@ -32,7 +32,7 @@ const apps: FastifyInstance[] = [];
  * @returns A non-listening instance.
  */
 async function app(): Promise<FastifyInstance> {
-  const instance = await buildApp();
+  const instance = await buildTestApp();
   apps.push(instance);
   return instance;
 }
@@ -357,8 +357,10 @@ describe('L1 is enforced at boot, not only by the law test', () => {
       },
     };
 
-    await expect(buildApp({ logger: false, slots: [illegal] })).rejects.toThrow(/\/_site\/leak/);
-    await expect(buildApp({ logger: false, slots: [illegal] })).rejects.toThrow(/violates L1/);
+    await expect(buildTestApp({ logger: false, slots: [illegal] })).rejects.toThrow(
+      /\/_site\/leak/,
+    );
+    await expect(buildTestApp({ logger: false, slots: [illegal] })).rejects.toThrow(/violates L1/);
   }, 2_000);
 
   it('never throws from the hook, so a ready() can always settle', async () => {

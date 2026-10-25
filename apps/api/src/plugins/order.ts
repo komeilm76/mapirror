@@ -23,9 +23,11 @@
 import type { FastifyInstance } from 'fastify';
 
 import { parseEnv, type AppConfig } from '../config/env';
+import type { SqlDatabase } from '../db/client';
 
 import { registerRoutes } from '../routes/index';
 
+import { installDb } from './db';
 import { installErrorHandlers } from './errors';
 import { installRequestContext } from './request-context';
 import { installSecurity } from './security';
@@ -45,6 +47,13 @@ export type PluginId =
 export interface PipelineContext {
   /** The environment this process was started with. */
   readonly config: AppConfig;
+  /**
+   * An existing database handle to adopt, or `undefined` to create one from {@link config}.
+   *
+   * A caller that already owns a handle — a test with a stub, an integration test with a real server — hands it
+   * over here rather than letting the stage open a second pool.
+   */
+  readonly database?: SqlDatabase;
 }
 
 /** One stage of the pipeline. */
@@ -97,8 +106,8 @@ export const PLUGIN_ORDER: readonly PluginSlot[] = [
     id: 'db',
     rationale:
       'Decorates the instance with the Kysely pool and fails the boot when the database is unreachable — before any route can serve a request that needs it.',
-    task: 'P1-API-06',
-    install: null,
+    task: null,
+    install: installDb,
   },
   {
     id: 'rate-limit',

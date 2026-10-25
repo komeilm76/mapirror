@@ -166,6 +166,15 @@ bun run db:reset                                              # dev only
 | Component | `apps/web/tests/**` | tables, dialogs, forms, stores (Vitest + jsdom/VTU) |
 | Fixtures | `apps/api/tests/fixtures/**` | saved Geofabrik index + region HTML; a local HTTP server serves pbf/md5 |
 
+An integration suite **skips itself, with the reason, when the database it names is not answering** — it probes
+`DATABASE_URL_TEST` once before `describe` (`describe.skipIf`) rather than failing a laptop with no Postgres
+installed. Two rules keep that honest: the skip message says what was skipped and where to point the variable, and
+every behaviour worth catching without a server is also a unit test beside the suite. The `db` stage is the model:
+`tests/db-stage.spec.ts` covers the decorator, the boot check, the failed-boot cleanup and the close hook with a stub
+handle, while `tests/integration/db.spec.ts` covers what only a real server shows (a round-trip, a constraint, a
+rollback, a killed connection). `bun run check` therefore runs green on a machine without a database — with the
+integration suite reported as skipped, never as passed.
+
 ### Projects
 
 `vitest.config.ts` defines four projects in one config — no `vitest.workspace.ts` (deprecated in

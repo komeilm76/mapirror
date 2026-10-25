@@ -3,9 +3,33 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 13 passes · 99 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3).
+**Totals:** 14 passes · 102 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 14 — 2026-10-25 (adversarial review of `P1-API-06`)
+
+Three defects, all found **before the task was committed**, so no released build ever had them — but each one would have
+reached `main` if the task had been written the obvious way and merged on the strength of a green suite, which is the
+point of reviewing the work in progress. Two of them are the same bug wearing different clothes: nobody closed the pool.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **A boot option that was accepted and then dropped.** `buildApp({ database })` typed the option, read nothing from it, and passed only `config` into the pipeline — so the `db` stage built its **own** pool from the default DSN while the caller's handle sat unused. Every test passed: the ones that supply a handle assert on `app.db`, which the stage set from its own creation, and the ones that do not never looked at a connection. The failure mode in production is a process quietly connected to `localhost:5432` instead of its configured database | The handle is threaded into the pipeline context. The test that catches it does not go through the factory: `buildApp({ database: handle })` now fails on a handle whose `check` rejects, and an adoption test asserts `app.db` **is** the object it was given |
+| 2 | **A failed boot leaked the pool.** The stage's check throws inside `onReady`; Fastify marks the instance failed and `buildApp` rethrows — but the instance is never returned, so its `onClose` hooks have no caller and the pool it just opened stays open until the process exits. Probed: `onReady` rejecting, then `app.close()`, **does** run `onClose` in Fastify 5 — the hook was fine, nothing was calling it. A supervisor retries a failed boot on a loop, so a database that is down for a minute accumulates `DB_POOL_MAX` connections per retry against a server that is already struggling. | `buildApp` closes the instance on any failure inside `registerPipeline` and rethrows the original error. Tested by rejecting from a stub `check` and asserting the handle's `close` ran exactly once (the assertion fails without the fix: `expected +0 to be 1`) |
+| 3 | **A shared pool was never closed.** The stage inferred "ownership" from whether the handle was passed in and skipped `close` for caller-supplied handles. That reads as respectful and is the mirror image of bug 2: a caller that hands over a pool still expects `app.close()` to leave nothing behind, and the handle that is not closed here has no other owner. The test that asserted this behaviour was written to match the code, which is how a wrong rule survives a passing suite | One rule: `close()` closes the handle, however it arrived. An app that genuinely shares a handle between instances says so at the call site (`{ ...handle, close: () => Promise.resolve() }`) instead of asking the stage to guess. Test rewritten to assert the close |
+
+Two smaller things in the same pass, neither a defect:
+
+- **A branch nothing could take.** `checkDatabase` guarded its timer cleanup with `if (timer !== undefined)`, but the timer is
+  armed before the `race` and cleared in `finally`, so the false arm was unreachable — and therefore untestable, which is
+  how it showed up: 75 % branch coverage on a file with no gaps left. The guard is gone, not tested around.
+- **A missing test for a deliberate listener.** `pool.on('error', …)` exists because a Node emitter that emits `error` with no
+  listener **throws**, so one backend restart would take the process down. Nothing asserted it, so nothing would have
+  noticed its removal. Now `pg_terminate_backend` kills the suite's own connection and the pool must still answer — verified
+  by deleting the listener, which reports an unhandled `57P01` and fails the run.
 
 ---
 

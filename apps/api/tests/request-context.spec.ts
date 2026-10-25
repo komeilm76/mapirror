@@ -2,7 +2,8 @@ import { Writable } from 'node:stream';
 
 import { describe, expect, it } from 'vitest';
 
-import { buildApp, REQUEST_ID_HEADER, resolveRequestId } from '../src/index';
+import { REQUEST_ID_HEADER, resolveRequestId } from '../src/index';
+import { buildTestApp } from './helpers/test-app';
 
 /**
  * The contract is one row of `04-api.md` §0.2 — "returned in `x-request-id`, echoed in every error" — plus
@@ -35,7 +36,7 @@ function capture(): { stream: Writable; lines: () => Record<string, unknown>[] }
 
 describe('x-request-id is returned on every response', () => {
   it('sets a UUIDv4 on a successful response', async () => {
-    const instance = await buildApp();
+    const instance = await buildTestApp();
 
     const response = await instance.inject({ method: 'GET', url: '/_public/api/countries' });
     expect(response.headers[REQUEST_ID_HEADER]).toMatch(UUID_V4);
@@ -45,7 +46,7 @@ describe('x-request-id is returned on every response', () => {
   it('sets it on a 404 too, where there is no route to set it', async () => {
     // The not-found path is exactly when a user has nothing else to quote, so a missing header here would
     // make the header useless for the case it exists for.
-    const instance = await buildApp();
+    const instance = await buildTestApp();
 
     const response = await instance.inject({ method: 'GET', url: '/no-such-route' });
     expect(response.statusCode).toBe(404);
@@ -54,7 +55,7 @@ describe('x-request-id is returned on every response', () => {
   });
 
   it('gives every request its own id', async () => {
-    const instance = await buildApp();
+    const instance = await buildTestApp();
 
     const first = await instance.inject({ method: 'GET', url: '/_public/api/countries' });
     const second = await instance.inject({ method: 'GET', url: '/_public/api/countries' });
@@ -63,7 +64,7 @@ describe('x-request-id is returned on every response', () => {
   });
 
   it('uses the same id in the header and in the error envelope', async () => {
-    const instance = await buildApp();
+    const instance = await buildTestApp();
 
     const response = await instance.inject({ method: 'POST', url: '/_auth/api/login' });
     const body = response.json<{ error: { requestId: string } }>();
@@ -75,7 +76,7 @@ describe('x-request-id is returned on every response', () => {
 
   it('uses the same id in the header and in the logs', async () => {
     const captured = capture();
-    const instance = await buildApp({ logger: { level: 'info', stream: captured.stream } });
+    const instance = await buildTestApp({ logger: { level: 'info', stream: captured.stream } });
 
     const response = await instance.inject({ method: 'GET', url: '/_public/api/countries' });
     await instance.close();
@@ -88,7 +89,7 @@ describe('x-request-id is returned on every response', () => {
 
 describe('an inbound x-request-id is repeated only when it is safe', () => {
   it('repeats a well-formed id so one identifier can span a proxy hop', async () => {
-    const instance = await buildApp();
+    const instance = await buildTestApp();
 
     const response = await instance.inject({
       method: 'GET',
@@ -107,7 +108,7 @@ describe('an inbound x-request-id is repeated only when it is safe', () => {
     ['quotes and braces', 'abc12345"><script>'],
     ['a path', '../../etc/passwd'],
   ])('replaces an inbound id containing %s', async (_reason, value) => {
-    const instance = await buildApp();
+    const instance = await buildTestApp();
 
     const response = await instance.inject({
       method: 'GET',

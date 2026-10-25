@@ -7,7 +7,6 @@ import { z } from 'zod';
 
 import {
   AppError,
-  buildApp,
   clientErrorHandler,
   installErrorHandlers,
   installRequestContext,
@@ -15,6 +14,7 @@ import {
   toErrorEnvelope,
   type PluginSlot,
 } from '../src/index';
+import { buildTestApp } from './helpers/test-app';
 
 /**
  * The task's gate is "every handler error maps to a documented code", so these tests cover three layers:
@@ -60,7 +60,7 @@ const TEST_SLOTS: readonly PluginSlot[] = [
 ];
 
 /** Builds an app with the error stage and the test routes. */
-const appWithTestRoutes = () => buildApp({ slots: TEST_SLOTS });
+const appWithTestRoutes = () => buildTestApp({ slots: TEST_SLOTS });
 
 describe('toErrorEnvelope maps every documented code', () => {
   it('returns the documented status for all of them', () => {
@@ -144,7 +144,7 @@ describe('the error stage wraps a real pipeline', () => {
         return true;
       },
     };
-    const instance = await buildApp({ logger: { level: 'info', stream }, slots: TEST_SLOTS });
+    const instance = await buildTestApp({ logger: { level: 'info', stream }, slots: TEST_SLOTS });
 
     await instance.inject({ method: 'GET', url: '/_public/api/boom' });
     await instance.inject({ method: 'GET', url: '/_public/api/duplicate' });
@@ -178,7 +178,7 @@ describe('the error stage wraps a real pipeline', () => {
   });
 
   it('answers an unknown path with the documented envelope, not Fastify’s default', async () => {
-    const instance = await buildApp();
+    const instance = await buildTestApp();
 
     const response = await instance.inject({ method: 'GET', url: '/no-such-route' });
     const body = response.json<{ error: { code: string; requestId: string } }>();
@@ -194,7 +194,7 @@ describe('the error stage wraps a real pipeline', () => {
   });
 
   it('answers a wrong method with 404 — the contract has no 405', async () => {
-    const instance = await buildApp();
+    const instance = await buildTestApp();
 
     const response = await instance.inject({ method: 'DELETE', url: '/_public/api/countries' });
     expect(response.statusCode).toBe(404);
@@ -204,7 +204,7 @@ describe('the error stage wraps a real pipeline', () => {
 
   it('keeps the 503 stubs working under the new handler', async () => {
     // The stubs throw nothing today, but they must not be shadowed by the 404 handler.
-    const instance = await buildApp();
+    const instance = await buildTestApp();
 
     const response = await instance.inject({ method: 'POST', url: '/_auth/api/login' });
     expect(response.statusCode).toBe(503);
@@ -341,7 +341,7 @@ describe('a request that is not valid HTTP still gets the envelope', () => {
   }
 
   it('answers a garbage request line with the documented envelope and a request id', async () => {
-    const instance = await buildApp();
+    const instance = await buildTestApp();
     const address = await instance.listen({ port: 0, host: '127.0.0.1' });
     const port = Number(new URL(address).port);
     try {
@@ -367,7 +367,7 @@ describe('a request that is not valid HTTP still gets the envelope', () => {
   }, 15_000);
 
   it('answers an oversized header the same way, and closes the connection', async () => {
-    const instance = await buildApp();
+    const instance = await buildTestApp();
     const address = await instance.listen({ port: 0, host: '127.0.0.1' });
     const port = Number(new URL(address).port);
     try {

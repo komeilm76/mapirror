@@ -3,13 +3,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import {
-  buildApp,
-  JSON_BODY_LIMIT_BYTES,
-  parseEnv,
-  SECURITY_HEADERS,
-  type AppConfig,
-} from '../src/index';
+import { JSON_BODY_LIMIT_BYTES, parseEnv, SECURITY_HEADERS, type AppConfig } from '../src/index';
+import { buildTestApp } from './helpers/test-app';
 
 /**
  * The task's gate is "headers asserted in test; no `*` CORS in prod", so these tests assert the response as a
@@ -69,7 +64,7 @@ function configWithOrigins(origins: readonly string[]): AppConfig {
 describe('security headers', () => {
   it('sets every documented header on a normal response', async () => {
     const documented = documentedHeaders();
-    const instance = await buildApp();
+    const instance = await buildTestApp();
 
     const response = await instance.inject({ method: 'GET', url: '/_public/api/countries' });
 
@@ -82,7 +77,7 @@ describe('security headers', () => {
   });
 
   it('sets them on a 404 as well, where a wrong route could otherwise answer bare', async () => {
-    const instance = await buildApp();
+    const instance = await buildTestApp();
 
     const response = await instance.inject({ method: 'GET', url: '/nope' });
     expect(response.statusCode).toBe(404);
@@ -117,7 +112,7 @@ function CONTENT_SECURITY_POLICY_FOR_TEST(): string {
 
 describe('CORS', () => {
   it('adds no CORS headers by default, and still answers the request', async () => {
-    const instance = await buildApp();
+    const instance = await buildTestApp();
 
     const response = await instance.inject({
       method: 'GET',
@@ -136,7 +131,9 @@ describe('CORS', () => {
   it('does not refuse a same-origin POST that carries Origin', async () => {
     // The regression this guards, measured before the fix: browsers send `Origin` on same-origin POSTs, so a
     // server-side block on unlisted origins returned 403 to the SPA posting its own login form.
-    const instance = await buildApp({ config: configWithOrigins(['https://maps.example.org']) });
+    const instance = await buildTestApp({
+      config: configWithOrigins(['https://maps.example.org']),
+    });
 
     const response = await instance.inject({
       method: 'POST',
@@ -150,7 +147,9 @@ describe('CORS', () => {
   });
 
   it('allows a configured origin and varies on it', async () => {
-    const instance = await buildApp({ config: configWithOrigins(['https://maps.example.org']) });
+    const instance = await buildTestApp({
+      config: configWithOrigins(['https://maps.example.org']),
+    });
 
     const response = await instance.inject({
       method: 'GET',
@@ -170,7 +169,9 @@ describe('CORS', () => {
   });
 
   it('answers a preflight with 204 and the allowed methods', async () => {
-    const instance = await buildApp({ config: configWithOrigins(['https://maps.example.org']) });
+    const instance = await buildTestApp({
+      config: configWithOrigins(['https://maps.example.org']),
+    });
 
     const response = await instance.inject({
       method: 'OPTIONS',
@@ -190,7 +191,9 @@ describe('CORS', () => {
   });
 
   it('refuses a preflight from an origin that is not on the list, with the envelope', async () => {
-    const instance = await buildApp({ config: configWithOrigins(['https://maps.example.org']) });
+    const instance = await buildTestApp({
+      config: configWithOrigins(['https://maps.example.org']),
+    });
 
     const response = await instance.inject({
       method: 'OPTIONS',
@@ -209,7 +212,9 @@ describe('CORS', () => {
   });
 
   it('answers an actual request from a foreign origin without letting the browser read it', async () => {
-    const instance = await buildApp({ config: configWithOrigins(['https://maps.example.org']) });
+    const instance = await buildTestApp({
+      config: configWithOrigins(['https://maps.example.org']),
+    });
 
     const response = await instance.inject({
       method: 'GET',
@@ -225,7 +230,7 @@ describe('CORS', () => {
   it('never emits a wildcard, even if one reaches the config', async () => {
     // `parseEnv` refuses `*`, so this value can only arrive by another route — which is exactly why the stage
     // filters it too: the task's guarantee is "no `*` CORS in prod", not "no `*` in one of the two places".
-    const instance = await buildApp({
+    const instance = await buildTestApp({
       config: configWithOrigins(['*', 'https://maps.example.org']),
     });
 
@@ -248,7 +253,9 @@ describe('CORS', () => {
 
   it('leaves a request with no Origin alone', async () => {
     // curl, a health check, the proxy: no Origin header, no CORS decision to make.
-    const instance = await buildApp({ config: configWithOrigins(['https://maps.example.org']) });
+    const instance = await buildTestApp({
+      config: configWithOrigins(['https://maps.example.org']),
+    });
 
     const response = await instance.inject({ method: 'GET', url: '/_public/api/countries' });
     expect(response.statusCode).toBe(503);
@@ -265,7 +272,7 @@ describe('the JSON body limit', () => {
   });
 
   it('refuses a JSON body over the limit with FILE_TOO_LARGE, envelope and headers intact', async () => {
-    const instance = await buildApp();
+    const instance = await buildTestApp();
 
     const response = await instance.inject({
       method: 'POST',
@@ -281,7 +288,7 @@ describe('the JSON body limit', () => {
   });
 
   it('accepts a body just under the limit, so the boundary is where the document says', async () => {
-    const instance = await buildApp();
+    const instance = await buildTestApp();
 
     const response = await instance.inject({
       method: 'POST',
