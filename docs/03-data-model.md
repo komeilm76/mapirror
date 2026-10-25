@@ -76,6 +76,9 @@ CREATE INDEX admin_tokens_admin_idx ON admin_tokens (admin_id, expires_at DESC);
 ```
 
 - Token format: `mm_` + 43 chars base64url (256 bits). Only the hash is stored.
+- `token_hash` length is enforced by `CHECK (octet_length(token_hash) = 32)`, not only by the service: a
+  truncated or hex-encoded hash stores fine and then never matches a presented token, which is a support ticket
+  rather than an error (`0001_init.sql`).
 - Verification: hash the presented token, look up, reject if `revoked_at IS NOT NULL` or
   `expires_at <= now()`. `last_used_at` is updated at most once per minute (avoid write amplification).
 - Password reset and "logout everywhere" revoke all rows for the admin.

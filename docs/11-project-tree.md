@@ -65,6 +65,7 @@ mapirror/
 │  │  │  │  └─ system/             # Metrics sampler (CPU/RAM/disk), disk preflight
 │  │  │  ├─ db/
 │  │  │  │  ├─ migrations/         # 0001_init.sql … (SQL only, Kysely migrator)
+│  │  │  │  ├─ migrator.ts         # SQL provider, migrateToLatest/resetDatabase, name rules
 │  │  │  │  ├─ schema.ts           # Kysely DB interface (generated/maintained by hand)
 │  │  │  │  └─ repositories/       # Typed queries per aggregate
 │  │  │  └─ lib/

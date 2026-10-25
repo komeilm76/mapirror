@@ -31,7 +31,9 @@
     "test:api": "vitest run --project api",
     "test:web": "vitest run --project web",
     "test:shared": "vitest run --project shared",
-    "test:scripts": "vitest run --project scripts"
+    "test:scripts": "vitest run --project scripts",
+    "db:migrate": "bun run scripts/migrate.ts",
+    "db:reset": "bun run scripts/migrate.ts --reset"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

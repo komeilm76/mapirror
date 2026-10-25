@@ -79,11 +79,11 @@ Scripts marked ✅ exist today; ⬜ are created by the task named in `08-tasks.m
 | `bun run test` | Vitest, all four projects | ✅ P1-REPO-04 |
 | `bun run test:watch` / `test:coverage` | Watch mode / v8 coverage with thresholds | ✅ P1-REPO-04 |
 | `bun run test:api` / `test:web` / `test:shared` / `test:scripts` | Single project | ✅ P1-REPO-04 |
-| `bun run db:migrate` | Apply migrations | ⬜ P1-DB-01 |
-| `bun run db:reset` | Drop + recreate + migrate + seed (dev only, refuses when `NODE_ENV=production`) | ⬜ P1-DB-01 |
+| `bun run db:migrate` | Apply migrations (`scripts/migrate.ts`) | ✅ P1-DB-01 |
+| `bun run db:reset` | Drop the `public` schema, then migrate (dev only, refuses when `NODE_ENV=production`) | ✅ P1-DB-01 |
 | `bun run admin:init` | Create admin from env | ⬜ P1-AUTH-06 |
 | `bun run admin:reset` | Reset password (interactive) | ⬜ P1-AUTH-07 |
-| `bun run seed:dev` | Dev fixtures | ⬜ P1-DB-01 |
+| `bun run seed:dev` | Dev fixtures (needs the phase-2 catalog tables, so it lands with them) | ⬜ P2-DB-01 |
 | `bun run sync:catalog` | Manual Geofabrik catalog sync | ⬜ P2-SRC-06 |
 
 ## 5. Environment variables
@@ -149,10 +149,19 @@ bun run db:migrate                                            # apply
 bun run db:reset                                              # dev only
 ```
 
-- Migrations: `apps/api/src/db/migrations/NNNN_name.sql`, forward-only. Add the Kysely type change in
-  `schema.ts` in the same commit.
-- `0001_init.sql` creates the `pg_trgm` extension (required by the country search index). `unaccent`
-  is created when available; the search works without it (see `03-data-model.md`).
+- Migrations: `apps/api/src/db/migrations/NNNN_name.sql`, forward-only, applied by
+  `apps/api/src/db/migrator.ts` (Kysely's migrator over plain SQL files). Add the Kysely type change in
+  `schema.ts` in the same commit — `P1-DB-02` owns the types, `P1-DB-04` runs this at boot.
+- **The file name is a rule, not a convention.** `NNNN_name.sql`, zero-padded, lower-case: `init.sql`, `1_init.sql`
+  and a duplicate `0001` all stop the run with a message naming the file. A migration that is silently skipped is
+  a schema missing tables and nobody noticing.
+- `0001_init.sql` creates the `pg_trgm` extension (required by the phase-2 trigram search index) and `unaccent`
+  inside a `DO` block so a server without that contrib module warns instead of refusing to migrate (see
+  `03-data-model.md`).
+- **Forward-only, measured:** a migration declares no `down`, and Kysely does not fail a rollback attempt — it
+  reports `NotExecuted` and changes nothing. `tests/integration/migrations.spec.ts` pins both halves (nothing
+  executed, schema intact), because a quiet no-op is only acceptable while a test says so.
+- A migration that fails is **not** recorded as applied, so fixing the file and running again works. Also tested.
 - Never edit an applied migration; write a new one.
 - Transactions in services, not repositories; repositories accept a `Kysely` instance / `tx`.
 
