@@ -1,0 +1,115 @@
+/**
+ * The type system (`P1-WEB-02`).
+ *
+ * `13-ui-ux.md` §2 asks for two fonts, self-hosted, and permits dropping either at zero design cost if the pair adds
+ * more than 40 kB or hurts LCP. The measurement decided it, and the numbers are in the document:
+ *
+ * | Font | Latin variable subset | Verdict |
+ * |---|---|---|
+ * | Inter (UI/body) | **48 256 B** | dropped — over budget on its own |
+ * | Space Grotesk (display) | **22 288 B** | kept — under budget on its own |
+ *
+ * So the body is the system UI stack (which on every platform this targets is a well-hinted, already-installed
+ * face — the cheapest possible LCP) and the display face is Space Grotesk, subset to Latin, one 22 kB file, served
+ * from this repo rather than a CDN. `tests/tokens.spec.ts` reads the file's size and fails if it grows past the
+ * budget, so "we kept it because it fits" stays true.
+ *
+ * Licensing: Space Grotesk is under the SIL Open Font License 1.1 and `assets/fonts/OFL.txt` ships beside it, which
+ * the license requires.
+ *
+ * Preloading is *not* here. §2 says "preloaded only on the public landing page", and that page does not exist yet
+ * (`P3-WEB-01`); the `@font-face` rule below is enough until then, because `font-display: swap` means text paints in
+ * the fallback face first either way.
+ */
+
+/* The display face, self-hosted: one variable file, weights 300–700, Latin subset. */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 700;
+  src: url('../assets/fonts/space-grotesk-latin-wght.woff2') format('woff2-variations');
+  /* Declared so a browser with no Latin glyphs needed (a page of pure CJK, a future locale) never downloads it. */
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  /* ---------- Families (§2) ---------- */
+  /* The documented fallback stack, verbatim: `-apple-system, "Segoe UI", Roboto, sans-serif`. */
+  --mm-font-ui: -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mm-font-display: 'Space Grotesk', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mm-font-mono: ui-monospace, 'JetBrains Mono', monospace;
+
+  /* ---------- Scale (§2): display 24–28/600, body 14 (UI) and 16 (public), mono 12–13 ---------- */
+  --mm-text-display: 28px;
+  --mm-text-display-weight: 600;
+  --mm-text-title: 24px;
+  --mm-text-title-weight: 600;
+  --mm-text-public-body: 16px;
+  --mm-text-ui: 14px;
+  --mm-text-caption: 13px;
+  --mm-text-mono: 13px;
+  --mm-text-mono-small: 12px;
+
+  --mm-weight-regular: 400;
+  --mm-weight-medium: 500;
+  --mm-weight-bold: 600;
+
+  --mm-leading-display: 1.2;
+  --mm-leading-body: 1.55;
+}
+
+/*
+ * Vuetify's stylesheet sets `html { font-family: "Roboto", sans-serif }` and ships no Roboto, so an unstyled page
+ * silently falls back to the browser's default sans. Beating it needs one notch of specificity, not an `!important`:
+ * `html:root` is (0,1,1) against Vuetify's (0,0,1), and stays readable to whoever wonders why it is spelled that way.
+ */
+html:root {
+  font-family: var(--mm-font-ui);
+  font-size: var(--mm-text-ui);
+  line-height: var(--mm-leading-body);
+  font-weight: var(--mm-weight-regular);
+}
+
+/* ---------- The roles, as classes a page uses instead of inline sizes ---------- */
+
+.mm-display {
+  font-family: var(--mm-font-display);
+  font-size: var(--mm-text-display);
+  font-weight: var(--mm-text-display-weight);
+  line-height: var(--mm-leading-display);
+  letter-spacing: -0.01em;
+}
+
+.mm-title {
+  font-family: var(--mm-font-display);
+  font-size: var(--mm-text-title);
+  font-weight: var(--mm-text-title-weight);
+  line-height: var(--mm-leading-display);
+}
+
+/* The public site's body text: one step larger than the admin's dense 14 px. */
+.mm-body-public {
+  font-size: var(--mm-text-public-body);
+  line-height: var(--mm-leading-body);
+}
+
+.mm-caption {
+  font-size: var(--mm-text-caption);
+  color: rgb(var(--v-theme-text-secondary));
+}
+
+/* Checksums, sizes, dates — tabular by default, because §2 says numeric columns must line up. */
+.mm-mono {
+  font-family: var(--mm-font-mono);
+  font-size: var(--mm-text-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.mm-mono-small {
+  font-family: var(--mm-font-mono);
+  font-size: var(--mm-text-mono-small);
+  font-variant-numeric: tabular-nums;
+}

@@ -94,15 +94,21 @@ mapirror/
 │     ├─ vite.config.ts            # Vue + vite-plugin-vuetify, `@` alias, host/port (§09)
 │     ├─ alias.ts                  # `@` → src, shared by vite.config, vitest.config and the tests
 │     ├─ src/
-│     │  ├─ main.ts                # Two lines: build the app, mount it
-│     │  ├─ bootstrap.ts           # createWebApp(): Pinia → Vuetify → Router, one factory each
+│     │  ├─ main.ts                # Two lines: build the app, mount it (+ the two stylesheets)
+│     │  ├─ bootstrap.ts           # createWebApp(): Pinia → Vuetify → Router → theme sync
 │     │  ├─ App.vue                # v-app → v-main → router-view (the one shell)
 │     │  ├─ shims-vue.d.ts         # `*.vue` for plain-tsc consumers (ESLint); vue-tsc ignores it
 │     │  ├─ vite-env.d.ts          # Vite's ambient types (the web tsconfig sets `types: []`)
 │     │  ├─ router/index.ts        # `/` → `/_site/` and the home route; the full tree is P1-WEB-03
 │     │  ├─ router/paths.ts        # Page path builders, all derived from @mapirror/shared
-│     │  ├─ plugins/vuetify.ts     # createAppVuetify(); the two themes are P1-WEB-02
+│     │  ├─ plugins/vuetify.ts     # createAppVuetify(): both themes, built from styles/tokens.ts
 │     │  ├─ plugins/pinia.ts
+│     │  ├─ theme/policy.ts        # Path → theme (admin dark, public light, auth follows the system)
+│     │  ├─ styles/
+│     │  │  ├─ tokens.ts           # The palette of 13 §2 + themeFrom() + contrastRatio()/bestOn()
+│     │  │  ├─ tokens.css          # --mm-* spacing/radius/motion/focus, focus ring, reduced motion
+│     │  │  └─ typography.css      # @font-face (Space Grotesk, 22 kB) + the type roles
+│     │  ├─ assets/fonts/          # space-grotesk-latin-wght.woff2 + OFL.txt
 │     │  ├─ stores/                # auth, catalog, cache, versions, intervals, jobs,
 │     │  │                         # system, ui (toasts/snackbars)
 │     │  ├─ composables/           # useApi (fetch+error), usePolling (VueUse),

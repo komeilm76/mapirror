@@ -15,6 +15,8 @@
  *    today — but a layout that resolves a theme during setup would break if Vuetify came after the router's initial
  *    navigation, and nothing about that failure would point at the order.
  * 3. **Router last**, so the first navigation happens once every provider the pages might reach for is in place.
+ * 4. **Theme sync after both**, because it needs the router's current route and Vuetify's theme object; installing it
+ *    earlier would leave the first paint in the light theme on an admin deep link (`theme/policy.ts`).
  *
  * @module bootstrap
  */
@@ -25,6 +27,7 @@ import App from './App.vue';
 import { createAppPinia } from './plugins/pinia';
 import { createAppVuetify } from './plugins/vuetify';
 import { createAppRouter } from './router';
+import { installThemeSync } from './theme/policy';
 
 /**
  * The element `index.html` provides. Named once, because a typo here is a blank page with no console error.
@@ -38,10 +41,16 @@ export const MOUNT_SELECTOR = '#app';
  */
 export function createWebApp(): VueApp<Element> {
   const app = createApp(App);
+  const vuetify = createAppVuetify();
+  const router = createAppRouter();
 
   app.use(createAppPinia());
-  app.use(createAppVuetify());
-  app.use(createAppRouter());
+  app.use(vuetify);
+  app.use(router);
+
+  // The theme follows the route (`P1-WEB-02`): dark for the admin area, light for the public one, the system
+  // preference on the login page. One installation, so a page cannot forget.
+  installThemeSync(router, vuetify);
 
   return app;
 }

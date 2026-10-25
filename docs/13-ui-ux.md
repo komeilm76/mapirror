@@ -43,25 +43,46 @@ Principles:
 | `error` | `#B91C1C` | `#F87171` | Failed jobs, destructive |
 | `surface` | `#FFFFFF` | `#0F1115` | Page background |
 | `surface-variant` | `#F6F7F9` | `#171A21` | Cards, table headers |
-| `border` | `#E3E6EA` | `#262B35` | Dividers, input borders |
+| `border` | `#E3E6EA` | `#262B35` | Decorative division: table rows, section rules |
+| `border-strong` | `#7C848C` | `#6B7280` | Boundaries that carry meaning: input outlines, switch tracks (≥ 3:1) |
 | `text-primary` | `#111827` | `#E5E7EB` | Body |
 | `text-secondary` | `#4B5563` | `#9CA3AF` | Meta, captions |
 
-Rules: contrast ≥ 4.5:1 for body text, ≥ 3:1 for large text and UI borders. Semantic colors are
+Rules: contrast ≥ 4.5:1 for body text, ≥ 3:1 for large text and for **meaningful** UI boundaries. Semantic colors are
 **never** used decoratively. Amber is reserved for "update available" so the badge is unambiguous.
+
+Two boundaries, not one: WCAG 1.4.11 asks 3:1 of "visual information required to identify user interface components and
+states" — an input outline, a switch track — and asks nothing of a row divider, which is decoration. `border` measured
+**1.25:1** (light) and **1.33:1** (dark) against the page background, which is right for a hairline and wrong for a
+field, so the field gets `border-strong` (**3.79:1** / **3.54:1** light, **3.91:1** / **3.60:1** dark, against the page
+and the card). `16-changelog.md` pass 30 records the measurement.
+
+Vuetify's two "surface" keys are mapped from these names, and the mapping is code (`apps/web/src/styles/tokens.ts`):
+our `surface` (page background) becomes Vuetify's **`background`**, because `v-app` paints that; our `surface-variant`
+(cards) becomes Vuetify's **`surface`**, because `v-card`, `v-menu` and `v-dialog` paint that and a menu the colour of
+the page would be invisible. Both themes are built from this table by `styles/tokens.ts` — nothing else in the SPA
+holds a colour — and `apps/web/tests/tokens.spec.ts` parses it and fails on any hex that differs.
 
 ### Typography
 
 | Role | Font | Size / weight |
 |---|---|---|
-| Display (page titles) | **Space Grotesk** (variable, self-hosted subset) | 24–28 px / 600 |
-| UI / body | **Inter** (variable, self-hosted subset) | 14 px / 400, 16 px public body |
-| Numeric (sizes, dates) | Inter with `font-variant-numeric: tabular-nums` | — |
+| Display (page titles) | **Space Grotesk** (variable, self-hosted, Latin subset, 22 288 B) | 24–28 px / 600 |
+| UI / body | **System stack** — `-apple-system, "Segoe UI", Roboto, sans-serif` | 14 px / 400, 16 px public body |
+| Numeric (sizes, dates) | the UI face with `font-variant-numeric: tabular-nums` | — |
 | Code / checksums | `ui-monospace, "JetBrains Mono", monospace` | 12–13 px |
 
-Both fonts are variable, subset to Latin, self-hosted woff2 with `font-display: swap`, preloaded only
-on the public landing page. **If either adds > 40 kB total or hurts LCP, fall back to the system stack**
-(`-apple-system, "Segoe UI", Roboto, sans-serif`) — D-14 permits dropping them at zero design cost.
+**The budget rule was applied, not just written.** It said: both fonts are variable, subset to Latin, self-hosted woff2
+with `font-display: swap`, preloaded only on the public landing page, and **if either adds > 40 kB total or hurts LCP,
+fall back to the system stack** (D-14 permits dropping them at zero design cost). Measured on the Latin variable
+subsets: **Inter 48 256 B**, **Space Grotesk 22 288 B**, together **70 544 B**. Inter alone exceeds the budget, so the
+body falls back to the system stack — which on every platform this targets is a well-hinted, already-installed face,
+i.e. the cheapest possible LCP — and Space Grotesk stays for display at 22 288 B, self-hosted from
+`apps/web/src/assets/fonts/` with its OFL license beside it. `apps/web/tests/tokens.spec.ts` reads that file's size and
+fails above 40 kB, so the exemption stays earned.
+
+Preloading is still owed to `P3-WEB-01`: the rule is "only on the public landing page", and that page does not exist
+yet. Until then `font-display: swap` means text paints in the fallback face first, which is the LCP-safe order anyway.
 
 ### Space, radius, elevation, motion
 
@@ -160,7 +181,7 @@ on the public landing page. **If either adds > 40 kB total or hurts LCP, fall ba
 
 | Check | Requirement |
 |---|---|
-| Contrast | ≥ 4.5:1 body, ≥ 3:1 large text/borders (verified with a checker, documented) |
+| Contrast | ≥ 4.5:1 body, ≥ 3:1 large text and meaningful boundaries — asserted, not sampled: `apps/web/tests/tokens.spec.ts` parses §2 and computes every ratio (25 pairs per theme, including the `on-` label colour Vuetify derives for each fill) |
 | Focus | Visible ring on all interactive elements; skip-to-content link in admin |
 | Semantics | One `h1` per page, landmark regions, labelled inputs, `aria-live` for toasts/progress |
 | Motion | `prefers-reduced-motion` disables transitions and chart animation |

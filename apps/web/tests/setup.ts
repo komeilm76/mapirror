@@ -68,4 +68,10 @@ afterEach(() => {
   stubMatchMedia();
   vi.stubGlobal('ResizeObserver', StubResizeObserver);
   vi.stubGlobal('visualViewport', STUB_VISUAL_VIEWPORT);
+
+  // And the URL. `createWebHistory()` reads `window.location` — one location for the whole jsdom — so a case that
+  // navigates to `/_site/admin/catalog` leaves the *next* case's brand-new router starting there, and since `P1-WEB-02`
+  // the theme follows the route, the app under test would mount dark for no visible reason. Measured: a fresh app
+  // rendered `v-theme--dark` on the public home page because an earlier case had pushed an admin path.
+  window.history.replaceState({}, '', '/');
 });

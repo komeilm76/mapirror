@@ -3,9 +3,48 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 29 passes · 133 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2).
+**Totals:** 30 passes · 135 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 30 — 2026-10-25 (design tokens: a boundary that failed its own rule, and a shared URL)
+
+The first defect is the kind this project exists to catch: a document that states a rule, a token that breaks it, and
+no test between them.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The token the document named for "input borders" was 1.25:1 — the same document promised ≥ 3:1.** `13-ui-ux.md` §2 listed `border` as "Dividers, input borders" and, two lines later, required "≥ 3:1 for large text and UI borders". Measured: `#E3E6EA` on `#FFFFFF` is **1.25:1**, `#262B35` on `#0F1115` is **1.33:1**. So the palette and the rule disagreed, and the first login form or settings switch built on that token would have had a boundary a third of the required contrast — invisible at 200 % zoom, in bright light, to anyone with low vision. Neither is wrong on its own: a hairline divider *should* be 1.2:1, and WCAG 1.4.11 asks 3:1 only of boundaries "required to identify user interface components and states" | The token is split by meaning rather than by shade. `border` stays 1.2:1 and its documented use is now "Decorative division: table rows, section rules"; `border-strong` is new — **#7C848C** (3.79:1 on the page, 3.54:1 on a card) and **#6B7280** (3.91:1 / 3.60:1 dark) — and is the one for input outlines, switch tracks and focus-adjacent edges. The doc now says which is which and why, with the numbers, and `tests/tokens.spec.ts` asserts both halves: every meaningful boundary ≥ 3:1, and `border` *below* 3:1 **with** the sentence that exempts it — so a future edit cannot quietly promote the hairline to an input, or make the hairline heavy to satisfy a misread rule |
+| 2 | **One test's navigation decided the next test's theme.** `createWebHistory()` reads `window.location`, and jsdom has exactly one — so a case that pushed `/_site/admin/catalog` left the following case's brand-new router starting there. Since the theme now follows the route, a fresh app mounted **dark** on the public home page, and the failing assertion ("expected `v-theme--light`") read like a bug in the theme policy. It is a harness defect with teeth: every later route test would inherit whatever URL ran before it | `apps/web/tests/setup.ts` resets the URL in `afterEach` (`history.replaceState({}, '', '/')`) beside the `matchMedia`/`ResizeObserver` stubs. Proved by mutation: deleting that one line fails `wears the light theme on the public page`, and nothing else |
+
+Probed and found sound rather than assumed:
+
+- **The `on-` label colours are ours, not Vuetify's.** Vuetify derives a missing `on-<color>` with `getForeground`, which
+  decides by **APCA** against a 50-unit cutoff — not WCAG. Measured: it happens to pick black for the dark theme's
+  pastels and white for the light theme's fills, so today's palette would pass either way; but the contract in §7 is
+  4.5:1, so `themeFrom` computes every fill's label with `bestOn` and a test asserts the ratio for all six fills in both
+  themes. Mutation (always white) fails the dark theme at 1.48:1.
+- **The font budget was measured, not assumed.** The rule ("if either adds > 40 kB total … fall back to the system
+  stack") needed a number: Inter's Latin variable subset is **48 256 B**, Space Grotesk's is **22 288 B**, together
+  **70 544 B**. Inter alone breaks the budget, so the body uses the documented system stack and only the display face
+  ships — 22 288 B, self-hosted with its OFL license beside it, `unicode-range` declared so a non-Latin page never
+  fetches it. The test reads the file's size and fails above 40 kB, which keeps the exemption earned.
+- **Vuetify's two "surface" keys are not the document's two.** `v-app` paints `background`; `v-card`, `v-menu` and
+  `v-dialog` paint `surface`. Mapping our `surface` to Vuetify's would have made a menu the same colour as the page it
+  opened over — invisible in the dark theme especially. The mapping is code (`background ← surface`,
+  `surface ← surface-variant`) and a test asserts all three keys, so the comment cannot rot.
+- **A hex scan, not a convention.** `P1-WEB-02`'s criterion is "no hardcoded hex in components"; the test walks every
+  `.vue`, `.ts` and `.css` under `apps/web/src` and fails on any colour literal outside the token module and the two
+  stylesheets. Mutation (a `style="color: #0F766E"` on one paragraph) fails with the file and line.
+- **`/_site/administrators` is not `/_site/admin`.** The theme is chosen by path, so the segment boundary matters:
+  `startsWith` would have painted a public page as the dark control room. Four cases pin it.
+
+Mutation-checked: 10 mutations, all caught — a one-hex change in the code, a one-hex change in the document, an
+always-white label colour, a boundary weakened to the hairline, a hexed component, an inverted admin/public mapping, a
+deleted reduced-motion block, a spacing value changed from 8 to 10, the two surface keys swapped, and the URL reset
+deleted.
 
 ---
 

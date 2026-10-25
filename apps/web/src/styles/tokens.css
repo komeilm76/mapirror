@@ -1,0 +1,114 @@
+/**
+ * The non-colour design tokens, as CSS custom properties (`P1-WEB-02`).
+ *
+ * Colours are **not** here: they live in `tokens.ts` (as Vuetify themes) and Vuetify publishes each one as
+ * `--v-theme-<name>` at runtime, so a component writes `rgb(var(--v-theme-border))` and never a hex. Everything in
+ * this file is a number `13-ui-ux.md` §2 specifies and nothing in TypeScript computes with.
+ *
+ * `tests/tokens.spec.ts` parses §2 and compares every value below with the document, so the two cannot drift.
+ *
+ * The one rule that is not a variable: `:focus-visible`. §2 asks for "2 px primary outline + 2 px offset, always
+ * visible on keyboard focus", and putting it here means a component cannot be written without it.
+ */
+
+/* ---------- Space: 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64 (§2) ---------- */
+:root {
+  --mm-space-1: 4px;
+  --mm-space-2: 8px;
+  --mm-space-3: 12px;
+  --mm-space-4: 16px;
+  --mm-space-6: 24px;
+  --mm-space-8: 32px;
+  --mm-space-12: 48px;
+  --mm-space-16: 64px;
+
+  /* ---------- Radius: sm 8, md 12, lg 16, pill 999 (§2) ---------- */
+  --mm-radius-sm: 8px;
+  --mm-radius-md: 12px;
+  --mm-radius-lg: 16px;
+  --mm-radius-pill: 999px;
+
+  /* ---------- Elevation: shadows only for overlays (§2) ---------- */
+  --mm-border-width: 1px;
+  --mm-shadow-overlay: 0 8px 24px rgb(0 0 0 / 16%);
+
+  /* ---------- Motion: 150 ms hover/focus, 200 ms dialogs (§2) ---------- */
+  --mm-motion-fast: 150ms;
+  --mm-motion-dialog: 200ms;
+  --mm-ease-out: ease-out;
+
+  /* ---------- Focus ring and targets (§2, §7) ---------- */
+  --mm-focus-ring-width: 2px;
+  --mm-focus-ring-offset: 2px;
+  --mm-touch-target: 44px;
+
+  /* ---------- Container widths (§2) ---------- */
+  --mm-container-admin: 1440px;
+  --mm-container-public: 1120px;
+}
+
+/*
+ * §7: "prefers-reduced-motion disables transitions and chart animation". Zeroing the two duration tokens is the whole
+ * implementation: every transition in this app is written against them, so a component cannot opt out of the
+ * preference by naming a duration of its own — and a component that did would be caught by the no-hex/no-literal
+ * scan in `tests/tokens.spec.ts`.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --mm-motion-fast: 0ms;
+    --mm-motion-dialog: 0ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * The focus ring, once, for everything focusable.
+ *
+ * `:where()` keeps the specificity at zero, so a component that wants a different ring while keeping the same
+ * guarantee (a 2 px primary outline) can say so without an `!important` arms race — and a component that removes the
+ * ring has to be deliberate about it, because the rule it removes is visible in review.
+ */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: var(--mm-focus-ring-width) solid rgb(var(--v-theme-primary));
+  outline-offset: var(--mm-focus-ring-offset);
+}
+
+/*
+ * Text utilities. Vuetify generates `text-<theme-key>`, which for these two tokens would read `text-text-primary`;
+ * these names are for components, and they are the only sanctioned way to say "secondary ink".
+ */
+.mm-text-primary {
+  color: rgb(var(--v-theme-text-primary));
+}
+
+.mm-text-secondary {
+  color: rgb(var(--v-theme-text-secondary));
+}
+
+/* Boundaries a user must see to operate something (WGAG 1.4.11, 3:1) — inputs, switch tracks, focus-adjacent edges. */
+.mm-border-interactive {
+  border: var(--mm-border-width) solid rgb(var(--v-theme-border-strong));
+}
+
+/* Decorative division only: table rows, section rules. Never an input outline. */
+.mm-border-decorative {
+  border: var(--mm-border-width) solid rgb(var(--v-theme-border));
+}
+
+/* §2: numeric columns line up, which is the difference between a table of sizes and a wall of digits. */
+.mm-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The overlay shadow, from the token rather than a literal. */
+.mm-overlay {
+  box-shadow: var(--mm-shadow-overlay);
+}

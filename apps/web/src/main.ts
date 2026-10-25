@@ -11,8 +11,16 @@
  * Nothing else belongs here. Anything a reader might want to test goes in `bootstrap.ts`; anything a reader might want
  * to configure goes in `plugins/`.
  *
+ * The two stylesheets are the exception, and they are imported here rather than in `bootstrap.ts` for one reason: they
+ * are the *application's* CSS, so they must load whichever component renders first, and `main.ts` is the only module a
+ * browser is guaranteed to evaluate before any component exists. Tokens first (`tokens.css`), then the type system
+ * (`typography.css`) — the latter uses the former's spacing scale.
+ *
  * @module main
  */
+
+import './styles/tokens.css';
+import './styles/typography.css';
 
 import { createWebApp, MOUNT_SELECTOR } from './bootstrap';
 

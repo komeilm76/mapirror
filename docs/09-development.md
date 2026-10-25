@@ -362,6 +362,23 @@ consequences worth knowing:
   bundler entry registers **no** components on its own, so without the plugin `v-app` stays a literal element and the
   page renders empty — in the browser and in the test alike.
 
+**Design tokens (`P1-WEB-02`).** `13-ui-ux.md` §2 is the specification and `apps/web/src/styles/` is its only
+implementation. The rule is one sentence: **no component holds a colour, a size or a duration.**
+
+| What you want | Write | Not |
+|---|---|---|
+| A palette colour | `color="primary"`, `bg-surface`, or `rgb(var(--v-theme-border))` | `#0F766E`, `rgb(15,118,110)` |
+| A token colour in CSS | `rgb(var(--v-theme-text-secondary))` | the hex |
+| An interactive boundary (input, switch track) | `--v-theme-border-strong` / `.mm-border-interactive` (3:1) | `border` — that is the decorative hairline |
+| Spacing, radius, motion | `--mm-space-*`, `--mm-radius-*`, `--mm-motion-*` | `padding: 17px`, `transition: 120ms` |
+| A type role | `.mm-display`, `.mm-title`, `.mm-body-public`, `.mm-caption`, `.mm-mono`, `.mm-tabular` | `font-size: 27px` |
+
+`apps/web/tests/tokens.spec.ts` enforces it: it scans every `.vue`, `.ts` and `.css` under `apps/web/src` for colour
+literals (only `styles/tokens.ts` and the two stylesheets may contain one), parses §2 for every value it can, and
+computes every contrast ratio the document promises — including the `on-<fill>` label colours Vuetify would otherwise
+choose with an APCA heuristic while the doc promises WCAG. Change the palette or the document and the two must still
+agree.
+
 
 - **Layering:** route handler → service → repository. No SQL in handlers, no HTTP in services.
 - **Validation:** Zod schema in `packages/shared` → Fastify `schema` → handler receives typed input.
