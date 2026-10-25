@@ -45,10 +45,7 @@ export function installDb(app: FastifyInstance, context: PipelineContext): void 
     createDatabase(context.config, (error) => {
       // `warn`, not `error`: the pool recovers on the next query, and this fires once per dropped connection —
       // during a Postgres restart that is a handful of lines, not an outage alarm.
-      app.log.warn(
-        { err: error },
-        'a database connection was lost while idle; the pool will reconnect',
-      );
+      app.log.warn({ err: error }, 'a database connection was lost; the pool will reconnect');
     });
 
   app.decorate('db', database);

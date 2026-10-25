@@ -168,6 +168,11 @@ recorded here so a future reviewer does not "fix" the missing token check.
 - `ADMIN_PASSWORD` is only used at bootstrap and never re-read afterwards; reset via the script.
 - Regular tasks: check `/_admin/api/system/status` for disk headroom, review failed jobs, review audit
   log for unexpected actions.
+- **A database failover must not restart the API.** A connection can be lost while it is idle *or* while it is
+  serving a query or a transaction, and the two are reported differently: `pg-pool` keeps an `error` listener on a
+  client only while it is idle in the pool and removes it on checkout. Both channels are now handled in
+  `db/client.ts` (one line logged per lost connection, the pool reconnects on the next query), because the
+  unchecked channel ended the process — see `16-changelog.md` pass 18.
 
 ## 11. Security checklist (Phase 6 sign-off)
 

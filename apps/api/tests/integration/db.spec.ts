@@ -142,7 +142,7 @@ describe.skipIf(!available)('the db stage against a real server', () => {
       await sql`select pg_terminate_backend(${backend.rows[0]!.pid})`.execute(killer.db);
       await new Promise((resolve) => setTimeout(resolve, 300));
 
-      expect(chunks.join('')).toContain('lost while idle');
+      expect(chunks.join('')).toContain('a database connection was lost');
     } finally {
       await killer.close();
       await instance.close();

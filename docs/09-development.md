@@ -169,6 +169,12 @@ bun run db:reset                                              # dev only
 - A migration that fails is **not** recorded as applied, so fixing the file and running again works. Also tested.
 - Never edit an applied migration; write a new one.
 - Transactions in services, not repositories; repositories accept a `Kysely` instance / `tx`.
+- Use `withTransaction(db, work, options)` (`db/transaction.ts`) rather than `db.transaction()` directly: it bounds the
+  session (idle-in-transaction timeout, optional statement timeout), can enforce `read only` and `serializable`, and
+  retries `40001`/`40P01` once. **`work` may therefore run twice** — anything outside the database (unlinking a file,
+  a notification) happens after it returns, never inside.
+- It does **not** nest: Kysely 0.29 throws on `transaction()` inside a transaction and has no implicit savepoints, so a
+  service that must join a caller's transaction takes the `Kysely`/`Transaction` it is given instead of opening one.
 
 ## 7. Testing
 

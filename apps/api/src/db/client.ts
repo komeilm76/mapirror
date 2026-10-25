@@ -25,8 +25,12 @@ import { AppError } from '../lib/errors';
 // imports from this module keeps working and there is exactly one definition of the schema.
 export type { Database } from './schema';
 
-/** Receives an error that happened on a connection the pool was not using. */
-export type PoolErrorListener = (error: Error) => void;
+/**
+ * Receives an error that happened on a connection, idle or in use.
+ *
+ * @param error - The driver's error for the lost connection.
+ */
+export type ConnectionErrorListener = (error: Error) => void;
 
 /**
  * A live database handle: the query builder, a liveness check, and the way to close what it opened.
@@ -60,12 +64,15 @@ export const PING_TIMEOUT_MS = 5_000;
  * during boot, so a failure has exactly one shape and one message.
  *
  * @param config - Validated configuration (DSN and pool size).
- * @param onPoolError - Called when a connection is lost while idle. The stage passes the app logger, so a
- * database that keeps dropping connections is visible in the log; omitting it keeps the pool silent, which is
- * what a short-lived test handle wants.
+ * @param onConnectionLost - Called when a connection is lost, whether it was idle or serving a query. The stage
+ * passes the app logger, so a database that keeps dropping connections is visible in the log; omitting it keeps
+ * the pool silent, which is what a short-lived test handle wants.
  * @returns The handle every repository receives.
  */
-export function createDatabase(config: AppConfig, onPoolError?: PoolErrorListener): SqlDatabase {
+export function createDatabase(
+  config: AppConfig,
+  onConnectionLost?: ConnectionErrorListener,
+): SqlDatabase {
   const pool = new pg.Pool({
     connectionString: config.databaseUrl,
     max: config.dbPoolMax,
@@ -76,14 +83,25 @@ export function createDatabase(config: AppConfig, onPoolError?: PoolErrorListene
     idleTimeoutMillis: 30_000,
   });
 
-  // An error on an **idle** client is not tied to any query, so `pg` emits it on the pool. Node's default for an
-  // unhandled `error` event is to throw, which would take the process down for a database restart; the pool
-  // discards the broken client and the next query reconnects. Listening is not optional — reporting is: a
-  // handler that only discards the error is how a database that drops connections every few minutes stays
-  // invisible until it becomes an outage.
-  pool.on('error', (error: Error) => {
-    onPoolError?.(error);
+  // Two listeners, because `pg` reports a lost connection through two different channels and only one of them was
+  // ever handled.
+  //
+  // 1. **Every client**, attached when it is created. `pg-pool` only keeps an `error` listener on a client while it
+  //    sits idle in the pool: on checkout it removes its own. So a connection killed *during a query or a
+  //    transaction* — a failover, `pg_terminate_backend`, an idle-in-transaction timeout — emitted `error` on an
+  //    emitter with no listener, and Node's response to that is to throw. Measured: the transaction rejected
+  //    normally *and* the process took an uncaught exception. This listener is what makes a mid-transaction drop
+  //    survivable, and it is also the single place that reports one.
+  pool.on('connect', (client: pg.PoolClient) => {
+    client.on('error', (error: Error) => {
+      onConnectionLost?.(error);
+    });
   });
+  //
+  // 2. **The pool itself**, which `pg-pool` emits to when an idle client dies (and which would otherwise throw for
+  //    want of a listener). Swallowed on purpose: the client listener above has already reported the same error,
+  //    and logging it twice per dropped connection turns one database restart into two noise lines each.
+  pool.on('error', () => undefined);
 
   const db = new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
 

@@ -3,9 +3,28 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 17 passes · 109 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2).
+**Totals:** 18 passes · 111 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 18 — 2026-10-25 (adversarial review of `P1-DB-03`)
+
+Two defects, both found by probing the mechanisms the transaction helper was about to rely on rather than by writing
+the helper first. One of them was not a defect in the new code at all.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **A database failover killed the API.** Passes 14 and 16 both reasoned about "a lost connection" and both tested it the same way: kill an **idle** backend, watch the pool recover, watch a `warn` line appear. But `pg-pool` keeps its `error` listener on a client only while that client sits idle in the pool and **removes it on checkout** (`pg-pool/index.js`: `_acquireClient` → `removeListener('error', idleListener)`). So a connection lost while serving a query or holding a transaction emitted `error` on an emitter with no listener, and Node's answer to that is to throw: measured, `pg_terminate_backend` during a `BEGIN … pg_sleep` produced *both* a clean rejection of the transaction *and* an uncaught exception, i.e. `process.exit` in production. A failover, a restart, or an admin ending a session would have taken the API down — the exact failure pass 14 set out to prevent, through the channel it did not cover | One `error` listener per client, attached on the pool's `connect` event, so it covers checked-out clients too; the pool-level listener stays as a swallow so the same error is reported once instead of twice. Probed before and after: before, `uncaught errors: 2`; after, `uncaught errors: 0`, one report, pool still usable. The test now collects `uncaughtException` explicitly and asserts the collection is empty, rather than trusting the runner to notice — with the listener removed it fails on that assertion (`expected [ …(1) ] to deeply equal []`) |
+| 2 | **The idle bound was asserted from the wrong side.** My first test for `idle_in_transaction_session_timeout` expected the promise to reject within the timeout. It did not: the server kills the session asynchronously and the client only finds out at its **next** statement, so the test failed at 1 505 ms against a 1 400 ms bound — while the mechanism was working perfectly. Left unfixed, the honest summary of the behaviour would have been wrong in the documentation as well | The test asserts what actually matters and what actually happens: the backend disappears from `pg_stat_activity` **while the client is still sleeping**, and the next statement then fails. That is the property that frees the row locks, and it is now the one under test |
+
+Also caught by the same pass, and worth recording because the type system turned out to be stricter than the plan:
+**Kysely 0.29 cannot nest transactions.** `transaction()` and `startTransaction()` both throw on a `Transaction`, and
+savepoints exist only on the `ControlledTransaction` from `startTransaction()`. A first draft advertised nested
+savepoints; the test for it failed with Kysely's internal message, and TypeScript rejects the call outright. The helper
+now refuses a `Transaction` with an explanation instead, and the alternative — pass the enclosing transaction down —
+is documented in `09-development.md`.
 
 ---
 
