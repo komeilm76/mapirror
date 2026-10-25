@@ -577,7 +577,33 @@ No IPs, no per-user data.
 | `GET /healthz` | Liveness | `200 {"status":"ok"}` always if the process is up |
 | `GET /readyz` | DB + cache dir writable | `200` or `503` with failing checks |
 
-Neither is under the three API prefixes; both are allow-listed in the route-law test (L1).
+Neither is under the three API prefixes; both are allow-listed in the route-law test (L1). Both answer `GET`
+and `HEAD`, require no credentials (a container cannot hold a Bearer token), are exempt from the admin guard
+and from the rate limiter, and send `cache-control: no-store` — a probe answer describes *now*, and a proxy
+that replays a five-minute-old `200` during an incident is worse than no probe.
+
+**`/healthz` touches nothing.** No database, no filesystem. It answers as long as the process can answer, so
+Docker's restart policy reacts to a dead process rather than to a dead dependency: a liveness probe that pings
+Postgres turns one database outage into a restart loop.
+
+**`/readyz` runs two checks concurrently, each bounded at 2 s** (`READY_PROBE_TIMEOUT_MS`). A probe that can
+hang is worse than a missing one — the load balancer waits, requests queue, and the outage looks total.
+
+| Check | What it proves |
+|---|---|
+| `database` | `select 1` through the pool used to serve requests |
+| `cache` | `CACHE_DIR` accepts a write: a `.readyz-<uuid>` file is created and removed (the directory is created if missing — a fresh volume is empty) |
+
+```json
+// 200
+{ "status": "ok",          "checks": { "database": "ok",   "cache": "ok" } }
+// 503
+{ "status": "unavailable", "checks": { "database": "fail", "cache": "ok" } }
+```
+
+The body names the checks and **nothing else**. A driver's error text can contain the DSN, and the cache path is
+an internal detail; the reason for each failure goes to the log at `warn`, under the request id in
+`x-request-id`, one line per failing check.
 
 ---
 

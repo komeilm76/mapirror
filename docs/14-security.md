@@ -136,6 +136,13 @@ download IP is identical, making per-visitor statistics meaningless.
 Responses include `Retry-After`. Limits are in-memory per instance (single container by design); the
 in-memory limiter resets on restart, which is acceptable at this scale and documented.
 
+**The probes are the deliberate exception.** `/healthz` and `/readyz` are unauthenticated and unlimited, because
+a container, a load balancer and an uptime monitor cannot supply a token and must not be throttled into reporting
+an outage they invented. What that exposes is bounded and chosen: `/healthz` does no work, and `/readyz` costs
+one `select 1` plus one small file write, returns only `"ok"`/`"fail"` per check, and never echoes a driver
+message or a filesystem path. Keep `/readyz` off the public interface where the proxy allows it; the decision is
+recorded here so a future reviewer does not "fix" the missing token check.
+
 ## 8. Logging & privacy
 
 - Redacted at the logger level: `authorization`, `cookie`, `set-cookie`, `password`, `token`.

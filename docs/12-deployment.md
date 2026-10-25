@@ -240,8 +240,15 @@ Phase 6 (`P6-OPS-01`).
 
 ## 7. Monitoring the deployment
 
-- `/healthz` — process alive (use for restarts).
-- `/readyz` — DB reachable + cache dir writable (use for load-balancer gating).
+- `/healthz` — process alive (use for restarts). It checks nothing else on purpose: a liveness probe that
+  consults Postgres restarts a healthy API every time the database blinks.
+- `/readyz` — DB reachable + cache dir writable (use for load-balancer gating). Two checks, concurrent, each
+  bounded at 2 s, so a hung connection cannot stall the probe. `503` names the failing checks in the body and
+  the reason in the API log.
+- Both answer `GET`/`HEAD` with `cache-control: no-store` and need no credentials. Keep `/readyz` on the
+  internal network where your load balancer can reach it; it performs a `select 1` and a small file write per
+  call, and it is deliberately not rate limited (a probe must never be throttled). Docker's own healthcheck
+  should use `/healthz`, because a container that restarts on readiness has the same restart-loop problem.
 - Admin dashboard `/_site/admin/` — CPU/RAM/disk charts, jobs, updates available, disk headroom.
 - Optional: point an uptime monitor at `/_public/api/stats` and a disk alarm at `/_admin/api/system/status`.
 

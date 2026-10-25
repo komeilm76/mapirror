@@ -128,8 +128,10 @@ export const PLUGIN_ORDER: readonly PluginSlot[] = [
     rationale: 'Last: routes are the leaves of the pipeline, wrapped by every stage above.',
     task: null,
     // Routes *are* a plugin: they want encapsulation, so the three prefixes stay separate subtrees.
-    install: (app) => {
-      app.register(registerRoutes);
+    install: (app, context) => {
+      // The routes need the cache directory for the readiness probe: a stage that reads configuration may not
+      // read `process.env` behind the pipeline's back (`P1-API-02`), so it arrives as an option.
+      app.register(registerRoutes, { cacheDir: context.config.cacheDir });
     },
   },
 ];

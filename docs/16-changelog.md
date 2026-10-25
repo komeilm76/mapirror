@@ -3,9 +3,32 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 14 passes · 102 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3).
+**Totals:** 15 passes · 104 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 15 — 2026-10-25 (adversarial review of `P1-API-07`)
+
+Two defects, both in the readiness probe, both found **before commit** — and both of the same family: the probe had
+two ways to say "this failed" and only one of them was honest.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **An unwritable cache directory reported itself healthy.** The cache check signalled failure by *returning* `'fail'`, while the helper that bounds every check treated any **fulfilled** promise as success — so the `'fail'` value was mapped to `'ok'` and `/readyz` answered `200 {cache:"ok"}` with `CACHE_DIR` pointing at a regular file. A load balancer would have kept sending traffic to an API that could not store a single download | One rule, stated at the helper: a check resolves when usable and **throws** when not. The cache check now returns `Promise<void>` and propagates its `mkdir`/`writeFile` error; the reason is logged, the body still says only `"fail"`. Test: `CACHE_DIR` set to a *file* (chmod is the obvious way to make a directory unwritable and it does nothing under a root test runner), asserting `503 {database:"ok",cache:"fail"}` |
+| 2 | **A check that threw before returning a promise answered `500` instead of `503`.** The bound was applied to a promise, so the call `app.db.check(...)` had already been evaluated — and a pool that has been closed throws synchronously out of it. Measured: `/readyz` → `500 INTERNAL_ERROR`, a status that says the *probe* is broken rather than the dependency, and that a monitoring rule or a load balancer keyed on `503` never fires on | The helper takes a **thunk** and invokes it inside the race, so a synchronous throw becomes a failed check like any other. Test covers a handle that throws on its second call (the boot ping succeeds, the probe does not) and asserts `503` with `database: "fail"` |
+
+Neither could be caught by the suite that existed at the time: both live in the space between "the check returned"
+and "the check failed", which is exactly the space a probe's whole existence is about.
+
+A smaller thing in the same pass: `RouteOptions` carried a `probeTimeoutMs` that no caller set — a branch that sat
+at 50 % coverage because it could only be taken by a test. Removed rather than tested; tests that need a shorter
+budget register `probeRoutes` directly.
+
+Mutation checks, because a probe test that cannot fail is worse than no probe test: making the cache check always
+succeed fails 2 tests, making `/healthz` consult the database fails 1, removing the timeout bound fails 1, and
+removing `cache-control: no-store` fails 2.
 
 ---
 

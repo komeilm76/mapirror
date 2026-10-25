@@ -25,6 +25,7 @@ export * from './plugins/db';
 export * from './plugins/errors';
 export * from './plugins/request-context';
 export * from './plugins/security';
+export * from './routes/probes';
 export {
   assertRouteLaw,
   installRouteLawHook,
