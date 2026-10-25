@@ -24,9 +24,11 @@
 import { createApp, type App as VueApp } from 'vue';
 
 import App from './App.vue';
+import { createAppApiClient, provideApiClient } from './api';
 import { createAppPinia } from './plugins/pinia';
 import { createAppVuetify } from './plugins/vuetify';
 import { createAppRouter } from './router';
+import { useNotifications } from './stores/notifications';
 import { installThemeSync } from './theme/policy';
 
 /**
@@ -41,16 +43,22 @@ export const MOUNT_SELECTOR = '#app';
  */
 export function createWebApp(): VueApp<Element> {
   const app = createApp(App);
+  const pinia = createAppPinia();
   const vuetify = createAppVuetify();
   const router = createAppRouter();
 
-  app.use(createAppPinia());
+  app.use(pinia);
   app.use(vuetify);
   app.use(router);
 
   // The theme follows the route (`P1-WEB-02`): dark for the admin area, light for the public one, the system
   // preference on the login page. One installation, so a page cannot forget.
   installThemeSync(router, vuetify);
+
+  // The API client (`P1-WEB-04`). Provided rather than imported by screens, so a component test hands its own stub to
+  // `provideApiClient()` and a store hands its token in — one seam, no module singleton. It is wired after the router
+  // because a dead session navigates, and after Pinia because the toast it shows lives in a store.
+  provideApiClient(app, createAppApiClient({ router, notifications: useNotifications(pinia) }));
 
   return app;
 }

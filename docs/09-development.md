@@ -397,6 +397,37 @@ that public pages are never gated — `/_site/administrators` is the boundary ca
 convenience, not a security boundary**: page shells are inert, and every fact comes from `/_admin/api/*`, which answers
 `401` on its own (L2).
 
+**Calling the API (`P1-WEB-04`).** One client, provided by `bootstrap.ts` and reached with `useApi()`. A screen never
+calls `fetch`, never reads a status code and never parses an error body.
+
+| What you want | Write | Not |
+|---|---|---|
+| A request | `const api = useApi(); await api.get<CatalogResponse>('/_admin/api/catalog', { query: { page } })` | `fetch(...)`, or a second wrapper composable |
+| A failure | `catch (error) { if (!isApiError(error)) throw error; … }` — `error.code`, `error.message`, `error.requestId` | `response.ok`, `response.status`, `JSON.parse` |
+| A form's field errors | `validationIssues(error)` → `{ path, message }[]` | reading `details.issues` by hand |
+| The credential | nothing — `needsBearer()` decides from the path | `headers: { authorization }` at a call site |
+| A dead session | nothing — `api/index.ts` clears, toasts and redirects, once | a `401` branch per screen |
+| Feedback | `notifications.success('Country deleted.')` / `.error('…', { requestId })` | a local snackbar per page |
+
+The rules that make it a single path, each with a test:
+
+- **The token follows the namespace.** `/_admin/api/*` and `/me`/`logout` get the header; `/login` and `/_public/api/*`
+  never do — a credential in a request that does not need it is one more log line and cache entry holding a live token.
+  Keyed on the path for the same reason the router's guard is: a per-call flag is a flag somebody forgets.
+- **Only a presented credential can expire.** `onSessionExpired` fires only when the request carried a token, so a typo
+  at the login page (`401 INVALID_CREDENTIALS`) shows inline and clears nothing — the case that would otherwise sign out
+  another tab.
+- **`ACCOUNT_DISABLED` ends the session too.** A `403` that no retry will fix is the same situation as an expired token;
+  `FORBIDDEN` (also `403`) is a permission answer and does not.
+- **Once per incident.** The "already handled" latch is the token itself: the first callback clears it, so the rest of a
+  burst is a no-op (`hasSessionToken()`), and the next sign-in starts from a non-empty store again.
+- **Failures are typed, not thrown raw.** Network, timeout, cancellation and an unreadable body are `ApiError`s with
+  `NETWORK`/`TIMEOUT`/`ABORTED`/`MALFORMED`, so `switch (error.code)` is exhaustive and no screen sees a `TypeError` from
+  `fetch`. A caller cancellation is *not* reported as an outage.
+- **A toast that must persist says `null`, not `0`.** The store describes "until dismissed" as `null` and the host maps
+  it to Vuetify's `-1`; Vuetify reads `timeout: 0` as "dismiss on the next tick" (pass 32 — the first version said `0`
+  and errors vanished as they appeared, which a test asserting immediately after mount did not catch).
+
 
 - **Layering:** route handler → service → repository. No SQL in handlers, no HTTP in services.
 - **Validation:** Zod schema in `packages/shared` → Fastify `schema` → handler receives typed input.

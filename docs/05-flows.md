@@ -73,7 +73,7 @@ sequenceDiagram
       else valid
         API->>DB: BEGIN — INSERT token (sha256 hash, expiresAt), last_login_at, audit auth.login
         API-->>SPA: { token, expiresAt, admin } (cache-control: no-store)
-        SPA->>SPA: sessionStorage.setItem('mm.token')
+        SPA->>SPA: sessionStorage.setItem('mapirror.session.token')
         SPA->>SPA: router → /_site/admin/
       end
     end
@@ -82,10 +82,15 @@ sequenceDiagram
   SPA->>API: GET /_admin/api/system/status (Bearer)
 ```
 
-**Rules:** token only in `sessionStorage` (not `localStorage`); every API call attaches the header;
-`401` anywhere ⇒ clear state + redirect to `/_auth/login`; no auto-refresh (D-3). Every `/_admin/api/*` request passes
-the Bearer guard first (`P1-AUTH-05`): `onRequest`, before the body is parsed, no opt-out — so the SPA's `401` handling
-is one branch for every admin call, not one per screen.
+**Rules:** token only in `sessionStorage` (not `localStorage`), under one key — `mapirror.session.token`
+(`apps/web/src/auth/token-storage.ts`) — and **never** sent to a request that does not need it: `/_admin/api/*` and
+`/me`/`logout` get `Authorization: Bearer …`, while `/login` and everything under `/_public/api/*` get no credential at
+all. The rule is keyed on the path (`apps/web/src/api/client.ts`, `needsBearer`), not on a flag per call.
+`401` anywhere ⇒ clear state + redirect to `/_auth/login`; `403 ACCOUNT_DISABLED` does the same, because a deactivated
+account's token will never work again — it is the one non-`401` that ends a session (the other `403`, `FORBIDDEN`, is a
+permission answer and leaves the session alone). No auto-refresh (D-3). Every `/_admin/api/*` request passes the Bearer
+guard first (`P1-AUTH-05`): `onRequest`, before the body is parsed, no opt-out — so the SPA's `401` handling is one
+branch for every admin call, not one per screen.
 **Tests:** login happy path, wrong password, unknown user, deactivated account, lockout (`429` with `Retry-After`),
 expired token, revoked token, cookie-only rejected, `?token=` rejected, SPA guard redirects when `sessionStorage` is
 empty or `/me` fails. The throttle is checked **before** the hash on purpose: a locked-out client costs a map lookup,

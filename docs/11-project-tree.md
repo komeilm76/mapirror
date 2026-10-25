@@ -95,8 +95,8 @@ mapirror/
 │     ├─ alias.ts                  # `@` → src, shared by vite.config, vitest.config and the tests
 │     ├─ src/
 │     │  ├─ main.ts                # Two lines: build the app, mount it (+ the two stylesheets)
-│     │  ├─ bootstrap.ts           # createWebApp(): Pinia → Vuetify → Router → theme sync
-│     │  ├─ App.vue                # v-app → v-main → router-view (the one shell)
+│     │  ├─ bootstrap.ts           # createWebApp(): Pinia → Vuetify → Router → theme sync → API client
+│     │  ├─ App.vue                # v-app → v-main → router-view → ToastHost (the one shell)
 │     │  ├─ shims-vue.d.ts         # `*.vue` for plain-tsc consumers (ESLint); vue-tsc ignores it
 │     │  ├─ vite-env.d.ts          # Vite's ambient types (the web tsconfig sets `types: []`)
 │     │  ├─ router/index.ts        # createAppRouter(): the table + the guard + the titles, in one place
@@ -107,6 +107,13 @@ mapirror/
 │     │  ├─ router/paths.ts        # Page path builders, all derived from @mapirror/shared
 │     │  ├─ auth/token-storage.ts  # The session token in sessionStorage; every access wrapped (D-13)
 │     │  ├─ types/vue-router.d.ts  # RouteMeta augmentation: title/screen/owner required on every route
+│     │  ├─ api/
+│     │  │  ├─ client.ts           # createApiClient(): Bearer by path, envelope → ApiError, one budget (30 s)
+│     │  │  ├─ errors.ts           # ApiError (server + client codes), endsSession, validationIssues()
+│     │  │  └─ index.ts            # createAppApiClient(): the sign-out policy; provideApiClient()
+│     │  ├─ composables/useApi.ts  # useApi(): the client, injected — throws if the app provided none
+│     │  ├─ stores/notifications.ts # Toasts: one per action, errors persist, newest three at most
+│     │  ├─ components/common/ToastHost.vue  # Renders the queue (position is P1-WEB-07's)
 │     │  ├─ plugins/vuetify.ts     # createAppVuetify(): both themes, built from styles/tokens.ts
 │     │  ├─ plugins/pinia.ts
 │     │  ├─ theme/policy.ts        # Path → theme (admin dark, public light, auth follows the system)
@@ -115,9 +122,9 @@ mapirror/
 │     │  │  ├─ tokens.css          # --mm-* spacing/radius/motion/focus, focus ring, reduced motion
 │     │  │  └─ typography.css      # @font-face (Space Grotesk, 22 kB) + the type roles
 │     │  ├─ assets/fonts/          # space-grotesk-latin-wght.woff2 + OFL.txt
-│     │  ├─ stores/                # auth, catalog, cache, versions, intervals, jobs,
-│     │  │                         # system, ui (toasts/snackbars)
-│     │  ├─ composables/           # useApi (fetch+error), usePolling (VueUse),
+│     │  ├─ stores/                # notifications (exists), auth, catalog, cache, versions,
+│     │  │                         # intervals, jobs, system
+│     │  ├─ composables/           # useApi (exists), usePolling (VueUse),
 │     │  │                         # useConfirm, useByteFormat, useUpdateTicker
 │     │  ├─ layouts/               # AdminLayout, PublicLayout, AuthLayout
 │     │  ├─ pages/

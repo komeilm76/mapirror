@@ -3,9 +3,51 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 31 passes · 139 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4).
+**Totals:** 32 passes · 143 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 32 — 2026-10-25 (the API client: an invisible toast, a composable that failed open, and a key that exists nowhere)
+
+Two of these are the kind that a green test suite hides: one made an error message vanish before it could be read, and one
+turned the "you forgot to wire this" error into `undefined`.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **An error toast was marked `timeout: 0`, which Vuetify reads as "dismiss on the next tick".** `13-ui-ux.md` §5 says errors persist with a close button, and `stores/notifications.ts` expressed that as `error: 0` — the obvious spelling, and the wrong one: `VSnackbar`'s `startTimeout()` schedules `setTimeout(…, Number(props.timeout))`, so `0` is *immediate* and only `-1` means "never". The toast therefore existed between the render and the timer: visible in a test that asserted immediately after mounting (which is how it passed its own review), invisible to a person. Caught by probing rather than by reading — five identical probe runs reported `snackbars=0` while a near-identical probe that logged sooner reported `1` | The store now models "until dismissed" as `null` and the host maps it to Vuetify's `-1`, with the framework's magic number kept in the component that uses the framework. The regression test waits **real time** after mounting before looking, and it fails when the `0` is restored (checked: 2 failures — this test and the store's own). 84 client tests now include it |
+| 2 | **`useApi()` failed open.** It read `inject(API_CLIENT_KEY, null)` and threw when the result was `null`; Vue returns **`undefined`** for an unprovided key *and* when `inject()` is called outside a component. So the one case the composable exists for — an app assembled without a client — returned `undefined` to the caller, and the failure would have surfaced later as `Cannot read properties of undefined (reading 'get')` in a file nobody was editing | `inject(API_CLIENT_KEY)` with an `undefined` check, and both cases tested (outside a component, and inside an app that forgot `provideApiClient()`). Mutation — restoring the `null` shape — fails both |
+| 3 | **`05-flows.md` F2 named a `sessionStorage` key that the code does not use.** The sequence diagram said `sessionStorage.setItem('mm.token')`; `auth/token-storage.ts` writes `mapirror.session.token`, and that name is the one `SESSION_TOKEN_KEY` exports and the tests assert. A reader following F2 would have cleared the wrong key and left the session alive | F2 now names the real key and says where it is defined, and the rules paragraph was extended with the two things the diagram could not carry: which requests get the header, and that `403 ACCOUNT_DISABLED` ends a session |
+| 4 | **The documented sign-out rule missed a case that has the same consequence.** F2 said "`401` anywhere ⇒ clear state + redirect". `ACCOUNT_DISABLED` is a **`403`**: the account is deactivated, no retry of that token will ever work, and following the rule literally leaves a deactivated admin on an admin page full of `403`s with a token the app keeps presenting. `FORBIDDEN` shares the status and must *not* sign anyone out | `SESSION_ENDED_CODES` has four members — the three `401` verdicts plus `ACCOUNT_DISABLED` — and the doc says so and why (`05-flows.md` F2, `09-development.md` §9). Tests cover all four endings, the wrong-password non-case, the `FORBIDDEN` non-case, and an unreadable `401` from a proxy (which still ends the session, because the credential is still refused) |
+
+Probed and found sound rather than assumed:
+
+- **The timeout has to cover the body, not just the headers.** `fetch()` resolves when the headers arrive; a server that
+  sends `200` and then stalls mid-body is the same outage to the reader as one that never answers. The budget is cleared
+  in the `finally` of the whole read, and a mutation that aborts nothing makes the timeout test hang — killed.
+- **A cancellation is not an outage.** A screen that navigates away aborts its requests; reporting that as "the server
+  could not be reached" would put a false toast on the next page. `ABORTED` is its own code and it never reaches the toast.
+- **`204 No Content` is success.** `POST /_auth/api/logout` answers with an empty body; a client that parses it throws,
+  and a sign-out that throws is a sign-out nobody believes happened.
+- **A query string can already be there.** Pagination and filters are usually added to a path that came with one
+  (`?tab=versions`); a second `?` would produce a parameter literally named `?page`, which the server silently ignores.
+- **The store's dedupe hides a real difference, so the burst test needed a second assertion.** Five identical refusals
+  produce one toast *because the store merges identical sentences* — so the toast count alone cannot prove the sign-out
+  handler ran once. The test now also counts `router.replace` calls, and a burst with two *different* refusal codes
+  (whose details the store keeps apart) pins it from the other side. Mutating the latch away fails both.
+- **Vuetify's overlay is a race in a full-suite run, not in isolation.** `v-snackbar` teleports into
+  `.v-overlay-container` and only renders after a frame; a `flushPromises()` and an assertion passed alone and failed
+  once among 900 other tests. The host tests poll with `vi.waitFor` instead of guessing a delay, and stayed green over
+  repeated full runs.
+
+Mutation-checked: 20 mutations, **all 20 killed** — the Bearer attached to every path (including `/login`), the public API
+handed the token, a page path fetched as an API, sign-out fired without a credential, a cancellation reported as an
+outage, the budget expiring without aborting, cookies included, a second `?`, `INVALID_CREDENTIALS` in the session-ended
+set, an unreadable `401` no longer ending a session, the server's sentence replaced by a generic one, the redirect removed,
+the destination dropped from it, the burst latch removed, the `0` timeout restored, the dedupe inverted, the burst cap
+removed, `useApi()` failing open again, `bootstrap.ts` no longer providing the client, and the host mapping `0` instead of
+`-1`.
 
 ---
 
