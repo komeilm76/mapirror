@@ -15,7 +15,7 @@ import {
   type PluginSlot,
 } from '../src/index';
 import { STUB_ROUTES } from '../src/routes/not-implemented';
-import Fastify, { type FastifyInstance, type FastifyPluginAsync } from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 
 /**
  * Acceptance test for `P1-API-01`: the server starts and registers routes under the three API prefixes.
@@ -144,24 +144,30 @@ describe('stub routes match the contract', () => {
 });
 
 describe('registerPipeline', () => {
-  it('registers every slot and boots, even with several plugins', async () => {
-    // The landmine this test exists for: `await app.register(p)` inside the loop boots the instance (Fastify
-    // is a thenable), so the second plugin fails with "already booted". With one implemented slot the bug is
-    // invisible; P1-API-03 would have hit it immediately.
-    const ran: string[] = [];
-    const plugin =
-      (name: string): FastifyPluginAsync =>
-      (scoped) => {
-        ran.push(name);
+  /** A stage that registers one route through the plugin machinery, returning the thenable. */
+  const pluginSlot = (name: string, ran: string[]): PluginSlot => ({
+    id: 'routes',
+    rationale: 'test',
+    task: null,
+    install: (root) => {
+      ran.push(name);
+      // Deliberately *returns* the thenable, which is the shape a caller writes by accident. The pipeline must
+      // not await it: `app.register()` resolves when the whole instance is booted.
+      return root.register((scoped: FastifyInstance, _options, done) => {
         scoped.get(`/${name}`, () => ({ ok: true }));
-        return Promise.resolve();
-      };
+        done();
+      }) as unknown as void;
+    },
+  });
 
+  it('does not boot mid-pipeline when a stage calls register()', async () => {
+    // The landmine this test exists for: `await app.register(p)` boots the instance (Fastify is a thenable), so
+    // the second stage fails with FST_ERR_INSTANCE_ALREADY_LISTENING. With one implemented slot the bug is
+    // invisible; it appears the moment a second stage lands.
+    const ran: string[] = [];
     const instance = Fastify({ logger: false });
-    await registerPipeline(instance, [
-      { id: 'request-context', rationale: 'test', task: null, register: plugin('healthz') },
-      { id: 'errors', rationale: 'test', task: null, register: plugin('readyz') },
-    ]);
+
+    await registerPipeline(instance, [pluginSlot('healthz', ran), pluginSlot('readyz', ran)]);
 
     expect(ran).toEqual(['healthz', 'readyz']);
     expect(instance.hasRoute({ method: 'GET', url: '/healthz' })).toBe(true);
@@ -169,21 +175,47 @@ describe('registerPipeline', () => {
     await instance.close();
   });
 
-  it('skips empty slots without booting early', async () => {
-    const ran: string[] = [];
+  it('installs stages on the root instance, so their hooks are not encapsulated away', async () => {
+    // The defect this guards: a stage registered with `app.register(...)` that adds an `onRequest` hook applies
+    // it to its own empty subtree. Measured before the fix — the header was missing from every response.
     const instance = Fastify({ logger: false });
+
     await registerPipeline(instance, [
-      { id: 'request-context', rationale: 'test', task: 'P1-API-03', register: null },
+      {
+        id: 'request-context',
+        rationale: 'test',
+        task: null,
+        install: (root) => {
+          root.addHook('onRequest', (_request, reply, done) => {
+            reply.header('x-from-stage', 'yes');
+            done();
+          });
+        },
+      },
       {
         id: 'routes',
         rationale: 'test',
         task: null,
-        register: () => {
-          ran.push('routes');
-          return Promise.resolve();
+        install: (root) => {
+          root.get('/_public/api/probe', () => ({ ok: true }));
         },
       },
     ]);
+
+    const response = await instance.inject({ method: 'GET', url: '/_public/api/probe' });
+    expect(response.headers['x-from-stage']).toBe('yes');
+    await instance.close();
+  });
+
+  it('skips empty slots without booting early', async () => {
+    const ran: string[] = [];
+    const instance = Fastify({ logger: false });
+
+    await registerPipeline(instance, [
+      { id: 'request-context', rationale: 'test', task: 'P1-API-03', install: null },
+      pluginSlot('routes', ran),
+    ]);
+
     expect(ran).toEqual(['routes']);
     await instance.close();
   });
@@ -194,7 +226,7 @@ describe('plugin pipeline', () => {
     const ids = PLUGIN_ORDER.map((slot) => slot.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.at(-1)).toBe('routes');
-    expect(PLUGIN_ORDER.at(-1)?.register).toBeTypeOf('function');
+    expect(PLUGIN_ORDER.at(-1)?.install).toBeTypeOf('function');
   });
 
   it('keeps request context and errors ahead of the routes that depend on them', () => {
@@ -208,7 +240,7 @@ describe('plugin pipeline', () => {
 
   it('marks a slot either implemented or owned by a task — never both, never neither', () => {
     for (const slot of PLUGIN_ORDER) {
-      const implemented = slot.register !== null;
+      const implemented = slot.install !== null;
       const owned = slot.task !== null;
       expect(
         implemented !== owned,
@@ -219,7 +251,7 @@ describe('plugin pipeline', () => {
   });
 
   it('reports the pending slots, which are exactly the unimplemented ones', () => {
-    const expected = PLUGIN_ORDER.filter((slot) => slot.register === null).map((slot) => slot.id);
+    const expected = PLUGIN_ORDER.filter((slot) => slot.install === null).map((slot) => slot.id);
     expect(pendingPlugins()).toEqual(expected);
     // The pipeline is not empty today: routes are registered, so "everything pending" would also be a bug.
     expect(pendingPlugins().length).toBeLessThan(PLUGIN_ORDER.length);
@@ -318,8 +350,9 @@ describe('L1 is enforced at boot, not only by the law test', () => {
       id: 'routes',
       rationale: 'test seam: a pipeline that puts a route outside the API namespaces',
       task: null,
-      register: async (instance) => {
-        await Promise.resolve();
+      // Installed on the root instance, which is what makes the route visible to the law hook at all — the
+      // defect this guards (a throwing hook stalling `ready()`) only ever manifested on this path.
+      install: (instance) => {
         instance.get('/_site/leak', () => ({ ok: true }));
       },
     };

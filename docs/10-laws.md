@@ -100,13 +100,16 @@ types carry JSDoc.
   for longer than 5 seconds.
 - Only `ready` versions are ever offered; `pending`/`failed` versions are admin-only information.
 
-## L9 — Secrets
+## L9 — Secrets (redaction enforced by test)
+
 
 - Secrets come from env/secret files only: never committed, never logged, never echoed back by an
   endpoint, never included in error responses or audit metadata.
 - The admin password is accepted by the launch/bootstrap script via prompt, env var, or file — and is
   immediately hashed with Argon2id; plaintext is never persisted.
-- Logs redact `authorization`, `password`, `token`, `cookie` at the logger level, not per call site.
+- Logs redact `authorization`, `password`, `token`, `cookie` at the logger level, not per call site. The
+  list lives in `apps/api/src/lib/logger.ts` and applies to every logger the API builds; the test that
+  keeps it honest captures real log output rather than inspecting the configuration.
 
 ## L10 — Destructive actions require confirmation
 

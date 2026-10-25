@@ -3,9 +3,32 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 9 passes · 92 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6).
+**Totals:** 10 passes · 94 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 10 — 2026-10-25 (adversarial review while building `P1-API-02` / `P1-API-03`)
+
+Two defects, both found by writing the test before trusting the feature, and both in code that already had a
+green suite.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **Environment cross-field rules were collected and then discarded.** `parseEnv` appended the mutual-exclusion and production-DSN problems to a list, but only threw when the *schema* had failed (`if (!parsed.success)`). A production boot with **no** `DATABASE_URL`, or with both `ADMIN_PASSWORD` and `ADMIN_PASSWORD_FILE`, was therefore accepted — the rules existed, were documented, and did nothing | Both gates are explicit: the parse result (which also narrows `parsed`) and then the collected issues. A test asserts that a schema problem and a cross-field problem are reported in **one** error, so fixing a `.env` takes one boot rather than two. Probe: before, `parseEnv({NODE_ENV:'production'})` returned a config whose DSN was the localhost default; after, exit 1 with `DATABASE_URL: is required in production` |
+| 2 | **Every hook-installing pipeline stage was a silent no-op.** Stages were registered with `app.register(stage)`; Fastify encapsulates hooks added inside a plugin, so slot 1's `onRequest` hook applied to its own empty subtree and nothing else. `x-request-id` was absent from every response while the plugin "was registered" and the pipeline tests passed — they only checked that routes existed. Stages 2–6 (`errors`, `security`, `db`, `rate-limit`, `auth`) have exactly the same shape, so the pipeline would have been five more no-ops | A slot now carries `install: (app) => void` and receives the **root** instance; only `routes` gets encapsulation (`app.register(registerRoutes)`), because routes want it. A regression test installs a hook-carrying stage and asserts the header reaches a real response. Probes: a plugin-registered hook → `x-from-plugin: MISSING`; after the change → header present, and the real process now returns `x-request-id` on 200, 503 **and** 404 |
+
+Two further findings recorded rather than fixed:
+
+- **Fastify's request serializer logs no headers.** `req` is serialized to `{method, url, host, remoteAddress}`,
+  so credentials never reached a log line by that route. The redaction list is still enforced at the logger
+  level (L9) and now also covers header-shaped objects a handler logs itself (`*.headers.authorization`), which
+  is the shape that would actually leak.
+- **`req`/`res` are serializer keys, not plain fields.** A hand-built `{ req: { headers: … } }` is passed to
+  Fastify's request serializer, which expects a real request and emits `{}` — a dump written that way is
+  silently emptied. Discovered by a redaction test that failed for the "wrong" reason (no censor and no value);
+  the reasoning is now in the module comment so the next person does not repeat it.
 
 ---
 

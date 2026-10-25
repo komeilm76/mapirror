@@ -82,7 +82,7 @@ The pipeline above is code, not a diagram: `apps/api/src/plugins/order.ts` holds
 
 | # | Stage | Why it sits here | Task |
 |---|---|---|---|
-| 1 | `request-context` | Everything after logs and reports against the request id | P1-API-03 |
+| 1 | `request-context` | Everything after logs and reports against the request id | — |
 | 2 | `errors` | `setErrorHandler`/`setNotFoundHandler` must be installed before a route can throw | P1-API-04 |
 | 3 | `security` | Headers, CORS and body limits wrap every response, **including** the error envelope | P1-API-05 |
 | 4 | `db` | Decorates the instance and fails the boot when Postgres is unreachable, before any route needs it | P1-API-06 |
@@ -94,6 +94,12 @@ Two consequences of making the order data:
 
 - **A slot is either implemented or assigned a task, never both and never neither** — the empty slots are
   visible (`pendingPlugins()`), so "we forgot the error handler" cannot look like "it landed".
+- **A stage installs on the root instance, not inside a plugin of its own.** Fastify encapsulates hooks added
+  inside a plugin: a stage registered with `app.register(...)` that adds an `onRequest` hook applies it to its
+  own empty subtree and to nothing else. That was a real defect — slot 1's request-id header never appeared on
+  a response (measured; see `16-changelog.md` pass 10). Every stage that installs a hook, an error handler or a
+  guard has that shape, so `install(app)` receives the root instance and `app.register()` is left to the one
+  stage that wants encapsulation (routes).
 - **L1 is enforced when the app is built.** An `onRoute` hook records any route that is not under an API
   prefix or a probe, and the boot is refused after `ready()` if the list is not empty — so a route in the
   wrong namespace cannot boot the server, and the law test (`P1-API-08`) becomes a second line of defence

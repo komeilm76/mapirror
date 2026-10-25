@@ -10,6 +10,7 @@
 
 export * from './app';
 export * from './config/env';
+export * from './lib/logger';
 export * from './config/prefixes';
 export {
   pendingPlugins,
@@ -18,6 +19,7 @@ export {
   type PluginId,
   type PluginSlot,
 } from './plugins/order';
+export * from './plugins/request-context';
 export {
   assertRouteLaw,
   installRouteLawHook,

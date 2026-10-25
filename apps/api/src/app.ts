@@ -6,23 +6,27 @@
  * separate from `server.ts` is what lets tests exercise real routing and real error behaviour with
  * `app.inject()` — no port, no signal handling, no `process.exit`.
  *
- * Two things are deliberately *not* here yet: the error envelope handlers (`P1-API-04`) and the logger
- * configuration (`P1-API-03`). Until they land, an unknown path answers Fastify's default 404 shape, and the
- * `errors` slot in the pipeline is visibly empty rather than silently forgotten.
+ * The error envelope handlers (`P1-API-04`) are deliberately *not* here yet: an unknown path still answers
+ * Fastify's default 404 shape, and the `errors` slot in the pipeline is visibly empty rather than silently
+ * forgotten. Logging and request ids are here, because they are instance-level settings: the id generator and
+ * the redaction list must be in place before the first request exists, not in a plugin that runs later.
  *
  * @module app
  */
 
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 
+import { withRedaction } from './lib/logger';
 import { PLUGIN_ORDER, registerPipeline, type PluginSlot } from './plugins/order';
+import { REQUEST_ID_HEADER, resolveRequestId } from './plugins/request-context';
 import { assertRouteLaw, installRouteLawHook } from './plugins/route-law';
 
 /** Options accepted by {@link buildApp}. */
 export interface BuildAppOptions {
   /**
-   * Fastify's logger setting. Tests pass `false` (the default); `server.ts` passes a level, so running the
-   * process logs and injecting requests into a built app does not.
+   * Fastify's logger setting. Tests pass `false` (the default) or an options object with a capture stream;
+   * `server.ts` passes the validated level. Whatever is passed, {@link withRedaction} adds the L9 censoring
+   * list, so no caller can build an app whose logger prints an `Authorization` header.
    */
   logger?: FastifyServerOptions['logger'];
   /**
@@ -55,7 +59,14 @@ export interface BuildAppOptions {
  * @throws When a plugin fails to register, or any registered route violates L1.
  */
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
-  const app = Fastify({ logger: options.logger ?? false });
+  const app = Fastify({
+    logger: withRedaction(options.logger),
+    // One decision about an id, made once: the header's value when it is safe to repeat, otherwise a UUIDv4.
+    // `requestIdHeader` is disabled because Fastify would otherwise copy any inbound `request-id` verbatim —
+    // a second, unvalidated path into the same field.
+    requestIdHeader: false,
+    genReqId: (request) => resolveRequestId(request.headers[REQUEST_ID_HEADER]),
+  });
 
   const routeLaw = installRouteLawHook(app);
 
