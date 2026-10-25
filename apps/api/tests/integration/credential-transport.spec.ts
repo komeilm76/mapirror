@@ -251,11 +251,14 @@ describe.skipIf(skipReason !== null)(
           const response = await app.inject({
             method: method as 'GET',
             url,
-            // Admin routes need a token to get as far as their own answer; the shape of the refusal is asserted above.
-            headers: url.startsWith('/_admin/api') ? { authorization: `Bearer ${token}` } : {},
-            ...(method === 'POST'
-              ? { headers: { 'content-type': 'application/json' }, payload: {} }
-              : {}),
+            headers: {
+              // Admin routes need a token to get as far as their own answer; the shape of the refusal is asserted above.
+              ...(url.startsWith('/_admin/api') ? { authorization: `Bearer ${token}` } : {}),
+              // Merged, not replaced: an earlier version spread a second `headers` object over the first, so a `POST`
+              // admin route was asked *without* its token and the test quietly measured `401` instead of the answer.
+              ...(method === 'POST' ? { 'content-type': 'application/json' } : {}),
+            },
+            ...(method === 'POST' ? { payload: {} } : {}),
           });
 
           expect(response.headers['content-type'], route).toMatch(/^application\/json/);

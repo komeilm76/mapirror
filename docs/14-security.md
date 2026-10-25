@@ -221,7 +221,7 @@ recorded here so a future reviewer does not "fix" the missing token check.
 - [ ] `Content-Disposition` uses a generated filename only
 - [ ] Security headers present on HTML and API responses
 - [ ] CSP has no `unsafe-eval`; no `v-html` in the codebase
-- [ ] Rate limits verified with a loop test (login, public download)
+- [x] Rate limits verified with a loop test (login, public download) — `login-route.spec.ts` (burst, `401`×N then `429`) and `rate-limit.spec.ts` (public reads, downloads, admin token; the download bucket proved separate by pointing it at the read window)
 - [ ] Unpublished country returns 404 on all public endpoints
 - [ ] Public payloads contain no `storage_path`, job ids, admin ids, or IP data
 - [ ] Secrets absent from git history (`git log -p | grep -i password` sanity check)
