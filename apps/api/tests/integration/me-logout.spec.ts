@@ -348,6 +348,67 @@ describe.skipIf(skipReason !== null)('POST /_auth/api/logout', () => {
     });
   });
 
+  it('refuses the logout that lost the race, and audits the session ending once', async () => {
+    // The `Promise.all` case above is the common shape, but it usually resolves in one order: the second request's
+    // `verifySession` already sees the committed revocation and answers `401` before it ever gets to the update. The
+    // line under test here is the one that matters when both verifications succeed first — a row lock makes the two
+    // updates queue, and the second one re-reads the row, finds `revoked_at` set, and must answer `TOKEN_REVOKED`
+    // rather than a second `204` (which would also write a second audit row).
+    //
+    // Held with `SELECT … FOR UPDATE` on the token row from another connection: a plain `SELECT` in `verifySession`
+    // does not block on it, so both requests get past verification, and both stall on the update until this releases.
+    await withSession(async ({ app, database, token }) => {
+      const row = await database.db
+        .selectFrom('admin_tokens')
+        .select('id')
+        .executeTakeFirstOrThrow();
+
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const gate = database.db.transaction().execute(async (trx) => {
+        await sql`select 1 from admin_tokens where id = ${row.id} for update`.execute(trx);
+        await held;
+      });
+
+      // Two waiters on a lock: the requests have finished verifying and are queued behind the gate.
+      const waiting = async (): Promise<number> => {
+        const result = await sql<{ count: string }>`
+          select count(*)::text as count from pg_stat_activity where wait_event_type = 'Lock'
+        `.execute(database.db);
+        return Number(result.rows[0]?.count ?? '0');
+      };
+      const bothQueued = (async () => {
+        for (let poll = 0; poll < 100; poll += 1) {
+          if ((await waiting()) >= 2) return true;
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        return false;
+      })();
+
+      const logouts = Promise.all([
+        postLogout(app, `Bearer ${token}`),
+        postLogout(app, `Bearer ${token}`),
+      ]);
+      expect(await bothQueued).toBe(true);
+      release();
+      await gate;
+
+      const [first, second] = await logouts;
+      expect([first.statusCode, second.statusCode].sort()).toEqual([204, 401]);
+      const refused = first.statusCode === 401 ? first : second;
+      expect(errorCode(refused.body)).toBe('TOKEN_REVOKED');
+
+      const audits = await database.db
+        .selectFrom('audit_logs')
+        .select('action')
+        .where('action', '=', 'auth.logout')
+        .execute();
+      expect(audits).toHaveLength(1);
+    });
+  });
+
   it('stores a junk client address as NULL, and still signs the session out', async () => {
     // The pass-22 lesson, re-applied: `request.ip` is a header when a proxy is trusted, and `inet` refuses
     // `not-an-ip` with `22P02`. An audit row is a write path like any other, so the address is normalised before it

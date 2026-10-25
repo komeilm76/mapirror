@@ -204,6 +204,38 @@ describe.skipIf(skipReason !== null)('POST /_auth/api/login', () => {
     );
   });
 
+  it('holds the limit against a burst that arrives together', async () => {
+    // A check-then-act limiter lets a burst through: every request reads the same empty counter, all of them pass, and
+    // each one pays for a 64 MiB Argon2 verify — the amplification the throttle exists to stop (measured before the
+    // fix, pass 28: 40 concurrent attempts, 40 verifications, zero 429s). The reservation taken by `check` is what makes
+    // the allowance atomic within the process, so a burst gets exactly `maxAttempts` attempts and `429` for the rest.
+    await withApp(
+      async ({ app }) => {
+        const responses = await Promise.all(
+          Array.from({ length: 12 }, () =>
+            post(app, { username: 'admin', password: 'definitely not it' }),
+          ),
+        );
+
+        const statuses = responses.map((response) => response.statusCode).sort();
+        expect(statuses.filter((status) => status === 401)).toHaveLength(4);
+        expect(statuses.filter((status) => status === 429)).toHaveLength(8);
+
+        // The refusals are the short "attempts in progress" answer, not a fifteen-minute lockout: nothing has failed
+        // yet, the slots are simply busy, and a client that waits a second will find them free.
+        const limited = responses.find((response) => response.statusCode === 429);
+        expect(limited?.headers['retry-after']).toBe('1');
+
+        // And the reservation is given back: with the burst settled, the failures are on the record and the answer is
+        // the ordinary lockout, measured in the window rather than in seconds.
+        const afterwards = await post(app, { username: 'admin', password: 'definitely not it' });
+        expect(afterwards.statusCode).toBe(429);
+        expect(afterwards.headers['retry-after']).toBe('900');
+      },
+      { maxAttempts: 4 },
+    );
+  });
+
   it('does not set Retry-After on any other answer', async () => {
     // A `Retry-After` on a 401 would tell a client to wait, which is a lie: the next attempt is allowed immediately.
     await withApp(async ({ app }) => {

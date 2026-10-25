@@ -408,6 +408,40 @@ describe.skipIf(skipReason !== null)('login — the client address', () => {
   });
 });
 
+describe.skipIf(skipReason !== null)(
+  'login — an attempt that dies still gives its slot back',
+  () => {
+    it('does not spend the allowance when the attempt fails before the credential check', async () => {
+      // `check` reserves the slot before the password is verified, so every failure path after it owes a release. A
+      // database error is the one that matters most: it repeats — the database stays down, retries keep arriving — and an
+      // attempt that neither settled as a failure nor gave its slot back would lock the pair out for the full window
+      // without a single wrong password (the reason the service body is wrapped in `try`/`finally`, pass 28).
+      //
+      // A dropped table is a real server-side failure that no `catch` in the service is meant to absorb.
+      await withAdmin(
+        async (harness) => {
+          await sql`drop table admins cascade`.execute(harness.database.db);
+
+          for (let attemptNumber = 1; attemptNumber <= 12; attemptNumber += 1) {
+            const error: unknown = await attempt(harness).then(
+              () => new Error('expected the login to fail'),
+              (caught: unknown) => caught,
+            );
+            expect(error).toBeInstanceOf(Error);
+            // The slot is back after every attempt, and the failures were never recorded: a crashed request is not a
+            // wrong password.
+            expect(harness.throttle.inFlight, `attempt ${String(attemptNumber)}`).toBe(0);
+          }
+
+          // Twelve attempts against `maxAttempts: 10` and the pair is still allowed: nothing leaked.
+          expect(harness.throttle.check('203.0.113.9', 'admin')).toEqual({ limited: false });
+        },
+        { maxAttempts: 10 },
+      );
+    });
+  },
+);
+
 describe.skipIf(skipReason !== null)('login — the audit log does not block the answer', () => {
   it('still answers 401 when the audit row cannot be written', async () => {
     // The audit table is made unwritable with a `CHECK (false)` constraint — a real server-side refusal that does not

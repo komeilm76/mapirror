@@ -88,6 +88,10 @@ export async function login(deps: LoginDeps, request: LoginRequestLike): Promise
   const username = request.username.trim();
   const { throttle } = deps;
 
+  // `check` **reserves** a slot when it allows the attempt, so a burst of concurrent logins cannot all pass the same
+  // empty counter and each get a full Argon2 verify (measured, pass 28). Every path below therefore settles the
+  // reservation exactly once — `recordFailure`, `recordSuccess` or `release` — and the `finally` is what makes that
+  // true for the paths nobody wrote on purpose.
   const verdict = throttle.check(ip, username);
   if (verdict.limited) {
     throw new AppError('RATE_LIMITED', 'Too many failed sign-in attempts. Wait and try again.', {
@@ -96,70 +100,84 @@ export async function login(deps: LoginDeps, request: LoginRequestLike): Promise
     });
   }
 
-  const admin = await findAdminByUsername(deps.database, username);
-  // `verifyPassword` on the dummy hash when there is no account: same algorithm, same parameters, same time.
-  const passwordMatches = await verifyPassword(
-    admin?.password_hash ?? DUMMY_PASSWORD_HASH,
-    request.password,
-  );
-
-  if (admin === null || !passwordMatches) {
-    throttle.recordFailure(ip, username);
-    await recordFailure(deps, {
-      adminId: admin?.id ?? null,
-      actorName: admin?.username ?? username,
-      metadata: { reason: admin === null ? 'unknown_username' : 'wrong_password' },
-      ip,
-    });
-    throw new AppError('INVALID_CREDENTIALS', INVALID_CREDENTIALS_MESSAGE);
-  }
-
-  if (!admin.is_active) {
-    // Reached only with a *correct* password, which is why it can be a 403 that names the account's state: the caller
-    // has already proved they know the secret, so there is no username to leak. It is not counted against the
-    // throttle — the credentials were right, and locking the account out would punish the person who can prove they
-    // are entitled to it.
-    await recordFailure(deps, {
-      adminId: admin.id,
-      actorName: admin.username,
-      metadata: { reason: 'account_disabled' },
-      ip,
-    });
-    throw new AppError(
-      'ACCOUNT_DISABLED',
-      'This account is deactivated. Ask an operator to re-enable it.',
+  let settled = false;
+  try {
+    const admin = await findAdminByUsername(deps.database, username);
+    // `verifyPassword` on the dummy hash when there is no account: same algorithm, same parameters, same time.
+    const passwordMatches = await verifyPassword(
+      admin?.password_hash ?? DUMMY_PASSWORD_HASH,
+      request.password,
     );
+
+    if (admin === null || !passwordMatches) {
+      throttle.recordFailure(ip, username);
+      settled = true;
+      await recordFailure(deps, {
+        adminId: admin?.id ?? null,
+        actorName: admin?.username ?? username,
+        metadata: { reason: admin === null ? 'unknown_username' : 'wrong_password' },
+        ip,
+      });
+      throw new AppError('INVALID_CREDENTIALS', INVALID_CREDENTIALS_MESSAGE);
+    }
+
+    if (!admin.is_active) {
+      // Reached only with a *correct* password, which is why it can be a 403 that names the account's state: the caller
+      // has already proved they know the secret, so there is no username to leak. It is not counted against the
+      // throttle — the credentials were right, and locking the account out would punish the person who can prove they
+      // are entitled to it. The reservation is given back rather than recorded: the account state, not the credentials,
+      // decided this answer, so the failures already on the counter stay there.
+      throttle.release(ip, username);
+      settled = true;
+      await recordFailure(deps, {
+        adminId: admin.id,
+        actorName: admin.username,
+        metadata: { reason: 'account_disabled' },
+        ip,
+      });
+      throw new AppError(
+        'ACCOUNT_DISABLED',
+        'This account is deactivated. Ask an operator to re-enable it.',
+      );
+    }
+
+    const issued = await withTransaction(deps.database, async (trx) => {
+      const token = await issueToken(trx, admin.id, {
+        ttlHours: deps.tokenTtlHours,
+        now,
+        userAgent: deps.userAgent ?? null,
+        ip,
+      });
+      await recordLogin(trx, admin.id, now);
+      await insertAuditLog(trx, {
+        actorId: admin.id,
+        actorName: admin.username,
+        action: AUDIT_ACTIONS.login,
+        ip,
+        // The token id, not the token: an audit row must never hold a credential, and the id is what a "revoke this
+        // session" screen needs.
+        targetType: 'admin_token',
+        targetId: token.tokenId,
+        metadata: { userAgent: deps.userAgent ?? null },
+      });
+      return token;
+    });
+
+    // Only after the token, the login record and the audit row committed: a transaction that failed is not a success
+    // that should forgive the failures before it.
+    throttle.recordSuccess(ip, username);
+    settled = true;
+
+    return {
+      token: issued.token,
+      expiresAt: issued.expiresAt.toISOString(),
+      admin: { id: admin.id, username: admin.username },
+    };
+  } finally {
+    // A database error, a bad hash, a bug: the attempt neither succeeded nor failed, and the reservation must go back
+    // or the allowance shrinks by one for the life of the process.
+    if (!settled) throttle.release(ip, username);
   }
-
-  const issued = await withTransaction(deps.database, async (trx) => {
-    const token = await issueToken(trx, admin.id, {
-      ttlHours: deps.tokenTtlHours,
-      now,
-      userAgent: deps.userAgent ?? null,
-      ip,
-    });
-    await recordLogin(trx, admin.id, now);
-    await insertAuditLog(trx, {
-      actorId: admin.id,
-      actorName: admin.username,
-      action: AUDIT_ACTIONS.login,
-      ip,
-      // The token id, not the token: an audit row must never hold a credential, and the id is what a "revoke this
-      // session" screen needs.
-      targetType: 'admin_token',
-      targetId: token.tokenId,
-      metadata: { userAgent: deps.userAgent ?? null },
-    });
-    return token;
-  });
-
-  throttle.recordSuccess(ip, username);
-
-  return {
-    token: issued.token,
-    expiresAt: issued.expiresAt.toISOString(),
-    admin: { id: admin.id, username: admin.username },
-  };
 }
 
 /** The two fields login reads. A structural type rather than the Zod-inferred one, so the service can be called from a

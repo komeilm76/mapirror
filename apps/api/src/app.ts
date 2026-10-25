@@ -133,7 +133,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   try {
     await registerPipeline(app, options.slots ?? PLUGIN_ORDER, {
-      config: options.config ?? parseEnv({}),
+      // The instance parsed above, not a second parse: `parseEnv` validates and defaults, and two calls would build two
+      // config objects that agree today and could silently diverge the day one of them gains a side effect.
+      config,
       // Threaded through, not just declared: an option that is accepted and then dropped would make every test
       // above pass while the `db` stage quietly opened a real pool against the default DSN.
       ...(options.database === undefined ? {} : { database: options.database }),

@@ -121,6 +121,39 @@ describe('promptSecret — terminal mode', () => {
     return { input, calls };
   }
 
+  it('answers two prompts from one paste, which arrives as a single chunk', async () => {
+    // Asking for a new password and then for it again, an operator pastes the two-line block. A terminal delivers that
+    // as one `data` event, and the first call consumes the whole chunk — so the second prompt used to wait for input
+    // that had already arrived: a hang on a TTY, `no input` on a stream that then ends (measured, pass 28).
+    const input = Readable.from(['first-password\nsecond-password\n']);
+    const output = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback();
+      },
+    });
+
+    const first = await promptSecret({ question: 'New password: ', input, output });
+    const second = await promptSecret({ question: 'Repeat: ', input, output });
+
+    expect(first).toBe('first-password');
+    expect(second).toBe('second-password');
+  });
+
+  it('splits a pasted block written with Windows line endings', async () => {
+    // The same paste through a Windows terminal, or through a tool that normalises less than it promises. The `\r` is
+    // the terminator's second half and belongs to neither password — an ending of `-password\r` would be rejected by
+    // the policy with a message that looks like a typo.
+    const input = Readable.from(['crlf-one\r\ncrlf-two\r\n']);
+    const output = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback();
+      },
+    });
+
+    expect(await promptSecret({ question: 'Password: ', input, output })).toBe('crlf-one');
+    expect(await promptSecret({ question: 'Repeat: ', input, output })).toBe('crlf-two');
+  });
+
   it('puts the terminal into raw mode before reading, and restores it afterwards', async () => {
     const { input, calls } = fakeTerminal('hunter2-very-long\n');
     const output = new Writable({

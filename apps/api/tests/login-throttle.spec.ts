@@ -98,6 +98,130 @@ describe('LoginThrottle', () => {
     expect(throttle.check(IP, 'admin').limited).toBe(true);
   });
 
+  it('counts attempts that are still being verified against the allowance', () => {
+    // The reservation, in isolation: ten checks with nothing settled exhausts the allowance even though no failure has
+    // been recorded yet. Without it, ten simultaneous requests all pass `check` and all reach Argon2 (pass 28).
+    const { throttle } = throttleWith();
+
+    for (let attempt = 1; attempt <= 10; attempt += 1) {
+      expect(throttle.check(IP, 'admin'), `attempt ${String(attempt)}`).toEqual({ limited: false });
+    }
+
+    const verdict = throttle.check(IP, 'admin');
+    expect(verdict.limited).toBe(true);
+    if (!verdict.limited) return;
+    // A second, not the window: the attempts holding the slots are one hash away from finishing.
+    expect(verdict.reason).toBe('in-flight');
+    expect(verdict.retryAfterSeconds).toBe(1);
+    expect(throttle.inFlight).toBe(2); // eleven keys minus the one that was refused: pair + ip, ten times over
+  });
+
+  it('gives the slot back when an attempt is released, and when one settles as a failure', () => {
+    const { throttle } = throttleWith({ maxAttempts: 2 });
+
+    expect(throttle.check(IP, 'admin')).toEqual({ limited: false });
+    expect(throttle.check(IP, 'admin')).toEqual({ limited: false });
+    expect(throttle.check(IP, 'admin').limited).toBe(true);
+
+    // A release is "this attempt neither succeeded nor failed" — a database error, a request that died.
+    throttle.release(IP, 'admin');
+    expect(throttle.check(IP, 'admin')).toEqual({ limited: false });
+
+    // Settling the two remaining reservations as failures fills the counter: the answer is now the lockout, not the
+    // busy signal, because a recorded failure is what the window is measured from.
+    throttle.recordFailure(IP, 'admin');
+    throttle.recordFailure(IP, 'admin');
+    const verdict = throttle.check(IP, 'admin');
+    expect(verdict.limited).toBe(true);
+    if (!verdict.limited) return;
+    expect(verdict.reason).toBe('failures');
+    expect(verdict.retryAfterSeconds).toBe(15 * 60);
+  });
+
+  it("settling more often than reserving does not go negative or free someone else's slot", () => {
+    // A caller that records a failure without a reservation (a test, a future code path) must not hand out extra
+    // allowance, and a double release must not cancel another attempt's reservation.
+    const { throttle } = throttleWith({ maxAttempts: 2 });
+
+    throttle.recordFailure(IP, 'admin');
+    throttle.release(IP, 'admin');
+    throttle.release(IP, 'admin');
+    expect(throttle.inFlight).toBe(0);
+
+    // The stray failure still counts — the releases returned slots, not failures — so exactly one of the two attempts
+    // is left: it takes the last slot, and the next attempt is refused because that one is still in progress.
+    expect(throttle.check(IP, 'admin')).toEqual({ limited: false });
+    expect(throttle.inFlight).toBe(2); // the pair key and the address key, one reservation each
+    const verdict = throttle.check(IP, 'admin');
+    expect(verdict.limited).toBe(true);
+    if (!verdict.limited) return;
+    // Still `in-flight`, and deliberately so: the outstanding attempt may yet succeed and free the pair, so promising a
+    // fifteen-minute lockout would be a guess. Once it settles as a failure, the next answer is the real lockout — which
+    // is the other test's assertion, and the branch this one exists to keep distinct.
+    expect(verdict.reason).toBe('in-flight');
+  });
+
+  it('applies the in-flight allowance to the address counter too', () => {
+    // Spraying: one attempt per username never fills a pair counter, so the address counter is what has to bound the
+    // number of verifications in flight. `perIpMultiplier: 1` makes both limits 4 here.
+    const { throttle } = throttleWith({ maxAttempts: 4, perIpMultiplier: 1 });
+
+    for (let index = 0; index < 4; index += 1) {
+      expect(throttle.check(IP, `user${String(index)}`)).toEqual({ limited: false });
+    }
+
+    const verdict = throttle.check(IP, 'user-4');
+    expect(verdict.limited).toBe(true);
+    if (!verdict.limited) return;
+    expect(verdict.reason).toBe('in-flight');
+
+    // Another address is unaffected: the reservation belongs to the address that made it.
+    expect(throttle.check('198.51.100.7', 'user-4')).toEqual({ limited: false });
+  });
+
+  it('a successful login releases its reservation and clears the pair', () => {
+    const { throttle } = throttleWith({ maxAttempts: 2 });
+
+    throttle.recordFailure(IP, 'admin');
+    expect(throttle.inFlight).toBe(0);
+
+    expect(throttle.check(IP, 'admin')).toEqual({ limited: false });
+    throttle.recordSuccess(IP, 'admin');
+
+    // Slot back, failures gone: two more attempts are allowed before the pair counter fills again.
+    expect(throttle.inFlight).toBe(0);
+    expect(throttle.check(IP, 'admin')).toEqual({ limited: false });
+    expect(throttle.check(IP, 'admin')).toEqual({ limited: false });
+    expect(throttle.check(IP, 'admin').limited).toBe(true);
+  });
+
+  it('names the instant the lock actually lifts, not an earlier one', () => {
+    // `lockedUntil` is the **oldest** failure plus the window, which is also when that failure leaves the sliding window
+    // and the count first falls below the limit. The two must agree: a client that sleeps to the stated instant and
+    // retries has to be let in, and one that retries a moment earlier must still be refused. The failures are spread out
+    // here on purpose — with them all at one instant, "oldest" and "newest" would be the same number and a wrong pick
+    // would pass.
+    const { throttle, clock } = throttleWith({ maxAttempts: 3 });
+    const started = clock.now().getTime();
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      throttle.check(IP, 'admin');
+      throttle.recordFailure(IP, 'admin');
+      clock.advance(60_000);
+    }
+
+    const early = throttle.check(IP, 'admin');
+    expect(early.limited).toBe(true);
+    if (!early.limited) return;
+    expect(early.lockedUntil.getTime()).toBe(started + WINDOW_MS);
+    // Three minutes have passed, so the wait is the remaining twelve — not the full fifteen.
+    expect(early.retryAfterSeconds).toBe(720);
+
+    clock.advance(WINDOW_MS - 180_000 - 1);
+    expect(throttle.check(IP, 'admin').limited).toBe(true);
+    clock.advance(1);
+    expect(throttle.check(IP, 'admin')).toEqual({ limited: false });
+  });
+
   it('forgets the pair after a successful login, and keeps the address-level count', () => {
     const { throttle } = throttleWith();
 

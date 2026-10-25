@@ -147,7 +147,9 @@ travels in the body and nowhere else (a token in a shared cache is a session han
 Errors: `400 VALIDATION_ERROR` with `details.issues[]` naming the field, `401 INVALID_CREDENTIALS` (generic, no
 user enumeration), `429 RATE_LIMITED` with `details.lockedUntil` + `details.retryAfterSeconds` **and** a matching
 `Retry-After` header (whole seconds, ≥ 1; no other answer carries that header) after N failures (default 10
-attempts / 15 min, per IP + username, 30 / IP), and
+attempts / 15 min, per IP + username, 30 / IP). The same `429` also answers `retryAfterSeconds: 1` while N attempts
+for that pair are **still being verified** — an allowance that is busy, not a lockout, so a client that waits a
+second may well succeed; `lockedUntil` is then one second ahead, not the end of the window. And
 `403 ACCOUNT_DISABLED` only when the admin account itself is deactivated (rate limiting is **not** a 403,
 and the code name says what it means — an earlier `ACCOUNT_LOCKED` read like a lockout and invited emitting
 403 for throttling).

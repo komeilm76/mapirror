@@ -3,9 +3,47 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 27 passes · 129 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2).
+**Totals:** 28 passes · 131 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 28 — 2026-10-25 (adversarial review of the whole auth surface)
+
+Two defects, both **concurrency**, both invisible to a sequential test, and both found by running many requests at
+once instead of reading the code again:
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The login throttle could be bypassed by arriving simultaneously.** `check()` counted *recorded* failures, and a failure is only recorded when Argon2 has finished — so forty concurrent logins for one account all read the same empty counter, all passed, and each one paid a 64 MiB, 100 ms verify. Measured on the real route (`app.inject` ×40 through `Promise.all`): `401`×40 in 1 653 ms, **zero** `429`s, and the correct password still worked afterwards. A second identical burst was refused (`429`×40), which is what made the bug look fixed: the allowance was enforced *sequentially*, exactly the shape a password-spraying script avoids. The amplification is aimed at the endpoint the throttle exists to protect | `check()` now **reserves** a slot — one for the pair and one for the address — and the attempt settles it exactly once: `recordFailure` on bad credentials, `recordSuccess` after the token transaction commits, `release` for `403 ACCOUNT_DISABLED` (not a credential failure) and in a `finally` for anything that throws. Slots held by attempts still in progress count against the same limit, so the allowance is atomic inside the process. The refusal is a *different* verdict — `reason: 'in-flight'`, `retryAfterSeconds: 1` — not the fifteen-minute lockout, because the outstanding attempts may succeed. Re-probed: `401`×10 + `429`×30 in 440 ms, then `429`×40 for a second burst |
+| 2 | **A password pasted as two lines lost the second one — and the prompt hung.** A terminal delivers a paste as **one** `data` event, newlines included, so the first prompt consumed the whole chunk and the repeat prompt waited for input that had already arrived. Measured in a real PTY (`python3 -c 'pty.fork()…'` against `bun run admin:init`, both lines written in a single `write`): the transcript ended at `Password: \r\nRepeat password: ` and the process had to be killed — no account, no error, an operator staring at a cursor. On a stream that then ends the same code throws `no input: the terminal closed before a line was read` (probed first, in memory) | The characters after the newline are kept in a `WeakMap` keyed by the stream and replayed into the next prompt before it listens, so one paste answers both. `\r\n` is treated as one terminator when the remainder is split off — otherwise the next prompt would start with a bare newline and answer itself with an empty string (caught by writing the test, not by the probe). The map is bounded at 512 characters and dies with the stream. Re-probed in the same PTY: exit `0`, transcript `Password: \r\nRepeat password: \r\nadmin 'admin' created (password from prompt)`, nothing echoed, and the `admins` row plus its `auth.admin_created` audit row confirmed in the database |
+
+Probed and found sound, rather than assumed — the sweep this pass covered the repositories (`admins`,
+`admin-tokens`, `audit-logs`), `modules/auth/routes.ts`, `app.ts`, `config/env.ts`, both operator scripts and
+`scripts/lib/secret-prompt.ts`:
+
+- **The lockout instant is the instant the lock lifts.** `details.lockedUntil` is the *oldest* failure plus the window,
+  and the same window is what `check()` uses, so a client that sleeps to the stated instant is let in (`lockedUntil`)
+  and one that retries a millisecond earlier is not. Confirmed with a moving clock against staggered failures, at
+  `window−1 ms`, `window` and `window+1 ms`, and now pinned by a test. This was an open candidate from the previous
+  pass; it is not a defect.
+- **A crash cannot shrink the allowance.** With the throttle reserving, an attempt that dies mid-flight would leak a
+  slot forever; the new test drops the `admins` table, runs twelve logins against a limit of ten, and asserts both that
+  every attempt is refused and that the pair is still allowed and `inFlight` is `0` afterwards.
+- **The double-logout refusal is reachable.** The existing `Promise.all` case usually answers `401` from
+  `verifySession` (the second request already sees the committed revocation), so the "lost the race" branch — both
+  verifications succeed, then the second `UPDATE` matches no row — was never executed. A `SELECT … FOR UPDATE` on the
+  token row from another connection makes both logouts queue behind the gate, so the branch runs every time; five
+  consecutive runs, and the mutation that removes the guard fails it.
+
+Mutation-checked: 8 mutations, all caught — the reservation ignored, the reservation never taken, the settle in
+`recordFailure` removed, the `finally` release removed, the CRLF split removed, the leftover dropped, the lockout
+instant read from the newest failure instead of the oldest, and the logout race guard removed. New tests: 11 across
+`login-throttle.spec.ts` (6), `integration/login-route.spec.ts` (1), `integration/login.spec.ts` (1),
+`integration/me-logout.spec.ts` (1) and `scripts/tests/secret-prompt.spec.ts` (2). The repository is at **692 tests /
+49 files**, coverage **97.6 %** statements. `04-api.md` §1 and `14-security.md` §3 now say a `429` has two meanings,
+ADR-027 has the reservation row, and `08-tasks.md` records it against `P1-AUTH-03`.
 
 ---
 

@@ -414,6 +414,7 @@ moves (fixed or sliding), and what the key is (address, username, or both).
 | Bound | 10 000 keys; expired keys pruned, then the oldest evicted | An unbounded counter is a memory-exhaustion lever aimed at the endpoint it protects. The cost of eviction is a resettable counter for someone already failing |
 | `0` limits | Rejected at construction (`RangeError`) | A `0` limit is silence, not safety — and a comparison of `0 >= 0` once locked every login out |
 | Instances | Exactly one, built in `app.ts` and required by the pipeline | Two counters in one process would double every limit while looking correct; the option is required so it cannot be passed only sometimes |
+| Counting | A refusal *and* an **in-flight reservation**: `check` takes a slot and the attempt gives it back with `recordFailure`, `recordSuccess` or `release` | A counter that only sees finished failures is a check-then-act race: forty simultaneous requests read the same empty counter, all pass, and each one pays a 64 MiB Argon2 verify (measured, pass 28). The reservation makes the allowance atomic inside the process, and it is released in a `finally`, so a crashed request cannot shrink it |
 
 **Consequences.**
 
@@ -423,6 +424,9 @@ moves (fixed or sliding), and what the key is (address, username, or both).
   alternative is a durable write on the unauthenticated path.
 - Counters are keyed on the **normalised** address (`lib/client-ip.ts`), so a junk `X-Forwarded-For` cannot mint a new
   bucket per request — the pass 22 defect.
+- A `429` has two meanings and says which: `retryAfterSeconds` in the window is a lockout, `1` is "every attempt this
+  allowance permits is in progress right now". The second is not a promise of a lockout — the outstanding attempts may
+  succeed — which is why a client is told to wait a second rather than fifteen minutes.
 
 ---
 

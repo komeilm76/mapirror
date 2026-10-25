@@ -39,6 +39,19 @@ export interface TerminalInput extends Readable {
   isRaw?: boolean;
 }
 
+/**
+ * Characters a previous prompt on the same terminal received but did not consume.
+ *
+ * A terminal delivers whatever was pasted as **one** `data` event, newlines included: pasting a two-line block at
+ * `New password:` hands the first call `"secret\nsecret\n"`. The first line is the answer; without keeping the rest, the
+ * repeat prompt waits for input that has already arrived — a hang on a TTY, `no input` on a stream that then ends
+ * (measured, pass 28). Keyed by the stream and weak, so nothing outlives the terminal it belongs to.
+ */
+const leftovers = new WeakMap<object, string>();
+
+/** How much unconsumed input is worth keeping. A password is at most 256 code points; the rest is dropped. */
+const MAX_LEFTOVER_CHARACTERS = 512;
+
 /** What the prompt needs. Streams are injectable so the behaviour can be asserted without a terminal. */
 export interface SecretPromptOptions {
   /** Text shown before the cursor, e.g. `Password: `. */
@@ -104,7 +117,12 @@ export async function promptSecret(options: SecretPromptOptions): Promise<string
       };
 
       const onData = (chunk: string | Buffer): void => {
-        for (const character of String(chunk)) {
+        const text = String(chunk);
+        for (let index = 0; index < text.length; index += 1) {
+          // `charAt` rather than `text[index]`: it is typed as `string` (an index is `string | undefined` under
+          // `noUncheckedIndexedAccess`), and iterating by code unit keeps `slice(index + 1)` pointing at the character
+          // after the newline even when the password contains astral characters.
+          const character = text.charAt(index);
           // A terminal sends escape sequences for arrow keys, Home, Delete… Dropping the sequence keeps them out of the
           // secret instead of appending `[A` to a password the operator will then be unable to reproduce.
           const code = character.codePointAt(0) ?? 0;
@@ -123,6 +141,14 @@ export async function promptSecret(options: SecretPromptOptions): Promise<string
             continue;
           }
           if (character === '\r' || character === '\n') {
+            // Whatever followed the newline in the same event belongs to the *next* prompt, not to the bin. A paste of
+            // both lines is the case: discarding it made the repeat prompt wait for input already received.
+            // `\r\n` is one terminator: skipping the `\n` too is what keeps a Windows paste from starting the next
+            // prompt with a bare newline, which would answer it with an empty string.
+            const after =
+              character === '\r' && text.charAt(index + 1) === '\n' ? index + 2 : index + 1;
+            const rest = text.slice(after);
+            if (rest.length > 0) leftovers.set(input, rest.slice(0, MAX_LEFTOVER_CHARACTERS));
             finish();
             resolve(value);
             return;
@@ -157,6 +183,14 @@ export async function promptSecret(options: SecretPromptOptions): Promise<string
       input.on('data', onData);
       input.on('end', onEnd);
       input.on('close', onEnd);
+
+      // Typed ahead of the question: a paste that contained two lines, or keystrokes that arrived while the previous
+      // prompt was still closing. Consumed first, and if it already contains a newline the promise settles here.
+      const pending = leftovers.get(input);
+      if (pending !== undefined) {
+        leftovers.delete(input);
+        onData(pending);
+      }
     });
   } finally {
     input.setRawMode?.(wasRaw);

@@ -57,7 +57,15 @@ export type ThrottleVerdict =
   | { readonly limited: false }
   | {
       readonly limited: true;
-      /** The instant at which the oldest failure in the window expires, i.e. when an attempt can succeed again. */
+      /**
+       * Why the attempt was refused, because the two answers have different deadlines.
+       *
+       * `failures` — the counter is full and a recorded failure has to leave the window; the answer can be minutes away.
+       * `in-flight` — the allowance is exhausted by attempts that are being verified *right now*; they finish in the
+       * time one Argon2 hash takes, so the retry is a second, not a quarter of an hour.
+       */
+      readonly reason: 'failures' | 'in-flight';
+      /** When the attempt can succeed again: the oldest failure's expiry, or one second for `in-flight`. */
       readonly lockedUntil: Date;
       /** Whole seconds until {@link lockedUntil}, never less than 1 — a `Retry-After: 0` invites a hot retry loop. */
       readonly retryAfterSeconds: number;
@@ -83,6 +91,14 @@ export interface LoginThrottleOptions {
 
 /** Default ceiling on tracked keys: 10 000 keys × ≤ 11 timestamps is a few megabytes at worst. */
 export const DEFAULT_MAX_THROTTLE_KEYS = 10_000;
+
+/**
+ * How long a client is told to wait when the allowance is held by attempts still being verified.
+ *
+ * One hash takes ~74 ms; a second is the smallest integer a `Retry-After` can honestly carry, and it is long enough
+ * that a client obeying it will find the slots free.
+ */
+const BUSY_RETRY_MS = 1_000;
 
 /** Separator between the two parts of a pair key; a NUL cannot appear in a username or an address. */
 const KEY_SEPARATOR = '\u0000';
@@ -123,6 +139,11 @@ export class LoginThrottle {
   readonly #maxKeys: number;
   readonly #now: () => Date;
   readonly #counters = new Map<string, Counter>();
+  /**
+   * Attempts currently being verified, per key. Separate from {@link #counters} because a reservation is not a failure:
+   * it becomes one (or disappears) when the attempt finishes, and it must never contribute to `lockedUntil`.
+   */
+  readonly #inFlight = new Map<string, number>();
 
   /**
    * @param options - Limits, window, clock and capacity.
@@ -147,28 +168,47 @@ export class LoginThrottle {
   }
 
   /**
-   * Reports whether an attempt may proceed, **without** recording anything.
+   * Decides whether an attempt may proceed, and **reserves** its slot when it may.
    *
    * Checked before the password is verified, so a locked-out client costs a map lookup instead of a 64 MiB Argon2
    * hash — the difference between a lockout and a memory-amplification lever (`16-changelog.md` pass 20).
    *
+   * The reservation is what makes the allowance hold against a burst rather than against a sequence (`16-changelog.md`
+   * pass 28). It also puts an obligation on the caller: every allowed attempt must settle exactly once, with
+   * {@link recordFailure}, {@link recordSuccess} or {@link release}. Settling twice is harmless — no counter goes below
+   * zero — but never settling shrinks the allowance by one until the process restarts.
+   *
    * @param ip - Client address, already normalised (`lib/client-ip.ts`).
    * @param username - Submitted name; case is folded so `Admin` and `admin` share one counter.
-   * @returns Not limited, or the lockout instant for that pair (whichever counter is closer to expiry is ignored: the
-   * pair's own lockout is the one that applies to *this* attempt).
+   * @returns Not limited, or the refusal: a lockout (`reason: 'failures'`, the instant it lifts) or a full allowance
+   * (`reason: 'in-flight'`, a second from now) — whichever counter is closer to expiry is ignored, because the pair's
+   * own verdict is the one that applies to *this* attempt.
    */
   check(ip: string | null, username: string): ThrottleVerdict {
     const now = this.#now();
+    const pairKey = this.#pairKey(ip, username);
+    const ipKey = this.#ipKey(ip);
 
-    const pair = nonEmpty(this.#live(this.#pairKey(ip, username), now));
+    const pair = nonEmpty(this.#live(pairKey, now));
     if (pair !== null && pair.length >= this.#maxAttempts) return this.#lockout(pair, now);
+    // Attempts that are *inside* the verification count against the same allowance. Without this, a burst of
+    // simultaneous requests all read the same empty counter before any of them records a failure, and every one of
+    // them gets a full 64 MiB Argon2 verify — the amplification this throttle exists to stop (measured, pass 28:
+    // 40 concurrent attempts for one account, 40 verifications, zero `429`s).
+    if (this.#pending(pairKey) + (pair?.length ?? 0) >= this.#maxAttempts) return this.#busy(now);
 
     // No `perIpLimit > 0` test here, and none needed: with the counter disabled the limit is `0`, and a `0 >= 0`
     // comparison once locked *every* login out (measured, pass 23). `nonEmpty` makes an empty counter `null`, so a
     // disabled counter reads as "no failures" rather than as "limit met". The regression test that switches it off
     // still fails if that ever changes.
-    const byIp = nonEmpty(this.#live(this.#ipKey(ip), now));
+    const byIp = nonEmpty(this.#live(ipKey, now));
     if (byIp !== null && byIp.length >= this.#perIpLimit) return this.#lockout(byIp, now);
+    if (this.#perIpLimit > 0 && this.#pending(ipKey) >= this.#perIpLimit) return this.#busy(now);
+
+    // Reserved before returning: the caller now owes one `recordFailure`, `recordSuccess` or `release`. Everything
+    // that settles is idempotent and never drops below zero, so a caller that settles twice is harmless.
+    this.#reserve(pairKey);
+    if (this.#perIpLimit > 0) this.#reserve(ipKey);
 
     return { limited: false };
   }
@@ -181,8 +221,14 @@ export class LoginThrottle {
    */
   recordFailure(ip: string | null, username: string): void {
     const now = this.#now();
-    this.#push(this.#pairKey(ip, username), now);
-    if (this.#perIpLimit > 0) this.#push(this.#ipKey(ip), now);
+    const pairKey = this.#pairKey(ip, username);
+    const ipKey = this.#ipKey(ip);
+    // The reservation becomes a recorded failure: settle it first, so the slot is free even if the push below has to
+    // evict something.
+    this.#settle(pairKey);
+    if (this.#perIpLimit > 0) this.#settle(ipKey);
+    this.#push(pairKey, now);
+    if (this.#perIpLimit > 0) this.#push(ipKey, now);
   }
 
   /**
@@ -196,17 +242,45 @@ export class LoginThrottle {
    * @param username - Submitted name.
    */
   recordSuccess(ip: string | null, username: string): void {
+    this.#settle(this.#pairKey(ip, username));
+    if (this.#perIpLimit > 0) this.#settle(this.#ipKey(ip));
     this.#counters.delete(this.#pairKey(ip, username));
+  }
+
+  /**
+   * Gives a reservation back **without** recording anything.
+   *
+   * For the paths where the attempt neither proved nor disproved the password — a database error during the lookup, a
+   * deactivated account whose password was right — and for the `finally` in the login flow, which is what guarantees a
+   * reservation cannot leak when a request dies somewhere unexpected. A leaked reservation would not lock an account
+   * out (in-flight counts reset with the process and `get inFlight` makes it visible), but it would quietly shrink the
+   * allowance by one for as long as the process lives.
+   *
+   * @param ip - Client address, normalised.
+   * @param username - Submitted name.
+   */
+  release(ip: string | null, username: string): void {
+    this.#settle(this.#pairKey(ip, username));
+    if (this.#perIpLimit > 0) this.#settle(this.#ipKey(ip));
   }
 
   /** Forgets everything. For tests, and for a process that wants a clean slate after a configuration change. */
   reset(): void {
     this.#counters.clear();
+    this.#inFlight.clear();
   }
 
   /** How many keys are currently tracked; a test asserts the bound holds. */
   get size(): number {
     return this.#counters.size;
+  }
+
+  /**
+   * How many reservations are outstanding. Exposed so the login flow's `finally` can be tested ("nothing leaked") and
+   * so an operator reading a heap dump has a name for the map.
+   */
+  get inFlight(): number {
+    return this.#inFlight.size;
   }
 
   /** The `(ip, username)` limit, exposed so a test and a log line can state it without re-deriving it. */
@@ -262,6 +336,43 @@ export class LoginThrottle {
     }
   }
 
+  /** Reservations outstanding for one key. */
+  #pending(key: string): number {
+    return this.#inFlight.get(key) ?? 0;
+  }
+
+  /** Takes one slot. Bounded like the counters: a leaked entry must not become unbounded memory. */
+  #reserve(key: string): void {
+    this.#inFlight.set(key, this.#pending(key) + 1);
+    if (this.#inFlight.size > this.#maxKeys) {
+      // Oldest first, like the counter eviction below: an entry that has been outstanding the longest is the one most
+      // likely to be a leaked slot rather than a request that is still running.
+      const oldest = this.#inFlight.keys().next();
+      if (!oldest.done) this.#inFlight.delete(oldest.value);
+    }
+  }
+
+  /** Gives one slot back, never below zero: settling twice is a caller mistake, not a new reservation. */
+  #settle(key: string): void {
+    const pending = this.#pending(key);
+    if (pending <= 1) this.#inFlight.delete(key);
+    else this.#inFlight.set(key, pending - 1);
+  }
+
+  /**
+   * The answer when the allowance is used up by attempts still in progress.
+   *
+   * A second, not the window: the attempts holding the slots are a hash away from finishing.
+   */
+  #busy(now: Date): ThrottleVerdict {
+    return {
+      limited: true,
+      reason: 'in-flight',
+      lockedUntil: new Date(now.getTime() + BUSY_RETRY_MS),
+      retryAfterSeconds: Math.ceil(BUSY_RETRY_MS / 1000),
+    };
+  }
+
   /** Builds the 429 answer from the live failures: the lock lifts when the oldest one leaves the window. */
   #lockout(failures: Failures, now: Date): ThrottleVerdict {
     const oldest = failures[0];
@@ -270,7 +381,7 @@ export class LoginThrottle {
       1,
       Math.ceil((lockedUntil.getTime() - now.getTime()) / 1000),
     );
-    return { limited: true, lockedUntil, retryAfterSeconds };
+    return { limited: true, reason: 'failures', lockedUntil, retryAfterSeconds };
   }
 
   /** `pair` key: address + case-folded username. A `null` address (unparseable) shares one bucket. */
