@@ -110,7 +110,7 @@ export async function start(
   // is the only thing in the log instead of the last line after a wall of boot output.
   const config = parseEnv(source);
 
-  const app = await buildApp({ logger: { level: config.logLevel } });
+  const app = await buildApp({ logger: { level: config.logLevel }, config });
 
   // Registered before `listen` so a signal during startup still drains rather than orphaning a socket.
   const shutdown = createShutdown(app);

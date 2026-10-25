@@ -16,9 +16,11 @@
 
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 
+import { parseEnv, type AppConfig } from './config/env';
 import { withRedaction } from './lib/logger';
 import { PLUGIN_ORDER, registerPipeline, type PluginSlot } from './plugins/order';
 import { REQUEST_ID_HEADER, resolveRequestId } from './plugins/request-context';
+import { JSON_BODY_LIMIT_BYTES } from './plugins/security';
 import { assertRouteLaw, installRouteLawHook } from './plugins/route-law';
 
 /** Options accepted by {@link buildApp}. */
@@ -38,6 +40,12 @@ export interface BuildAppOptions {
    * `server.ts` never passes it.
    */
   slots?: readonly PluginSlot[];
+  /**
+   * Validated configuration. `server.ts` passes the one it parsed from the environment; a test passes nothing
+   * and gets the documented defaults, computed from an **empty** source rather than from `process.env` — a test
+   * that silently read the developer's environment would pass here and fail in CI.
+   */
+  config?: AppConfig;
 }
 
 /**
@@ -66,11 +74,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     // a second, unvalidated path into the same field.
     requestIdHeader: false,
     genReqId: (request) => resolveRequestId(request.headers[REQUEST_ID_HEADER]),
+    // Instance-level, because Fastify reads it while parsing a request — long before any hook could set it.
+    // Uploads stream through multipart with their own cap, so this bounds JSON only (`P1-API-05`).
+    bodyLimit: JSON_BODY_LIMIT_BYTES,
   });
 
   const routeLaw = installRouteLawHook(app);
 
-  await registerPipeline(app, options.slots ?? PLUGIN_ORDER);
+  await registerPipeline(app, options.slots ?? PLUGIN_ORDER, {
+    config: options.config ?? parseEnv({}),
+  });
 
   // Enforced after the boot, because a throwing `onRoute` hook stalls `ready()` forever — see the module
   // comment in `plugins/route-law.ts`. Booting first also lets the error list every offending route.

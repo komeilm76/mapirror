@@ -3,9 +3,25 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 11 passes · 95 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1).
+**Totals:** 12 passes · 96 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 12 — 2026-10-25 (adversarial review of `P1-API-05`)
+
+One defect, caught by asking what a *browser* sends rather than what curl sends — the tests, the unit probes and
+the nine headers all passed while it was present.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The CORS rule locked the SPA out of its own API.** The first version refused any request whose `Origin` was not on the allow-list with `403 FORBIDDEN` — including *actual* requests, not just preflights. Browsers send `Origin` on same-origin `POST`/`PATCH`/`DELETE`, so the SPA posting its login form to the API on the same host carried `Origin: http://localhost:8080`, which no allow-list contains (the API is reached through the proxy, and the list is for *other* sites), and was rejected by its own server. Measured with curl: a same-origin login `POST` with `Origin: http://localhost:8080` returned `403 FORBIDDEN`. The unit tests missed it because `inject` sends no `Origin` unless told to, and the one test that did send one used an intentionally hostile origin | Only a **preflight** is refused: it is a question, and the answer is no. An actual request from an unlisted origin is answered without `access-control-allow-origin`, so a browser hides the body and no other client is affected — the behaviour CORS actually specifies. A regression test sends a same-origin `POST` carrying `Origin` and expects the handler's own status, not `403`. Probes after the fix: same-origin POST → `503` from the stub; foreign-origin GET → `503`, no ACAO; foreign-origin preflight → `403`; allowed preflight → `204` |
+
+Worth recording because the same mistake is easy to make again: **CORS is a browser-side read barrier, not an
+authorisation mechanism.** Server-side refusal of an `Origin` is either redundant (the browser already blocks the
+read) or harmful (it breaks same-origin requests that happen to carry the header). Authorisation is the token
+guard's job, in slot 6.
 
 ---
 

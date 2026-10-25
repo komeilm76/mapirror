@@ -53,6 +53,7 @@ lands.
 | Time | ISO-8601 UTC strings; byte counts are integers |
 | Nullability | absent/null means "unknown", never 0 |
 | Request id | UUIDv4, returned in `x-request-id`, echoed in every error and used as `reqId` in every log line. An inbound `x-request-id` is repeated only if it matches `[A-Za-z0-9._-]{8,64}`; anything else is replaced, so a caller cannot write into our log stream |
+| CORS | same-origin by default. `CORS_ORIGINS` is an explicit allow-list: an allowed origin gets `access-control-allow-origin` and a `204` preflight; a preflight from any other origin is `403 FORBIDDEN`; an actual request from any other origin is answered without the header. Never `*` |
 | Rate limits | `429` + `retry-after`; login and public downloads are limited |
 
 ### Error envelope

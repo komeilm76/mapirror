@@ -22,14 +22,30 @@
 
 import type { FastifyInstance } from 'fastify';
 
+import { parseEnv, type AppConfig } from '../config/env';
+
 import { registerRoutes } from '../routes/index';
 
 import { installErrorHandlers } from './errors';
 import { installRequestContext } from './request-context';
+import { installSecurity } from './security';
 
 /** Stable identifier for a pipeline stage. */
 export type PluginId =
   'request-context' | 'errors' | 'security' | 'db' | 'rate-limit' | 'auth' | 'routes';
+
+/**
+ * What a stage may need besides the instance.
+ *
+ * Only the validated configuration so far — the `db` stage (`P1-API-06`) needs the DSN and pool size, and the
+ * rate limiter its windows, so the context exists now rather than being bolted on by the third consumer. It is
+ * passed to `install` instead of being decorated onto the instance: an instance decoration is reachable from
+ * every plugin and cannot be narrowed, which is how "the config is a global" happens by accident.
+ */
+export interface PipelineContext {
+  /** The environment this process was started with. */
+  readonly config: AppConfig;
+}
 
 /** One stage of the pipeline. */
 export interface PluginSlot {
@@ -46,7 +62,7 @@ export interface PluginSlot {
    * `app.register(...)` itself and lets the single `ready()` at the end of {@link registerPipeline} boot it —
    * returning that call's promise would boot the instance mid-pipeline (see {@link registerPipeline}).
    */
-  readonly install: ((app: FastifyInstance) => void) | null;
+  readonly install: ((app: FastifyInstance, context: PipelineContext) => void) | null;
 }
 
 /**
@@ -74,8 +90,8 @@ export const PLUGIN_ORDER: readonly PluginSlot[] = [
     id: 'security',
     rationale:
       'Helmet-style headers, CORS and body limits must wrap every response including the error envelope.',
-    task: 'P1-API-05',
-    install: null,
+    task: null,
+    install: installSecurity,
   },
   {
     id: 'db',
@@ -133,12 +149,16 @@ export function pendingPlugins(): PluginId[] {
 export async function registerPipeline(
   app: FastifyInstance,
   slots: readonly PluginSlot[] = PLUGIN_ORDER,
+  // The default is computed from an **empty** source, not from `process.env`: a stage that reads configuration
+  // must produce the same behaviour in a test as in CI, and a test that inherits the developer's environment is
+  // a test that fails only on the machine that did not write it.
+  context: PipelineContext = { config: parseEnv({}) },
 ): Promise<void> {
   for (const slot of slots) {
     // Not awaited: a slot's install may call `app.register()`, whose return value is a thenable that boots the
     // whole instance. Awaiting it here would boot mid-pipeline and fail with FST_ERR_INSTANCE_ALREADY_LISTENING
     // the moment a second stage exists. The single `ready()` below boots everything that was queued.
-    slot.install?.(app);
+    slot.install?.(app, context);
   }
   await app.ready();
 }

@@ -22,6 +22,7 @@ export {
 } from './plugins/order';
 export * from './plugins/errors';
 export * from './plugins/request-context';
+export * from './plugins/security';
 export {
   assertRouteLaw,
   installRouteLawHook,
