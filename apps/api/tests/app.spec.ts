@@ -1,10 +1,20 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { isApiPath, isProbePath, statusFor } from '@mapirror/shared';
 
-import { buildApp, pendingPlugins, PLUGIN_ORDER } from '../src/index';
+import {
+  assertRouteLaw,
+  buildApp,
+  installRouteLawHook,
+  pendingPlugins,
+  PLUGIN_ORDER,
+  registerPipeline,
+} from '../src/index';
 import { STUB_ROUTES } from '../src/routes/not-implemented';
-import type { FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyPluginAsync } from 'fastify';
 
 /**
  * Acceptance test for `P1-API-01`: the server starts and registers routes under the three API prefixes.
@@ -103,6 +113,81 @@ describe('the three API prefixes are registered', () => {
   });
 });
 
+describe('buildApp returns a booted instance', () => {
+  it('has registered every plugin before returning', async () => {
+    // The observable consequence of awaiting `ready()` inside buildApp: the route table is final, so no
+    // caller can append a route outside the pipeline (Fastify refuses once the root plugin has booted).
+    const instance = await app();
+    expect(() => instance.get('/_admin/api/late', () => ({ ok: true }))).toThrow(
+      /already (booted|listening)/i,
+    );
+  });
+});
+
+describe('stub routes match the contract', () => {
+  it('registers exactly the routes documented in 04-api.md §0.3', () => {
+    const doc = readFileSync(resolve(import.meta.dirname, '../../../docs/04-api.md'), 'utf8');
+    const start = doc.indexOf('### 0.3');
+    expect(start, '04-api.md §0.3 must exist').toBeGreaterThan(-1);
+    // Bounded by the next heading: slicing to the end of the file picks up every other table that happens
+    // to contain a method plus a path, which is how the first version of this test compared 3 against 5.
+    const nextHeading = doc.indexOf('\n## ', start);
+    const section = doc.slice(start, nextHeading === -1 ? undefined : nextHeading);
+    const documented = [...section.matchAll(/^\| `([A-Z]+ \S+)` \|/gm)].map(
+      (match) => match[1] as string,
+    );
+
+    expect(documented.length).toBeGreaterThan(0);
+    expect([...Object.keys(STUB_ROUTES)].sort()).toEqual([...documented].sort());
+  });
+});
+
+describe('registerPipeline', () => {
+  it('registers every slot and boots, even with several plugins', async () => {
+    // The landmine this test exists for: `await app.register(p)` inside the loop boots the instance (Fastify
+    // is a thenable), so the second plugin fails with "already booted". With one implemented slot the bug is
+    // invisible; P1-API-03 would have hit it immediately.
+    const ran: string[] = [];
+    const plugin =
+      (name: string): FastifyPluginAsync =>
+      (scoped) => {
+        ran.push(name);
+        scoped.get(`/${name}`, () => ({ ok: true }));
+        return Promise.resolve();
+      };
+
+    const instance = Fastify({ logger: false });
+    await registerPipeline(instance, [
+      { id: 'request-context', rationale: 'test', task: null, register: plugin('healthz') },
+      { id: 'errors', rationale: 'test', task: null, register: plugin('readyz') },
+    ]);
+
+    expect(ran).toEqual(['healthz', 'readyz']);
+    expect(instance.hasRoute({ method: 'GET', url: '/healthz' })).toBe(true);
+    expect(instance.hasRoute({ method: 'GET', url: '/readyz' })).toBe(true);
+    await instance.close();
+  });
+
+  it('skips empty slots without booting early', async () => {
+    const ran: string[] = [];
+    const instance = Fastify({ logger: false });
+    await registerPipeline(instance, [
+      { id: 'request-context', rationale: 'test', task: 'P1-API-03', register: null },
+      {
+        id: 'routes',
+        rationale: 'test',
+        task: null,
+        register: () => {
+          ran.push('routes');
+          return Promise.resolve();
+        },
+      },
+    ]);
+    expect(ran).toEqual(['routes']);
+    await instance.close();
+  });
+});
+
 describe('plugin pipeline', () => {
   it('lists every stage once, in order, with routes last', () => {
     const ids = PLUGIN_ORDER.map((slot) => slot.id);
@@ -150,46 +235,82 @@ describe('plugin pipeline', () => {
   });
 });
 
-describe('L1 is enforced at registration time, not only by the law test', () => {
-  it('refuses to boot with a route outside the four legal namespaces', async () => {
-    const instance = await app();
-    expect(() => {
-      instance.get('/admin/cache', () => ({ ok: true }));
-    }).toThrow(/violates L1/);
+describe('L1 is enforced at boot, not only by the law test', () => {
+  /**
+   * The hook collects and `assertRouteLaw` throws — the pair `buildApp` uses. They are tested on a bare
+   * instance because a throwing hook cannot be used: it stalls `ready()` forever (see `plugins/route-law.ts`).
+   */
+  const check = (register: (app: FastifyInstance) => void): string[] => {
+    const instance = Fastify({ logger: false });
+    const law = installRouteLawHook(instance);
+    register(instance);
+    return law.violations;
+  };
+
+  it('collects a route outside the four legal namespaces', () => {
+    const violations = check((app) => app.get('/admin/cache', () => ({ ok: true })));
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain('/admin/cache');
+    expect(() => assertRouteLaw(violations)).toThrow(/violates L1/);
   });
 
-  it('lists every method of a multi-method route in the error', async () => {
-    const instance = await app();
-    // Fastify accepts a method array; the message must not print `[object Object]` or only the first.
-    expect(() => {
-      instance.route({ method: ['GET', 'POST'], url: '/health', handler: () => ({ ok: true }) });
-    }).toThrow(/GET,POST \/health|POST,GET \/health/);
+  it('names the offending route and the rule in the thrown message', () => {
+    const violations = check((app) => app.get('/api/countries', () => ({ ok: true })));
+
+    expect(() => assertRouteLaw(violations)).toThrow(/\/api\/countries/);
+    expect(() => assertRouteLaw(violations)).toThrow(/one route violates/i);
   });
 
-  it('names the offending route in the error', async () => {
-    const instance = await app();
-    expect(() => {
-      instance.get('/api/countries', () => ({ ok: true }));
-    }).toThrow(/\/api\/countries/);
+  it('reports one violation per route, listing its methods, not one per method', () => {
+    // A `GET` also registers an implicit `HEAD`; without merging, one mistyped route would print twice.
+    const violations = check((app) =>
+      app.route({ method: ['GET', 'POST'], url: '/health', handler: () => ({ ok: true }) }),
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain('/health');
+    for (const method of ['GET', 'POST']) expect(violations[0]).toContain(method);
   });
 
-  it('accepts API routes and probes', async () => {
-    const instance = await app();
-    for (const url of [
-      '/healthz',
-      '/readyz',
-      '/_admin/api/probe',
-      '/_auth/api/probe',
-      '/_public/api/x',
-    ]) {
-      expect(isApiPath(url) || isProbePath(url), url).toBe(true);
-      expect(() => instance.get(url, () => ({ ok: true })), url).not.toThrow();
-    }
+  it('reports every offending route at once, not just the first', () => {
+    const violations = check((app) => {
+      app.get('/api/a', () => ({ ok: true }));
+      app.get('/_site/b', () => ({ ok: true }));
+    });
+
+    expect(violations).toHaveLength(2);
+    expect(() => assertRouteLaw(violations)).toThrow(/2 routes violate/i);
+    expect(() => assertRouteLaw(violations)).toThrow(/\/api\/a/);
+    expect(() => assertRouteLaw(violations)).toThrow(/\/_site\/b/);
   });
 
-  it('still refuses /_site paths, because the API never serves pages', async () => {
-    const instance = await app();
+  it('accepts API routes and probes without recording anything', () => {
+    const violations = check((app) => {
+      for (const url of [
+        '/healthz',
+        '/readyz',
+        '/_admin/api/probe',
+        '/_auth/api/probe',
+        '/_public/api/x',
+      ]) {
+        expect(isApiPath(url) || isProbePath(url), url).toBe(true);
+        app.get(url, () => ({ ok: true }));
+      }
+    });
+
+    expect(violations).toEqual([]);
+    expect(() => assertRouteLaw(violations)).not.toThrow();
+  });
+
+  it('still refuses /_site paths, because the API never serves pages', () => {
     // Pages are served by Nginx; the redirect `/` → `/_site/` lives there too (04-api.md §0).
-    expect(() => instance.get('/_site/countries', () => ({ ok: true }))).toThrow(/violates L1/);
+    const violations = check((app) => app.get('/_site/countries', () => ({ ok: true })));
+    expect(violations).toHaveLength(1);
+  });
+
+  it('is installed by buildApp, so a legal app boots and is checked', async () => {
+    const instance = await app();
+    expect(instance.hasRoute({ method: 'GET', url: '/_public/api/countries' })).toBe(true);
   });
 });

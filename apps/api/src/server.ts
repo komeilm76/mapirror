@@ -30,6 +30,14 @@ const DEFAULT_HOST = '0.0.0.0';
 const SHUTDOWN_SIGNALS = ['SIGTERM', 'SIGINT'] as const;
 
 /**
+ * How long a graceful shutdown may take before the process gives up.
+ *
+ * Below Docker's default 10 s `stop_grace_period`, so we always get to log and choose an exit code instead
+ * of being SIGKILLed. `P1-API-06` keeps this bound when it adds the database pool to the same path.
+ */
+export const SHUTDOWN_TIMEOUT_MS = 8_000;
+
+/**
  * Reads the port from the environment.
  *
  * Exported for its own test: it is the only place in the process where a string from outside becomes a
@@ -48,6 +56,68 @@ export function readPort(): number {
 }
 
 /**
+ * The smallest slice of a Fastify instance the shutdown path needs.
+ *
+ * Narrow on purpose: the handler can then be tested against a fake whose `close()` never resolves, which is
+ * the case that matters (a client streaming an 800 MB download) and the one that cannot be reproduced
+ * reliably with a real socket.
+ */
+export interface ShutdownTarget {
+  close: () => Promise<unknown>;
+  log: {
+    info: (context: object, message: string) => void;
+    error: (context: object, message: string) => void;
+  };
+}
+
+/** How the handler ends the process; injectable so a test does not have to kill the runner. */
+export type ExitFn = (code: number) => void;
+
+/**
+ * Builds the signal handler: drain, then exit 0 — or exit 1 if closing fails or takes too long.
+ *
+ * Bounded on purpose. `close()` waits for in-flight requests, and Docker's default `stop_grace_period` is
+ * 10 s: without a timer the container is SIGKILLed (exit 137, no log line, nothing to explain). A shutdown
+ * that did not finish must not look like one that did, so it exits non-zero and says why.
+ *
+ * @param app - Instance to drain (or a fake, in tests).
+ * @param options - Timeout and exit function; defaults suit the real process.
+ * @returns A handler safe to call more than once: a second signal is ignored rather than closing twice.
+ */
+export function createShutdown(
+  app: ShutdownTarget,
+  options: { timeoutMs?: number; exit?: ExitFn } = {},
+): (signal: string) => Promise<void> {
+  const timeoutMs = options.timeoutMs ?? SHUTDOWN_TIMEOUT_MS;
+  const exit: ExitFn = options.exit ?? ((code) => process.exit(code));
+  let closing = false;
+
+  return async (signal: string): Promise<void> => {
+    // A second SIGTERM must not start a second close: `close()` twice is a race, and an impatient supervisor
+    // sends exactly that — often the same one that will SIGKILL us next.
+    if (closing) return;
+    closing = true;
+    app.log.info({ signal }, 'shutting down');
+
+    const forced = setTimeout(() => {
+      app.log.error({ timeoutMs }, 'shutdown timed out; exiting non-zero');
+      exit(1);
+    }, timeoutMs);
+    forced.unref();
+
+    try {
+      await app.close();
+      clearTimeout(forced);
+      exit(0);
+    } catch (error) {
+      clearTimeout(forced);
+      app.log.error({ err: error }, 'shutdown failed');
+      exit(1);
+    }
+  };
+}
+
+/**
  * Starts the API and keeps it running until a shutdown signal arrives.
  *
  * @returns The listening instance.
@@ -57,21 +127,7 @@ export async function start(): Promise<FastifyInstance> {
   const app = await buildApp({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
 
   // Registered before `listen` so a signal during startup still drains rather than orphaning a socket.
-  let closing = false;
-  const shutdown = async (signal: string): Promise<void> => {
-    // A second SIGTERM must not start a second close: `app.close()` twice is a race, and an impatient
-    // supervisor sends exactly that.
-    if (closing) return;
-    closing = true;
-    app.log.info({ signal }, 'shutting down');
-    try {
-      await app.close();
-      process.exit(0);
-    } catch (error) {
-      app.log.error({ err: error }, 'shutdown failed');
-      process.exit(1);
-    }
-  };
+  const shutdown = createShutdown(app);
   for (const signal of SHUTDOWN_SIGNALS) {
     process.once(signal, () => {
       void shutdown(signal);

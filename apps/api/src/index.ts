@@ -10,4 +10,16 @@
 
 export * from './app';
 export * from './config/prefixes';
-export { pendingPlugins, PLUGIN_ORDER, type PluginId, type PluginSlot } from './plugins/order';
+export {
+  pendingPlugins,
+  PLUGIN_ORDER,
+  registerPipeline,
+  type PluginId,
+  type PluginSlot,
+} from './plugins/order';
+export {
+  assertRouteLaw,
+  installRouteLawHook,
+  ROUTE_LAW_MESSAGE,
+  type RouteLawCheck,
+} from './plugins/route-law';

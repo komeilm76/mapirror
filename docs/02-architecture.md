@@ -94,9 +94,11 @@ Two consequences of making the order data:
 
 - **A slot is either implemented or assigned a task, never both and never neither** — the empty slots are
   visible (`pendingPlugins()`), so "we forgot the error handler" cannot look like "it landed".
-- **L1 is enforced when the app is built.** An `onRoute` hook rejects any route that is not under an API
-  prefix or a probe, so a route in the wrong namespace cannot boot the server — the law test (`P1-API-08`)
-  becomes a second line of defence rather than the only one.
+- **L1 is enforced when the app is built.** An `onRoute` hook records any route that is not under an API
+  prefix or a probe, and the boot is refused after `ready()` if the list is not empty — so a route in the
+  wrong namespace cannot boot the server, and the law test (`P1-API-08`) becomes a second line of defence
+  rather than the only one. The hook *records* rather than throws because a throwing `onRoute` hook stalls
+  `ready()` forever and a rejecting one lets the route through (both measured — see `16-changelog.md` pass 9).
 
 ## 4. Job system
 

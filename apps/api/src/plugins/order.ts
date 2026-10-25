@@ -13,7 +13,7 @@
  * @module plugins/order
  */
 
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 
 import { registerRoutes } from '../routes/index';
 
@@ -97,4 +97,26 @@ export const PLUGIN_ORDER: readonly PluginSlot[] = [
  */
 export function pendingPlugins(): PluginId[] {
   return PLUGIN_ORDER.filter((slot) => slot.register === null).map((slot) => slot.id);
+}
+
+/**
+ * Registers every implemented slot, then boots the instance.
+ *
+ * **The loop must not `await` inside itself.** A Fastify instance is a thenable whose `then` calls
+ * `ready()`, so `await app.register(plugin)` boots the app — and the *next* iteration then fails with "Root
+ * plugin has already booted". With one implemented slot that mistake is invisible; it surfaces the moment a
+ * second plugin lands (`P1-API-03`). Registration is queued, one `ready()` at the end runs them in order.
+ *
+ * @param app - Instance to populate.
+ * @param slots - Pipeline to install; defaults to {@link PLUGIN_ORDER}.
+ * @throws When a plugin fails, including an L1 violation thrown from the route-law hook.
+ */
+export async function registerPipeline(
+  app: FastifyInstance,
+  slots: readonly PluginSlot[] = PLUGIN_ORDER,
+): Promise<void> {
+  for (const slot of slots) {
+    if (slot.register) app.register(slot.register);
+  }
+  await app.ready();
 }

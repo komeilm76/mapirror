@@ -3,9 +3,37 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 8 passes · 86 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6).
+**Totals:** 9 passes · 92 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 9 — 2026-10-25 (adversarial review of the bootstrap, `P1-API-01`)
+
+A review of the commit that was supposed to be finished, on the principle that a green test suite proves
+the tests agree with the code, not that the code works. Six defects; the first two mean the API as shipped
+could not serve a single request, and the fourth means a mis-placed route hung the container instead of
+failing it.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **`buildApp()` never booted anything.** Fastify's `register()` only queues a plugin; the body runs at `ready()`. The returned instance therefore had an empty route table, and the L1 hook had never executed — a booted-looking app that 404s everything. Every test that "passed" against it was reading a queue, not an app | `registerPipeline()` registers the slots and then awaits `ready()` once; `buildApp` awaits it, so its postcondition is now *booted and frozen*. Nine tests assert against the booted instance instead of the queue |
+| 2 | **The obvious fix would have failed on the second plugin.** `FastifyInstance` is a thenable: `await app.register(p)` boots the whole instance, so a loop that awaits each registration throws `FST_ERR_INSTANCE_ALREADY_LISTENING` the moment a second slot is implemented — i.e. on `P1-API-03`, not today. A regression test registers two plugins and a third empty slot to keep the loop honest | The loop never awaits a registration; one `await app.ready()` follows the loop. Probe: restoring the per-plugin `await` fails `registers every slot and boots, even with several plugins` |
+| 3 | **The L1 guard made boot hang forever.** Measured against Fastify 5.12 + avvio 9.3: an `onRoute` hook that **throws** leaves `app.ready()` unsettled (avvio's boot queue stalls — a container that never starts and never exits; `timeout 12` killed it silently), while one that **returns a rejected promise** lets `ready()` resolve and registers the illegal route anyway. Both were probed directly, so neither is a guess. The original probe had missed it because it injected the illegal route *after* boot, where the hook fires synchronously and looks fine | The hook **collects** offenders and `assertRouteLaw()` throws after the boot. Probed end to end: `/_site/leak` + `/api/also-leak` registered by a plugin → exit 1 in **0 s**, both routes named. The failure lists every offending route at once instead of the first |
+| 4 | **One mistake was reported two or three times.** Registering a `GET` route fires `onRoute` twice (`GET`, then the implicit `HEAD`), and a method array fires it again. Deduping by URL collapses these into one line per route, listing its methods (`Route GET,HEAD /_site/leak`) | Violations are keyed by URL and merged; a test registers `GET`+`POST` on one URL and asserts exactly one violation |
+| 5 | **Shutdown was unbounded.** `await app.close()` waits for in-flight requests, so one slow request could hold the process past Docker's 10 s grace period and turn a clean restart into `SIGKILL` — losing the very logs that explain the hang | `SHUTDOWN_TIMEOUT_MS = 8_000` (below the 10 s grace) races the close; exit 0 on a clean close, 1 on failure or timeout. `createShutdown()` is injectable (`{timeoutMs, exit}`) so the six tests run on fake timers instead of sleeping |
+| 6 | **A second signal was a second shutdown.** Two `SIGTERM`s (a retry, an impatient operator, `docker compose down` twice) started a second `close()` on a closing instance and armed a second timer | The returned handler is re-entrant-safe: a second signal is ignored, the timer is cleared when the close wins, and the exit code is decided once |
+
+Also in this pass:
+
+- **A doc-parity test for the stub routes**, bounded to `04-api.md` §0.3: it compares the three contract paths
+  the app registers against the table an integrator reads. Writing it found that a naive
+  `indexOf('---', …)` parse lands on the table separator, so the section is cut by heading offsets instead.
+- **Hook testing needs a bare instance**: a booted app is frozen, so `addHook`/`register`/route additions
+  throw afterwards. The hook is exported from `plugins/route-law.ts` for exactly this.
+- **Two deprecations gone**: `disableRequestLogging` is now passed as a direct option (`FSTDEP023`), and no
+  warning remains in the boot output.
 
 ---
 

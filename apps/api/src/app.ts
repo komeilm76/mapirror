@@ -13,54 +13,48 @@
  * @module app
  */
 
-import { isApiPath, isProbePath } from '@mapirror/shared';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 
-import { PLUGIN_ORDER } from './plugins/order';
+import { registerPipeline } from './plugins/order';
+import { assertRouteLaw, installRouteLawHook } from './plugins/route-law';
 
 /** Options accepted by {@link buildApp}. */
 export interface BuildAppOptions {
   /**
-   * Fastify's logger setting. Tests pass `false` (the default); `server.ts` passes `true`, so running the
+   * Fastify's logger setting. Tests pass `false` (the default); `server.ts` passes a level, so running the
    * process logs and injecting requests into a built app does not.
    */
   logger?: FastifyServerOptions['logger'];
 }
 
 /**
- * Builds the Fastify instance with the full pipeline registered.
+ * Builds the Fastify instance with the full pipeline registered **and booted**.
+ *
+ * Fastify's `register()` only queues a plugin; the body runs when the instance is ready. Without the boot
+ * step `buildApp()` would hand back an instance whose routes do not exist yet and whose L1 hook has never
+ * run — anything inspecting it, or a mistake inside a plugin, would surface later during `listen()`, far from
+ * the code that caused it. Booting here makes "built" mean built: routes registered, hooks run, violations
+ * thrown from this call. See {@link registerPipeline} for why the loop cannot await per plugin.
+ *
+ * The postcondition is strict: the returned instance is **frozen**. Fastify refuses `register`, `addHook` and
+ * route additions once it is ready, which is deliberate here — every route belongs to {@link PLUGIN_ORDER} and
+ * nothing can be attached outside it. Code that wants to exercise a hook or an illegal route does not need a
+ * built app: it uses the exported hook (`installRouteLawHook`) on a bare instance.
  *
  * @param options - Logger configuration; everything else has (or will have) a default.
- * @returns The instance, not yet listening.
+ * @returns The ready instance, not yet listening.
+ * @throws When a plugin fails to register, or any registered route violates L1.
  */
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
-  const app = Fastify({
-    logger: options.logger ?? false,
-    // Every route is registered by name in the logs at boot; useful when a prefix is wrong.
-    disableRequestLogging: false,
-  });
+  const app = Fastify({ logger: options.logger ?? false });
 
-  // L1 enforced at registration time, not only in the law test (`P1-API-08`): a route the API is not allowed
-  // to serve cannot boot the server. Registering one is a mistake no deployment can survive, and failing
-  // here names the offending route instead of leaving a URL that the law test catches only after the fact.
-  //
-  // The predicate is *API or probe*, not `isLegalPath`: pages are legal paths in general but the API never
-  // serves them (Nginx does), so `isLegalPath` would have let a `/_site/*` route boot this server. My own
-  // test caught that when the guard used it.
-  app.addHook('onRoute', (route: { url: string; method: string | string[] }) => {
-    if (isApiPath(route.url) || isProbePath(route.url)) return;
-    // `typeof`, not `Array.isArray`: narrowing a `string | string[]` with `Array.isArray` yields `any[]`,
-    // which silently re-introduces `any` into the one check that must stay typed.
-    const methods = typeof route.method === 'string' ? route.method : route.method.join(',');
-    throw new Error(
-      `Route ${methods} ${route.url} violates L1: the API may only serve /_auth/api/*, /_admin/api/*, ` +
-        `/_public/api/*, /healthz and /readyz (see 04-api.md §0).`,
-    );
-  });
+  const routeLaw = installRouteLawHook(app);
 
-  for (const slot of PLUGIN_ORDER) {
-    if (slot.register) await app.register(slot.register);
-  }
+  await registerPipeline(app);
+
+  // Enforced after the boot, because a throwing `onRoute` hook stalls `ready()` forever — see the module
+  // comment in `plugins/route-law.ts`. Booting first also lets the error list every offending route.
+  assertRouteLaw(routeLaw.violations);
 
   return app;
 }
