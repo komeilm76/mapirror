@@ -1,6 +1,6 @@
 # 08 — Tasks
 
-**TL;DR** — 140 tasks across 7 phases, each with requirement ID, dependencies and a testable acceptance criterion; the traceability matrix at the bottom maps every requirement to its tasks.
+**TL;DR** — 149 tasks across 7 phases, each with requirement ID, dependencies and a testable acceptance criterion; the traceability matrix at the bottom maps every requirement to its tasks.
 
 Single task board for the whole build. Status: ⬜ todo · 🟨 in progress · 🟦 in review · ✅ done ·
 ⛔ blocked. Update this file at the **start** of a phase (claim) and at the **end** (close).

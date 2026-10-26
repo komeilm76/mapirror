@@ -154,6 +154,20 @@ describe('promptSecret — terminal mode', () => {
     expect(await promptSecret({ question: 'Repeat: ', input, output })).toBe('crlf-two');
   });
 
+  it('preserves a CRLF paste even when the stream splits the CR and LF across chunks', async () => {
+    // Readable streams may split one logical input anywhere; CR and LF are not guaranteed to share a data event. Losing
+    // the second chunk turns the second prompt into `no input` (reproduced with a segmented `Readable.from` source).
+    const input = Readable.from(['split-one\r', '\nsplit-two\r', '\n']);
+    const output = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback();
+      },
+    });
+
+    expect(await promptSecret({ question: 'Password: ', input, output })).toBe('split-one');
+    expect(await promptSecret({ question: 'Repeat: ', input, output })).toBe('split-two');
+  });
+
   it('puts the terminal into raw mode before reading, and restores it afterwards', async () => {
     const { input, calls } = fakeTerminal('hunter2-very-long\n');
     const output = new Writable({
@@ -188,6 +202,12 @@ describe('promptSecret — editing keys', () => {
   it('applies backspace the way a terminal would', async () => {
     // Backspace removes the last character; without this the operator cannot correct a typo that is invisible to them.
     expect((await prompt('abc\u007fd')).answer).toBe('abd');
+  });
+
+  it('deletes a complete non-BMP character with one backspace', async () => {
+    // JavaScript stores an emoji as a surrogate pair. Removing one UTF-16 unit leaves an invisible lone surrogate in
+    // the secret, so a correction the operator believes was deleted changes the password they actually set.
+    expect((await prompt('abc😀\u007fd')).answer).toBe('abcd');
   });
 
   it('drops arrow-key escape sequences instead of typing them', async () => {

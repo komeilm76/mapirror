@@ -151,6 +151,16 @@ describe('error codes (04-api.md §0.2 ↔ ERROR_STATUS)', () => {
   });
 });
 
+describe('task board counts (08-tasks.md)', () => {
+  it('keeps the TL;DR total equal to the actual task rows', () => {
+    const tasks = read('docs/08-tasks.md');
+    const rowCount = [...tasks.matchAll(/^\| P\d-[^ |]+ \|/gmu)].length;
+    const advertised = /\*\*TL;DR\*\* — (\d+) tasks/u.exec(tasks)?.[1];
+
+    expect(advertised).toBe(String(rowCount));
+  });
+});
+
 describe('deployment proxy contract (12-deployment.md / 08-tasks.md ↔ nginx.conf)', () => {
   it('describes Docker DNS re-resolution instead of one-time startup resolution', () => {
     const nginx = read('docker/nginx.conf');

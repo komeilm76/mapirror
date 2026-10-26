@@ -3,9 +3,23 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 45 passes · 183 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1).
+**Totals:** 46 passes · 186 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 46 — 2026-10-26 (a password prompt that dropped split keystrokes and half an emoji)
+
+The open-ended review followed the operator's real password-prompt path in `scripts/lib/secret-prompt.ts`, rather than assuming a stream delivers one complete line per `data` event.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **A CRLF paste split across stream chunks lost the repeat password.** With input chunks `"split-one\r"`, `"\nsplit-two\r"`, `"\n"`, the first prompt returned after the CR and removed its `data` listener before the remaining chunks could be retained; the next prompt ended with `no input`. This contradicted the helper's Windows-CRLF support and the property that Readable streams may split data arbitrarily | The prompt now installs its reader before resuming the input, keeps collecting already-arriving chunks after its first line, carries an optional LF after CR across prompt boundaries, and preserves the bounded suffix for the next call. The new segmented-CRLF case fails against the old implementation and passes against the fix |
+| 2 | **Backspace deleted half of an emoji.** `String.slice(0, -1)` removes one UTF-16 code unit, not one Unicode code point. Probed with `abc😀`, backspace, then `d`: the prompt returned a lone surrogate between `abc` and `d` (displayed as `�`). A user correcting a visible typo would set a different, unreproducible password | Backspace now removes the last Unicode code point. The new regression case requires `abc😀` + backspace + `d` to return `abcd`; it failed against the old implementation |
+| 3 | **The task index understated the actual board by nine.** A row-ID count found **149 unique task rows** (9 + 42 + 36 + 15 + 19 + 19 + 9 across Phases 0–6), while `08-tasks.md`'s TL;DR said 140. The phase counts and task IDs are the source of truth, not the summary number | The TL;DR now says 149; `docs-contract.spec.ts` counts task rows and compares the result to the advertised total. The new contract test failed on 140 and passes on 149 |
+
+The two prompt regression cases were run against the old implementation and failed (2/2), then passed with the fixes. The task-count contract likewise failed against 140 and passes on 149. The complete prompt suite and full repository check pass. **Totals after this pass: 46 passes · 186 defects · 0 open.**
 
 ---
 

@@ -42,12 +42,16 @@ export interface TerminalInput extends Readable {
 /**
  * Characters a previous prompt on the same terminal received but did not consume.
  *
- * A terminal delivers whatever was pasted as **one** `data` event, newlines included: pasting a two-line block at
- * `New password:` hands the first call `"secret\nsecret\n"`. The first line is the answer; without keeping the rest, the
- * repeat prompt waits for input that has already arrived — a hang on a TTY, `no input` on a stream that then ends
- * (measured, pass 28). Keyed by the stream and weak, so nothing outlives the terminal it belongs to.
+ * A terminal can deliver a paste as one `data` event, newlines included, and a stream can also split those bytes across
+ * events at any boundary. Pasting a two-line block at `New password:` may hand the first call `"secret\nsecret\n"`; the
+ * first line is the answer, and the suffix belongs to the repeat prompt. Without keeping it, the repeat prompt waits for
+ * input that has already arrived — a hang on a TTY, `no input` on a stream that then ends (measured, pass 28 and pass 46).
+ * Keyed by the stream and weak, so nothing outlives the terminal it belongs to.
  */
 const leftovers = new WeakMap<object, string>();
+
+/** A CR ended the previous line; ignore its optional LF even if the stream delivered it in a later chunk. */
+const pendingCarriageReturn = new WeakSet<object>();
 
 /** How much unconsumed input is worth keeping. A password is at most 256 code points; the rest is dropped. */
 const MAX_LEFTOVER_CHARACTERS = 512;
@@ -96,9 +100,14 @@ export async function promptSecret(options: SecretPromptOptions): Promise<string
   output.write(options.question);
   // Before reading anything (finding 1 above).
   input.setRawMode?.(true);
-  input.resume();
 
   let value = '';
+  let afterLine = '';
+  let lineFinished = false;
+  let settled = false;
+  let skipLf = pendingCarriageReturn.has(input);
+  pendingCarriageReturn.delete(input);
+  let cleanup = (): void => undefined;
   // 0 = normal, 1 = just saw ESC, 2 = inside a CSI/SS3 sequence. Escape sequences are dropped whole; keeping only part
   // of one would put `[A` into the secret.
   let escape = 0;
@@ -110,14 +119,32 @@ export async function promptSecret(options: SecretPromptOptions): Promise<string
         input.removeListener('end', onEnd);
         input.removeListener('close', onEnd);
       };
+      cleanup = finish;
 
       const onEnd = (): void => {
+        if (settled) return;
+        settled = true;
         finish();
         reject(new Error('no input: the terminal closed before a line was read'));
       };
 
       const onData = (chunk: string | Buffer): void => {
-        const text = String(chunk);
+        let text = String(chunk);
+        // CR and LF are one line ending, but a stream is allowed to split them into separate data events. Remember the
+        // CR across calls, and remove at most the first LF from the next non-empty chunk.
+        if (skipLf && text.length > 0) {
+          if (text.charAt(0) === '\n') text = text.slice(1);
+          skipLf = false;
+        }
+        if (text.length === 0) return;
+
+        // Once this prompt has a line, continue collecting the rest of the current paste until the outer `finally`
+        // pauses the input. Otherwise Readable streams can emit the next chunk between prompts and lose it.
+        if (lineFinished) {
+          afterLine = (afterLine + text).slice(0, MAX_LEFTOVER_CHARACTERS);
+          return;
+        }
+
         for (let index = 0; index < text.length; index += 1) {
           // `charAt` rather than `text[index]`: it is typed as `string` (an index is `string | undefined` under
           // `noUncheckedIndexedAccess`), and iterating by code unit keeps `slice(index + 1)` pointing at the character
@@ -141,20 +168,21 @@ export async function promptSecret(options: SecretPromptOptions): Promise<string
             continue;
           }
           if (character === '\r' || character === '\n') {
-            // Whatever followed the newline in the same event belongs to the *next* prompt, not to the bin. A paste of
-            // both lines is the case: discarding it made the repeat prompt wait for input already received.
-            // `\r\n` is one terminator: skipping the `\n` too is what keeps a Windows paste from starting the next
-            // prompt with a bare newline, which would answer it with an empty string.
-            const after =
-              character === '\r' && text.charAt(index + 1) === '\n' ? index + 2 : index + 1;
-            const rest = text.slice(after);
-            if (rest.length > 0) leftovers.set(input, rest.slice(0, MAX_LEFTOVER_CHARACTERS));
-            finish();
+            // Whatever followed the newline belongs to the *next* prompt, not to the bin. A paste of both lines is the
+            // common case, but keep collecting later chunks too. CRLF may be split at the chunk boundary.
+            const isCrLf = character === '\r' && text.charAt(index + 1) === '\n';
+            const after = isCrLf ? index + 2 : index + 1;
+            afterLine = text.slice(after, after + MAX_LEFTOVER_CHARACTERS);
+            skipLf = character === '\r' && !isCrLf;
+            lineFinished = true;
+            settled = true;
             resolve(value);
             return;
           }
           if (character === '\u0003') {
             // Ctrl-C: raw mode would otherwise swallow it and leave a script that cannot be interrupted.
+            lineFinished = true;
+            settled = true;
             finish();
             reject(new Error('cancelled'));
             return;
@@ -162,6 +190,9 @@ export async function promptSecret(options: SecretPromptOptions): Promise<string
           if (character === '\u0004') {
             // Ctrl-D: end of input. With something typed it means "that is the password"; on an empty line it is the
             // shell's "nothing to give you".
+            afterLine = text.slice(index + 1, index + 1 + MAX_LEFTOVER_CHARACTERS);
+            lineFinished = true;
+            settled = true;
             finish();
             if (value.length === 0)
               reject(new Error('no input: the terminal closed before a line was read'));
@@ -169,7 +200,9 @@ export async function promptSecret(options: SecretPromptOptions): Promise<string
             return;
           }
           if (character === '\u007f' || character === '\b') {
-            value = value.slice(0, -1);
+            // Password length is measured in Unicode code points; deleting one UTF-16 code unit would leave half of an
+            // emoji (a lone surrogate) and silently set a different password than the operator intended.
+            value = [...value].slice(0, -1).join('');
             continue;
           }
           // Every other control character is dropped: none of them belongs in a password, and a tab would otherwise
@@ -191,10 +224,17 @@ export async function promptSecret(options: SecretPromptOptions): Promise<string
         leftovers.delete(input);
         onData(pending);
       }
+      // Resume only after listeners exist; a buffered chunk must never be emitted between resume and registration.
+      input.resume();
     });
   } finally {
-    input.setRawMode?.(wasRaw);
     input.pause();
+    cleanup();
+    if (afterLine.length > 0) leftovers.set(input, afterLine.slice(0, MAX_LEFTOVER_CHARACTERS));
+    else leftovers.delete(input);
+    if (skipLf) pendingCarriageReturn.add(input);
+    else pendingCarriageReturn.delete(input);
+    input.setRawMode?.(wasRaw);
     // The newline the terminal would have echoed. Written on every path, so the shell prompt returns to column zero.
     output.write('\n');
   }
