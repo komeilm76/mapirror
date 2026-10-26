@@ -3,9 +3,22 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 48 passes · 191 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1).
+**Totals:** 49 passes · 193 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 49 — 2026-10-26 (a malformed size became valid bytes, and an impossible date became March)
+
+An adversarial review of P2-SRC-03 exercised malformed-but-plausible upstream values, not only the three saved pages.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **A malformed comma-decimal size was silently treated as a different, valid size.** `1,23 MB` passed the permissive numeric expression, commas were stripped, and the parser returned `123,000,000` bytes. The focused regression failed with that value before the fix | The amount grammar now accepts either plain digits or correctly grouped thousands, with an optional dot-decimal fraction; the malformed form returns `null`. Valid comma-grouped byte totals and decimal sizes remain covered |
+| 2 | **JavaScript normalized impossible calendar dates instead of rejecting the source timestamp.** `new Date("2026-02-30T12:00:00Z")` produces March 2, so the parser's previous invalid-date check accepted an impossible “data up to” value. The normalization was reproduced directly, and regressions now cover both February 30 and hour 25 | The parser validates calendar and clock components before constructing the instant. Invalid timestamps now become `null`, preserving honest unknown metadata |
+
+The fixture suite covers Europe, Finland (no subregion table), and Monaco, plus the moving `latest` alias, dated PBF rows, decimal/binary/grouped sizes, absent values, and invalid timestamps. Both regressions were reproduced before the fixes and are covered afterward. The focused suite passes (16 tests); `bun run check` passes with **1,047 tests passed and 182 skipped** across 73 passing and 12 skipped files. The Docker-specific operator tests were not run. **Totals after this pass: 49 passes · 193 defects · 0 open.**
 
 ---
 

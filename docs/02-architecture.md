@@ -214,7 +214,10 @@ Key guarantees:
 
 `MapSource.getRegionDetail()` returns the current identity of the source file: the snapshot id offered
 by the source (e.g. `261024`), the "contains data up to" timestamp, `content-length`, and
-`etag`/`last-modified`. The decision is made in this order:
+`etag`/`last-modified`. The Geofabrik page parser uses HTML5 parsing, returns only dated `.osm.pbf`
+rows (not the moving `latest` alias or subregion links), converts displayed sizes to byte counts, and
+leaves unparseable timestamps and unavailable sizes as `null`. Its offline fixtures cover three region
+pages, including a region without subregions. The update decision is made in this order:
 
 1. If the source's current snapshot id is already a cached version → `up_to_date`.
 2. Else if the source's data timestamp is newer than the newest cached version's → `update_available`.
