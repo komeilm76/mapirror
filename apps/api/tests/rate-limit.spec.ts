@@ -13,6 +13,7 @@ import {
 import { SlidingWindowLimiter } from '../src/lib/rate-limit';
 import { LoginRateLimitDetailsSchema } from '@mapirror/shared';
 import { parseEnv } from '../src/config/env';
+import { loginThrottleFromConfig } from '../src/modules/auth/login-throttle';
 import { buildTestApp } from './helpers/test-app';
 
 /**
@@ -457,5 +458,37 @@ describe('the limits match the table an operator reads', () => {
     expect(row(/\| `\/_public\/api\/countries\/:slug\/download` \| (\d+) \/ min/u)).toBe(
       parseEnv({}).publicDownloadsPerMinute,
     );
+  });
+
+  it('14-security.md §7 describes the login throttle in the direction the code counts', () => {
+    // The row used to read "10 / 15 min per IP (+ per-username counter)" — the shape of the policy backwards. The shipped
+    // throttle allows **10 per `(ip, username)` pair** and **30 per IP**, which is the opposite claim: the pair limit is
+    // the tight one and the per-IP limit is three times looser (ADR-027, `15-decisions.md`). An operator reading the old
+    // row would expect a single address to be limited to ten attempts in total, and would see thirty. Measured, pass 41:
+    // ten failures from one address lock that pair, and an eleventh attempt for the same username from a *different*
+    // address is answered `401`, not `429`.
+    const doc = readFileSync(resolve(import.meta.dirname, '../../../docs/14-security.md'), 'utf8');
+    const start = doc.indexOf('## 7. Rate limiting');
+    const section = doc.slice(start, doc.indexOf('\n## ', start + 1));
+    const cell = /\| `POST \/_auth\/api\/login` \| (.+?) \|/u.exec(section)?.[1] ?? '';
+    const configured = parseEnv({});
+    const throttle = loginThrottleFromConfig(configured);
+
+    // Both limits, each attached to the key it counts: pair first, then the address.
+    const pair = /(\d+) \/ (\d+) min per \(IP, username\) pair/u.exec(cell);
+    const perIp = /(\d+) \/ (\d+) min per IP/u.exec(cell);
+
+    expect(pair?.[1], 'the pair limit the code uses').toBe(String(throttle.maxAttempts));
+    expect(perIp?.[1], 'the per-IP limit the code uses').toBe(String(throttle.perIpLimit));
+    expect(throttle.maxAttempts).toBe(configured.authMaxLoginAttempts);
+    // Three times the pair limit, which is the whole point of the multiplier: one office address must survive three
+    // colleagues fumbling their own passwords.
+    expect(throttle.perIpLimit).toBe(throttle.maxAttempts * 3);
+
+    // The window is one number in the code (`AUTH_LOCKOUT_MINUTES`) and must be the same number for both counters.
+    expect(pair?.[2]).toBe(String(configured.authLockoutMinutes));
+    expect(perIp?.[2]).toBe(String(configured.authLockoutMinutes));
+    // And the row must not go back to saying the address is the tight one.
+    expect(cell, 'the per-IP limit is the looser of the two').not.toMatch(/^10 \/ 15 min per IP /u);
   });
 });

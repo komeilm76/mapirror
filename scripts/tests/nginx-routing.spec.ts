@@ -172,11 +172,15 @@ describe('the API locations', () => {
 });
 
 describe('the pages', () => {
-  it('send `/` and `/_site` to the one canonical address', () => {
+  it('send `/` and `/_site` to the one canonical address, keeping the query string', () => {
     // L1: `/` is not a page. A redirect keeps one address for the catalog, so bookmarks and shared links agree.
-    expect(locationFor('/', '=').body).toContain(`return 302 ${SITE_ROOT_PATH};`);
+    //
+    // `$is_args$args` is the half that is easy to leave out and hard to notice: `return` writes the target literally, so
+    // `/?utm_source=newsletter` reached `/_site/` with the campaign dropped (measured against a real nginx, pass 41).
+    // Asserted as a pair — a redirect that loses the arguments is a redirect that rewrites the link someone shared.
+    expect(locationFor('/', '=').body).toContain(`return 302 ${SITE_ROOT_PATH}$is_args$args;`);
     // `/_site` without the slash is a typed URL, not a missing file: a permanent redirect is the friendly answer.
-    expect(locationFor('/_site').body).toContain(`return 301 ${SITE_ROOT_PATH};`);
+    expect(locationFor('/_site').body).toContain(`return 301 ${SITE_ROOT_PATH}$is_args$args;`);
   });
 
   it('serve the SPA for a deep link', () => {
@@ -311,19 +315,40 @@ describe('the documented routing table', () => {
     const declared = locations().map((block) => block.path.replace(/\/+$/u, '') || '/');
 
     expect(new Set(documented)).toEqual(new Set(declared));
+    // The snippet's two redirects are the lines an operator copies, and the one that went wrong is invisible without the
+    // variable: a documented `return 302 /_site/;` teaches the version that drops the query string.
+    expect(
+      snippet.match(/\$is_args\$args/gu),
+      'both redirects keep the query string in the guide too',
+    ).toHaveLength(2);
     // …and the snippet has to say which file it is a map *of*, or the reader cannot tell what to edit.
     expect(guide).toContain('`docker/nginx.conf` is that container');
   });
 
-  it('tells the operator what a proxied client address needs', () => {
+  it('tells the operator what a proxied client address needs — and that a preset replaces the default', () => {
     // With `TRUST_PROXY=loopback` (the default) the API does not trust the web container's address, so every visitor looks
     // like the proxy — the rate limiter then has one key for the whole internet. The guide has to say so, and name the value
-    // that fixes it: a note saying "set TRUST_PROXY" without `uniquelocal` leaves the operator choosing between `true`
+    // that fixes it: a note saying "set TRUST_PROXY" without a private range leaves the operator choosing between `true`
     // (trusts anything) and the default (fixes nothing).
+    //
+    // The first version of this case asserted `TRUST_PROXY=uniquelocal` alone, which is what the guide recommended and
+    // what a real API measured as **wrong**: a preset replaces the default, `uniquelocal` has no loopback in it, and a
+    // proxy reached over `127.0.0.1:8080` (§3's own picture) then has every client recorded as `127.0.0.1`. The case now
+    // reads the `.env` block, not the prose — the prose quotes the broken value on purpose, to explain it.
     const guide = readFileSync(join(ROOT, 'docs/12-deployment.md'), 'utf8');
+    const recommended = [...guide.matchAll(/```dotenv\nTRUST_PROXY=(.+?)\n```/gu)].map(
+      (match) => match[1] as string,
+    );
 
-    expect(guide).toContain('TRUST_PROXY=uniquelocal');
+    expect(recommended, 'the guide must show the value in a copyable block').toEqual([
+      'loopback,uniquelocal',
+    ]);
+    // Both halves, because both peers are real: the bridge network in Compose, loopback for the host proxy.
+    expect(recommended[0]?.split(',')).toEqual(['loopback', 'uniquelocal']);
     expect(guide).toContain('defaults to `loopback`');
+    expect(guide, 'the reason must be stated, not just the value').toMatch(
+      /preset \*replaces\* the default/u,
+    );
   });
 });
 

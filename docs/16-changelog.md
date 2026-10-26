@@ -3,11 +3,51 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 40 passes · 168 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3).
+**Totals:** 41 passes · 171 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
 ---
+
+## Pass 41 — 2026-10-26 (a redirect that rewrites links, and two documents that state the policy backwards)
+
+This one started from the two files the last task wrote and from a question that task left unanswered: *is the
+`TRUST_PROXY` value the guide recommends actually right?* Two of the three answers were no, and one of them is the kind of
+mistake a test cannot catch on its own — because the test agreed with the document.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **Both redirects threw the query string away.** `return 302 /_site/;` sends the target literally; nginx does not re-attach the arguments. Measured against a real nginx 1.29.0 running `docker/nginx.conf`: `GET /?utm_source=newsletter&x=2` answered `Location: /_site/` — a campaign link, a filtered share, anything a person copied out of the address bar arrived with its parameters gone, and `GET /_site?filter=stale&page=2` did the same through the `301`. The page then renders the default view, which reads as "the filter did not work" rather than as a rewrite | `return 302 /_site/$is_args$args;` and `return 301 /_site/$is_args$args;`. `$is_args` is `?` when there are arguments and empty when there are none, so the bare cases stay `/_site/` with no stray `?` — re-measured: `/?utm=1&x=2` → `/_site/?utm=1&x=2`, `/_site?filter=stale&page=2` → `/_site/?filter=stale&page=2`, `/` → `/_site/`, `/_site` → `/_site/`. The guide's snippet carries the same two lines (operators copy it), and the case that catches it asserts the variable, because the failing form looks entirely reasonable |
+| 2 | **`14-security.md` §7 described the login throttle backwards.** The row read `10 / 15 min per IP (+ per-username counter)`; the shipped throttle is `10 / 15 min per (IP, username)` **pair** plus `30 / 15 min per IP` (ADR-027 says so in `15-decisions.md`, so the two documents had contradicted each other since the task landed). The document claimed the tight limit was the address, labelled the loose counter as the pair's, and left the 3× out entirely — an operator reading it would expect one address to be capped at ten attempts and would see thirty. Measured, pass 41, against a real API and PostgreSQL: ten failures for one pair from `198.51.100.20` → `429`; the same username from `198.51.100.21` → `401`; ten more from `.20` → `429`, i.e. exactly the code's policy and not the document's | The row now reads `10 / 15 min per (IP, username) pair, and 30 / 15 min per IP`, and `rate-limit.spec.ts` — which already parsed the *other* three rows of that table, which is why this one survived — parses it too: both numbers against `loginThrottleFromConfig(parseEnv({}))`, the window against `AUTH_LOCKOUT_MINUTES`, and the 3× multiplier itself. Moving the code's multiplier now fails the documentation test, and changing the document fails it first |
+| 3 | **The `TRUST_PROXY` value the deployment guide recommends silently ignores the proxy.** Pass 40 added "set `TRUST_PROXY=uniquelocal`" to `12-deployment.md` §3, reasoning that `uniquelocal` covers the Compose network. It does — and that is all it covers: in `@fastify/proxy-addr` a preset is a *list*, not an addition to the default, and `uniquelocal` is `10/8`, `172.16/12`, `192.168/16`, `fc00::/7` with **no loopback**. §3's own picture has the outer proxy reaching this container over `127.0.0.1:8080`, and on a host running the API without Compose that is also the API's peer. Measured, pass 41: with `TRUST_PROXY=uniquelocal`, a request from `127.0.0.1` carrying `X-Forwarded-For: 203.0.113.81` was recorded as `127.0.0.1` — every client one address, the exact failure the same paragraph warns about, reached by following its advice. The test added in pass 40 asserted the guide contained that string, so it agreed with the bug | The guide shows a copyable `TRUST_PROXY=loopback,uniquelocal`, explains that a preset *replaces* the default rather than extending it, and records the measurement. Re-measured after the change, with the API restarted on that value: a loopback peer with `X-Forwarded-For: 203.0.113.81` recorded `203.0.113.81`, and a `172.18.0.5` peer with `203.0.113.82` recorded `203.0.113.82` — both hops trusted, in one value. `09-development.md` §5 says the same in its `TRUST_PROXY` row, and the guide case in `nginx-routing.spec.ts` now reads the `.env` block instead of the prose (the prose quotes the broken value on purpose, to explain it), asserts both halves by name, and asserts that the reason is stated |
+
+What was probed and found sound, so that "no bug here" is a measurement rather than an impression:
+
+- **The throttle's own counters.** The pair key really does include the address: ten failures from `198.51.100.20` left
+  `198.51.100.21` able to try, and the next attempt from `.20` was `429` with `retry-after: 897` and a `lockedUntil` ~15
+  minutes out. A successful login for a *different* account from the same address was `200`, so the per-IP counter is not
+  the one that fires first.
+- **Every error leaves in the documented envelope**, including the ones Fastify raises before a handler runs: a
+  `text/plain` body → `400 VALIDATION_ERROR`; malformed JSON → `400 BAD_REQUEST`; no `Content-Type` → `415
+  UNSUPPORTED_FORMAT`; an empty body → `400 BAD_REQUEST`; `PUT /_auth/api/login` → `404 NOT_FOUND`; a 2 MiB login body →
+  `413 FILE_TOO_LARGE`. Unknown paths under a public namespace → `404`; under `/_admin/api/` → `401` unauthenticated and
+  `404` with a token, which is the guard doing its job before routing.
+- **A deactivated account is refused everywhere at once.** `is_active = false` in PostgreSQL: `/me` → `403
+  ACCOUNT_DISABLED`, `/_admin/api/*` → `403`, `POST /login` with the right password → `403`, `POST /logout` with the live
+  token → `403`. Nothing keeps working and no token is silently extended.
+- **Token parsing is strict in the right places.** `Bearer <token>, Bearer junk` → `401`; `bearer <token>` (lowercase
+  scheme) and extra spaces → accepted; two `Authorization` headers carrying one valid token → accepted; `Bearer ` with
+  nothing after it → `401`.
+- **A disallowed origin gets no CORS grant on a real request**, not only on its preflight: `Origin: https://evil.example`
+  on a login `POST` → `401` with no `access-control-allow-origin`, and `/healthz` answers `cache-control: no-store`.
+- **The proxy hop forwards no empty `X-Forwarded-Proto`**: with no such header upstream, nginx omits it entirely instead of
+  sending a blank, which is what the API's http-by-default reasoning depends on.
+
+The mutation batch for this pass: **9 mutations, all 9 killed** — both redirects losing `$is_args$args`, the guide's snippet
+teaching the dropping form, the guide recommending `uniquelocal` alone, the guide losing the sentence that explains why, the
+policy row in its old shape, the row with the two numbers swapped, the row's window drifting to 20 minutes, and the code's
+own multiplier moving 3 → 4. That last one is the point of the documentation test: it fails when the *code* changes, so the
+two cannot drift again in either direction.
 
 ## Pass 40 — 2026-10-26 (a page with no headers, and advice that costs compression)
 

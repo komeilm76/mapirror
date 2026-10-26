@@ -143,7 +143,7 @@ download IP is identical, making per-visitor statistics meaningless.
 
 | Endpoint | Limit |
 |---|---|
-| `POST /_auth/api/login` | 10 / 15 min per IP (+ per-username counter) |
+| `POST /_auth/api/login` | 10 / 15 min per (IP, username) pair, and 30 / 15 min per IP |
 | `/_public/api/countries*` | 60 / min per IP |
 | `/_public/api/countries/:slug/download` | 10 / min per IP (counted at request start, stream not interrupted) |
 | `/_admin/api/*` | 600 / min per token (protects against runaway UI loops) |

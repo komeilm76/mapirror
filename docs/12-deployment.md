@@ -159,8 +159,8 @@ location ^~ /_admin/api/  { proxy_pass http://api:3000; }            # admin JSO
 location ^~ /_public/api/ { proxy_pass http://api:3000; }            # public JSON │ otherwise the SPA
 location =  /healthz      { access_log off; proxy_pass …; }          # probes      ┘ fallback swallows them
 location =  /readyz       { access_log off; proxy_pass …; }
-location =  /             { return 302 /_site/; }
-location =  /_site        { return 301 /_site/; }
+location =  /             { return 302 /_site/$is_args$args; }
+location =  /_site        { return 301 /_site/$is_args$args; }
 location =  /_auth/login  { try_files $uri /index.html; }            # the one page outside /_site
 location ^~ /_site/       { try_files $uri /index.html; }            # SPA deep links
 location =  /index.html   { expires -1; add_header …; }              # the shell: never cached, six headers
@@ -168,8 +168,11 @@ location ^~ /assets/      { expires 1y; add_header …; }              # content
 location /                { try_files $uri =404; }                   # anything else: a real 404
 ```
 
-Four things in there are worth knowing before editing it:
+Five things in there are worth knowing before editing it:
 
+- **A redirect keeps the query string only if you write it.** `return` sends the target exactly as written, so the first
+  version of these two lines dropped it: `/?utm_source=newsletter` landed on `/_site/` with the campaign gone (measured,
+  pass 41). `$is_args$args` is what re-attaches it — `?` plus the arguments when there are any, nothing when there are not.
 - **A fallback must be a URI.** `try_files $uri /index.html` sends the request through location matching again, so the
   deep link lands on the `/index.html` rule and picks up its `Cache-Control` and CSP. `try_files /index.html =404` — the
   obvious way to write the login page — serves the file *inside* that location instead, with neither header.
@@ -188,8 +191,17 @@ disk before forwarding it, doubling disk usage and delaying progress.
 **One setting outside this file.** The API decides who to believe about a client's address (`TRUST_PROXY`, `09-development.md`
 §5), and it defaults to `loopback`. Behind this container the peer is not loopback but the compose network — so left at the
 default, every visitor looks like the web container and the API's rate limiter has a single key for the whole internet. Set
-`TRUST_PROXY=uniquelocal` in `.env` (it covers `10/8`, `172.16/12` and `192.168/16`, i.e. the compose network) when the
-stack runs in Docker. `docker compose` is wired for this in `P1-DOCK-05`.
+
+```dotenv
+TRUST_PROXY=loopback,uniquelocal
+```
+
+in `.env` when the stack runs in Docker. **Both halves are needed.** A named preset *replaces* the default rather than
+adding to it: `uniquelocal` is `10/8`, `172.16/12`, `192.168/16` and `fc00::/7`, and it does **not** include loopback
+(measured, pass 41: with `TRUST_PROXY=uniquelocal` a request from `127.0.0.1` carrying `X-Forwarded-For: 203.0.113.81` was
+recorded as `127.0.0.1`). That matters here because the outer proxy in §3 reaches this container over `127.0.0.1:8080` and,
+on a host running the API without Compose, that is also the API's peer — so the recommended value lists `loopback`
+explicitly. `docker compose` is wired for this in `P1-DOCK-05`.
 
 ## 4. Configuration
 

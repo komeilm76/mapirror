@@ -74,7 +74,7 @@ The only page outside `/_site/` is the login page, `/_auth/login` (D-19, ADR-024
 ## Documentation history
 
 Every review pass, its findings and the fixes are in **[16-changelog.md](16-changelog.md)** — kept out
-of this file so the index stays an index. Current: 40 passes, 168 defects fixed, 0 open.
+of this file so the index stays an index. Current: 41 passes, 171 defects fixed, 0 open.
 
 ---
 
