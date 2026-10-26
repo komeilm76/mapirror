@@ -28,6 +28,7 @@ import { createAppApiClient, provideApiClient } from './api';
 import { createAppPinia } from './plugins/pinia';
 import { createAppVuetify } from './plugins/vuetify';
 import { createAppRouter } from './router';
+import { useAuth } from './stores/auth';
 import { useNotifications } from './stores/notifications';
 import { installThemeSync } from './theme/policy';
 
@@ -45,9 +46,15 @@ export function createWebApp(): VueApp<Element> {
   const app = createApp(App);
   const pinia = createAppPinia();
   const vuetify = createAppVuetify();
-  const router = createAppRouter();
 
+  // The session (`P1-WEB-05`), read from `sessionStorage` the moment Pinia exists — before the router, so the guard can
+  // ask *this* store rather than the raw storage. The two are one answer: a token that could not be persisted (private
+  // mode) still signs the reader in for this tab, and a store-backed token is what the API client's sign-out latch
+  // watches (pass 33).
   app.use(pinia);
+  const auth = useAuth(pinia);
+  const router = createAppRouter({ hasSession: () => auth.isAuthenticated });
+
   app.use(vuetify);
   app.use(router);
 
@@ -58,7 +65,19 @@ export function createWebApp(): VueApp<Element> {
   // The API client (`P1-WEB-04`). Provided rather than imported by screens, so a component test hands its own stub to
   // `provideApiClient()` and a store hands its token in — one seam, no module singleton. It is wired after the router
   // because a dead session navigates, and after Pinia because the toast it shows lives in a store.
-  provideApiClient(app, createAppApiClient({ router, notifications: useNotifications(pinia) }));
+  //
+  // `token` and `clearToken` are a **pair**, both pointing at the auth store: the client sends what the store holds and
+  // the sign-out policy clears what the store holds, so the "already reported" latch cannot be set against a source the
+  // requests never read (pass 33 measured exactly that with the default `sessionStorage` pair).
+  provideApiClient(
+    app,
+    createAppApiClient({
+      router,
+      notifications: useNotifications(pinia),
+      token: () => auth.token,
+      clearToken: () => auth.forget(),
+    }),
+  );
 
   return app;
 }

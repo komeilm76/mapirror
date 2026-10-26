@@ -20,9 +20,10 @@
  *
  * The latch therefore reads **the same source the requests read** (`token`), and clears through `clearToken`. Both are
  * injectable for that reason, and the pair must agree: the first version of this module latched on `sessionStorage`
- * while the client was already reading an injected provider, so a store-backed token (what `P1-WEB-05` builds) would
- * end its session silently — no toast, no navigation, and the reader left on an admin page that can only answer `401`
- * (measured in pass 33 with a provider and an empty store: 0 toasts, route unchanged).
+ * while the client was already reading an injected provider, so a store-backed token would end its session silently — no
+ * toast, no navigation, and the reader left on an admin page that can only answer `401` (measured in pass 33 with a
+ * provider and an empty store: 0 toasts, route unchanged). `bootstrap.ts` now passes the pair from the auth store
+ * (`P1-WEB-05`), which is the case that measurement was about.
  *
  * @module api
  */

@@ -3,7 +3,7 @@
  *
  * A factory for the same reason as `plugins/vuetify.ts`: one store instance per mounted app, so a test that writes
  * to the auth store cannot decide the outcome of the next one. The stores themselves arrive with the screens that
- * need them — `auth` in `P1-WEB-05`, the rest with their API tasks.
+ * need them — `notifications` in `P1-WEB-04`, `auth` in `P1-WEB-05`, the rest with their API tasks.
  *
  * @module plugins/pinia
  */

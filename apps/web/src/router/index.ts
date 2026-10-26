@@ -19,7 +19,7 @@
 
 import { createRouter, createWebHistory, type Router } from 'vue-router';
 
-import { installAuthGuard } from './guards';
+import { installAuthGuard, type AuthGuardOptions } from './guards';
 import { APP_ROUTES } from './routes';
 import { installRouteTitles } from './titles';
 
@@ -32,9 +32,11 @@ import { installRouteTitles } from './titles';
  * The guard and the title writer are installed here rather than by the caller for one reason: a router that can be
  * built without its guard is a router that can be shipped without its guard. `bootstrap.ts` only has to `app.use()` it.
  *
+ * @param options - The session predicate; `bootstrap.ts` passes the auth store's, so the guard and the API client ask
+ *   the same question. Omitted, the guard reads `sessionStorage`, which is what a test that has no store wants.
  * @returns A fresh router, ready for `app.use(...)`.
  */
-export function createAppRouter(): Router {
+export function createAppRouter(options: AuthGuardOptions = {}): Router {
   const router = createRouter({
     history: createWebHistory(),
     routes: [...APP_ROUTES],
@@ -44,7 +46,7 @@ export function createAppRouter(): Router {
     scrollBehavior: (_to, _from, savedPosition) => savedPosition ?? { left: 0, top: 0 },
   });
 
-  installAuthGuard(router);
+  installAuthGuard(router, options);
   installRouteTitles(router);
 
   return router;

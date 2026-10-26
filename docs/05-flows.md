@@ -73,8 +73,9 @@ sequenceDiagram
       else valid
         API->>DB: BEGIN — INSERT token (sha256 hash, expiresAt), last_login_at, audit auth.login
         API-->>SPA: { token, expiresAt, admin } (cache-control: no-store)
-        SPA->>SPA: sessionStorage.setItem('mapirror.session.token')
+        SPA->>SPA: auth.signIn() → sessionStorage 'mapirror.session.token'
         SPA->>SPA: router → /_site/admin/
+        SPA->>API: GET /_auth/api/me (Bearer) → profile for the topbar
       end
     end
   end
@@ -82,13 +83,22 @@ sequenceDiagram
   SPA->>API: GET /_admin/api/system/status (Bearer)
 ```
 
-**Rules:** token only in `sessionStorage` (not `localStorage`), under one key — `mapirror.session.token`
-(`apps/web/src/auth/token-storage.ts`) — and **never** sent to a request that does not need it: `/_admin/api/*` and
-`/me`/`logout` get `Authorization: Bearer …`, while `/login` and everything under `/_public/api/*` get no credential at
-all. The rule is keyed on the path (`apps/web/src/api/client.ts`, `needsBearer`), not on a flag per call.
+**Rules:** the session is held by one store (`apps/web/src/stores/auth.ts`, `P1-WEB-05`) — the token, the profile and
+the expiry — and everything that asks "is anyone signed in?" asks it: the router's guard
+(`createAppRouter({ hasSession })`), the API client (`token`/`clearToken`) and the screens. The token itself lives only in
+`sessionStorage` (not `localStorage`), under one key — `mapirror.session.token` (`apps/web/src/auth/token-storage.ts`) —
+and is **never** sent to a request that does not need it: `/_admin/api/*` and `/me`/`logout` get `Authorization: Bearer …`,
+while `/login` and everything under `/_public/api/*` get no credential at all. The rule is keyed on the path
+(`apps/web/src/api/client.ts`, `needsBearer`), not on a flag per call. A reload re-reads the key (that is all the store
+carries over) and asks `/me` for the profile; the profile is deliberately not persisted, so nothing on screen describes a
+session that is gone. `signOut()` sends the revoke **before** it clears, because the client reads the token while it
+builds the request.
 `401` anywhere ⇒ clear state + redirect to `/_auth/login`; `403 ACCOUNT_DISABLED` does the same, because a deactivated
 account's token will never work again — it is the one non-`401` that ends a session (the other `403`, `FORBIDDEN`, is a
-permission answer and leaves the session alone). No auto-refresh (D-3). Every `/_admin/api/*` request passes the Bearer
+permission answer and leaves the session alone). Clearing and navigating belong to the client's policy, which fires only
+when the request presented a token and only from an admin page; `GET /_auth/api/me` at boot has three outcomes, not two —
+`session`, `signed-out`, and `unverified` when the question went unanswered, which keeps the session (an offline laptop
+must not be signed out). No auto-refresh (D-3). Every `/_admin/api/*` request passes the Bearer
 guard first (`P1-AUTH-05`): `onRequest`, before the body is parsed, no opt-out — so the SPA's `401` handling is one
 branch for every admin call, not one per screen.
 **Tests:** login happy path, wrong password, unknown user, deactivated account, lockout (`429` with `Retry-After`),

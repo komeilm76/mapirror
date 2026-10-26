@@ -6,6 +6,7 @@ import type { ApiClient } from '../src/api/client';
 import { SESSION_TOKEN_KEY } from '../src/auth/token-storage';
 import { createWebApp } from '../src/bootstrap';
 import { MISSING_CLIENT_MESSAGE, useApi } from '../src/composables/useApi';
+import { useAuth } from '../src/stores/auth';
 
 /**
  * `useApi()` and the provider (`P1-WEB-04`).
@@ -79,10 +80,19 @@ describe('the app the browser gets', () => {
     );
     const app = createWebApp();
     const client = app.runWithContext(() => useApi());
-    sessionStorage.setItem(SESSION_TOKEN_KEY, 'mm_stale');
+    // Signed in through the store, not by writing the key behind its back (`P1-WEB-05`): the client reads the store, so a
+    // raw `sessionStorage.setItem` after the app was built is a token this session never held — and the case would then
+    // pass or fail for a reason that has nothing to do with the policy.
+    const auth = app.runWithContext(() => useAuth());
+    auth.signIn({
+      token: 'mm_stale',
+      expiresAt: '2026-10-25T21:00:00.000Z',
+      admin: { id: '3f1c2b4a-5d6e-4f70-8a91-b2c3d4e5f607', username: 'admin' },
+    });
 
     await client.get('/_admin/api/system/status').catch(() => undefined);
 
+    expect(auth.isAuthenticated).toBe(false);
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull();
   });
 });

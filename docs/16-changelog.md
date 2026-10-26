@@ -3,11 +3,41 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 33 passes · 150 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7).
+**Totals:** 34 passes · 152 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
 ---
+
+## Pass 34 — 2026-10-26 (two answers that arrived too late, and a token that was already gone)
+
+Both defects are the same shape, and both were found by *writing the code that could have them* rather than by reading
+it: a promise is resolved against a session that has moved on in the meantime. The trigger is ordinary — signing out
+while the page is still loading — and the damage is silent, because every guard and every request still behaves.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **A `/me` that landed after a sign-out put the profile back.** `restore()` awaited the request and then wrote `admin`/`expiresAt` unconditionally. A reader who presses "sign out" (or whose token dies) while the boot-time `/me` is in flight got a store with **no token and a full profile**: `isAuthenticated` false, so nothing refused a request or blocked a route, and the topbar cheerfully showed the name of the admin who had just signed out. Measured on the probe: `outcome 'session'`, `token null`, `admin { id, username }` | `restore()` captures the token it asked about and, after the `await`, applies the answer **only if that token is still the session's**. A superseded answer changes nothing and reports what is true now: `signed-out` when the store is empty, `unverified` when a newer token has replaced it. Mutation — making the check a no-op — fails the new case |
+| 2 | **A `401` for an old token signed out the new one.** The same race, from the other side, and worse: a request made with token A answers `401` after the reader has signed in again as token B, and the handler called `forget()` — clearing **B**, a credential the server had just issued. The reader is thrown back to the login form for no reason they can see, and a second attempt works, which is exactly the shape of a bug that gets reported as "it sometimes logs me out" | The same guard covers the failure path: a refusal is only acted on when the token it refused is still the token in the store. Two cases (sign-out mid-flight, sign-in mid-flight), and a mutation that removes the guard fails both. The pair is the whole rule: **an answer belongs to the session that asked for it** |
+
+Probed and found sound rather than assumed:
+
+- **A session that cannot be persisted is still a session.** With `Storage.prototype.setItem` throwing (private mode, a
+  full quota), `signIn` returns `false` and the tab stays signed in — the store holds the token, the client sends it, and
+  a reload is the only thing lost. The alternative (discard the session) turns a successful login into "nothing
+  happened", which is what the acceptance criterion's "refresh keeps session" would be read to forbid.
+- **An unanswered `/me` is not a refusal.** `NETWORK`/`TIMEOUT`/`MALFORMED` leave the session and the profile intact and
+  report `unverified`; only the four `SESSION_ENDED_CODES` (and an unreadable `401`) end it. Signing out because a train
+  went into a tunnel is the same bug as #1 with a friendlier cause.
+- **The revoke is sent before the state is cleared, and the order is load-bearing.** `createApiClient` reads the token
+  from the store while the request is being built, so a sign-out that cleared first would send
+  `POST /_auth/api/logout` with **no** `authorization` header — a live session on the server that the screen says is
+  over. The test asserts the header on the recorded request, so a future reorder fails instead of passing.
+- **A `200` whose body is not a profile is not a sign-out.** The body crossed the network, so it is parsed with the
+  shared `MeResponseSchema` (a body with a non-UUID id fails), and the session survives: `unverified`, no invented admin.
+- **An existing test asserted the world before this task.** `use-api.spec.ts` wrote `sessionStorage` *after*
+  `createWebApp()` and expected the policy to fire. With the store as the source of truth that is a token the session
+  never held, so the case now signs in through the store — which is also the only path a reader can take.
 
 ## Pass 33 — 2026-10-25 (borrowed colours, a latch on the wrong token, and a handler that could rewrite the verdict)
 

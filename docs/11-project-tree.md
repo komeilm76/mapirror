@@ -112,6 +112,7 @@ mapirror/
 │     │  │  ├─ errors.ts           # ApiError (server + client codes), endsSession, validationIssues()
 │     │  │  └─ index.ts            # createAppApiClient(): the sign-out policy; provideApiClient()
 │     │  ├─ composables/useApi.ts  # useApi(): the client, injected — throws if the app provided none
+│     │  ├─ stores/auth.ts         # The session: token + profile + expiry; signIn/signOut/forget/restore (D-13)
 │     │  ├─ stores/notifications.ts # Toasts: one per action, errors persist, newest three at most
 │     │  ├─ components/common/ToastHost.vue  # Renders the queue (position is P1-WEB-07's)
 │     │  ├─ plugins/vuetify.ts     # createAppVuetify(): both themes, built from styles/tokens.ts
@@ -122,7 +123,7 @@ mapirror/
 │     │  │  ├─ tokens.css          # --mm-* spacing/radius/motion/focus, focus ring, reduced motion
 │     │  │  └─ typography.css      # @font-face (Space Grotesk, 22 kB) + the type roles
 │     │  ├─ assets/fonts/          # space-grotesk-latin-wght.woff2 + OFL.txt
-│     │  ├─ stores/                # notifications (exists), auth, catalog, cache, versions,
+│     │  ├─ stores/                # notifications + auth (exist), catalog, cache, versions,
 │     │  │                         # intervals, jobs, system
 │     │  ├─ composables/           # useApi (exists), usePolling (VueUse),
 │     │  │                         # useConfirm, useByteFormat, useUpdateTicker
