@@ -21,10 +21,10 @@ flowchart LR
   end
   G[Geofabrik<br/>download.geofabrik.de]
 
-  A -->|fetch /_auth, /_admin/api| N
+  A -->|fetch /_auth/api, /_admin/api| N
   P -->|fetch /_public/api| N
   N -->|HTML/JS/CSS| Browser
-  N -->|proxy /_auth, /_admin, /_public, /healthz| S
+  N -->|proxy /_auth/api, /_admin/api, /_public/api, /healthz| S
   S --> D
   S -->|read/write artifacts| V
   S -->|index, region pages, pbf + md5| G

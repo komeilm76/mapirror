@@ -91,8 +91,9 @@ mapirror/
 │  └─ web/                         # Vue 3 + Vuetify 3 SPA (served by nginx)
 │     ├─ package.json              # vue, vue-router, vuetify, pinia, @vueuse/core
 │     ├─ index.html                # The mount point (`#app`) and the module script
-│     ├─ vite.config.ts            # Vue + vite-plugin-vuetify, `@` alias, host/port (§09)
+│     ├─ vite.config.ts            # Vue + vite-plugin-vuetify, `@` alias, host/port (§09), proxy
 │     ├─ alias.ts                  # `@` → src, shared by vite.config, vitest.config and the tests
+│     ├─ dev-proxy.ts              # exists (P1-WEB-08): the five API contexts → 127.0.0.1:$PORT, 502 sentence
 │     ├─ src/
 │     │  ├─ main.ts                # Two lines: build the app, mount it (+ the two stylesheets)
 │     │  ├─ bootstrap.ts           # createWebApp(): Pinia → Vuetify → Router → theme sync → API client
@@ -152,7 +153,8 @@ mapirror/
 │     │  │  └─ public/             # CountryCard, VersionList, DownloadButton, LicenseNote
 │     │  ├─ styles/                # tokens.css, typography, overrides
 │     │  └─ types/                 # RouteMeta augmentation + re-exports from @mapmirror/shared
-│     └─ tests/                    # Component + store tests (Vitest + jsdom); law-router.test.ts is L1 for the SPA
+│     └─ tests/                    # Component + store tests (Vitest + jsdom); law-router.test.ts is L1
+│                                  # for the SPA, dev-server.spec.ts boots a real Vite on port 0
 │
 ├─ packages/
 │  └─ shared/                      # Single source of truth for API contracts

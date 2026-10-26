@@ -36,10 +36,11 @@ open http://localhost:8080/_auth/login # admin login
 > `/_admin/api/*` request needs a token issued by `login` — the guard (`P1-AUTH-05`) answers `401` before the route
 > runs, so the stubs are reachable only with a credential (the public one is the anonymous exception).
 >
-> The SPA boots (`P1-WEB-01`): `bun run dev:web` serves `http://localhost:5173` with Vue 3, Vuetify 3, Pinia, Vue Router
-> and VueUse installed, and the one page it has so far says so. The theme, the router tree, the layouts and every
-> screen follow in `P1-WEB-02`…`P1-WEB-07` (`08-tasks.md`); until `P1-WEB-08` wires the dev proxy, the SPA in
-> development talks to nothing.
+> The SPA is usable end to end in development (`P1-WEB-01`…`P1-WEB-08`): `bun run dev:web` serves
+> `http://localhost:5173` with the theme, the route tree, the admin guard, the login page (`/_auth/login`, real sign-in
+> against the API), the admin shell and a working proxy to `:3000` — so a signed-in reader can walk the shell and read
+> live API answers. Every screen inside it is still a `PlaceholderPage` naming its `13-ui-ux.md` §4 row and the task that
+> owns it (`P2`/`P3`), and the two routes `/healthz` reaches as stubs answer `503 NOT_READY` until `P3-API-03`.
 
 ## 3. First run (local dev, hot reload)
 
@@ -54,10 +55,27 @@ ADMIN_PASSWORD=dev-password-123 bun run admin:init
 bun run dev                            # runs API (:3000) + web (:5173) concurrently
 ```
 
-- Web dev server on **http://localhost:5173**. Its proxy list must use the API prefixes only —
-  `/_auth/api`, `/_admin/api`, `/_public/api`, `/healthz`, `/readyz` → `http://localhost:3000`.
+- Web dev server on **http://localhost:5173**. It forwards exactly five contexts to the API —
+  `/_auth/api`, `/_admin/api`, `/_public/api`, `/healthz`, `/readyz` → `http://127.0.0.1:3000`
+  (`apps/web/dev-proxy.ts`, wired into **both** `server` and `preview` in `vite.config.ts`).
   Proxying bare `/_auth` would send the **login page** request to the API and 404 in dev while working
-  in production (where Nginx splits them), which is a classic "works on my machine" trap.
+  in production (where Nginx splits them), which is a classic "works on my machine" trap. The list is
+  page-safe by construction: Vite matches a context with `startsWith`, and a test walks the SPA's route
+  table and fails if any page path begins with one.
+  - **The path arrives unchanged** (no `rewrite`, so the API's own `/_auth/api/…` contract holds) and
+    `xfwd` is on, so the API sees the browser's address — and its rate limits — as it does behind nginx.
+  - **`127.0.0.1`, not `localhost`**: the API binds IPv4 (`HOST=0.0.0.0`), so a resolver that answers
+    `::1` first turns a running API into `ECONNREFUSED`. The literal removes the resolver from the question.
+  - **One `PORT` moves both halves**: the proxy reads the API's own variable, so `PORT=4000 bun run dev`
+    keeps them together, and a `PORT` that is not a port stops the dev server instead of aiming it at nothing.
+  - **The API stopped is a sentence, not a stack trace**: the proxy answers `502 text/plain` naming the origin
+    and prints one line saying to run `bun run dev:api`. (Vite's default is a bare `502` and a stack.)
+  - **The list is written out, not imported.** The obvious `[...API_PREFIXES, PROBE_PATHS…]` from
+    `@mapirror/shared` does not load: Vite keeps `node_modules` external, so Node's resolver reads the
+    workspace package's extensionless imports and the dev server exits with `ERR_MODULE_NOT_FOUND`.
+    `tests/dev-proxy.spec.ts` asserts the literal equals the shared prefixes plus the two probes, and
+    `tests/dev-server.spec.ts` boots a real Vite server, forwards through a stub API, and checks that the
+    login page still comes from Vite.
 - The API watches `apps/api/src`; the worker and scheduler run in the same process
   (`WORKER_ENABLED=true`).
 - Vite HMR for the SPA, proved rather than assumed (`P1-WEB-01`): with the dev server up, a client on

@@ -3,11 +3,39 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 36 passes · 156 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3).
+**Totals:** 37 passes · 160 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
 ---
+
+## Pass 37 — 2026-10-26 (a config that could not load, and two documents that had stopped being true)
+
+Two are in the dev-server config and could not be seen by any unit test — one needed `bun run dev`, the other the warning
+printed on that same start — and two are documents that went on describing the world before `P1-WEB-02`…`08` changed it.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The proxy map could not be imported from `@mapirror/shared` — the dev server would not start.** The first draft of `dev-proxy.ts` built its contexts the obvious way, `[...API_PREFIXES, PROBE_PATHS.health, PROBE_PATHS.ready]`. Vite bundles `vite.config.ts` but leaves packages in `node_modules` **external**, and a workspace package is one of them: the config loads, then Node's own ESM resolver reads the workspace package's extensionless relative imports (`export * from './auth'`) and gives up. The two halves of `bun run dev` then disagree — the API starts and logs as usual while the web half exits 1 with `ERR_MODULE_NOT_FOUND: Cannot find module '…/packages/shared/src/auth'`. No unit test could see it: vitest *transpiles* the workspace package, so every test that imported the constant passed | The list is a literal in `dev-proxy.ts` with the failure recorded beside it, and the guarantee an import would have given is now a test: `dev-proxy.spec.ts` runs where the workspace package **can** be imported and asserts `PROXY_CONTEXTS` equals `[...API_PREFIXES, PROBE_PATHS.health, PROBE_PATHS.ready]`, so a namespace added to the route law fails until the list follows. And a second, end-to-end spec boots a real Vite dev server against a stub API, which is the only kind of test that runs a config the way Vite does |
+| 2 | **The helper imports were extensionless, which Vite 8 warns about and Vite 9 will not load.** `./alias` and `./dev-proxy` in `vite.config.ts` produced, on every dev start, `configLoader: 'native'` is now the default — a warning that the config is being read through a path that is being removed. It is the same class as #1: the config's *module graph* is not the app's | The two imports carry `.ts` (`./alias.ts`, `./dev-proxy.ts`) and `apps/web/tsconfig.json` sets `allowImportingTsExtensions` — safe because the repo is `noEmit`, and `vue-tsc` then typechecks the config exactly as Vite reads it. The start is silent again, and the same warning cannot come back unnoticed |
+| 3 | **`09-development.md` described a dev server that talks to nothing.** Its status note still read *"until `P1-WEB-08` wires the dev proxy, the SPA in development talks to nothing"* — true when `P1-WEB-01` was the last task and false since six of them landed: the theme, the router, the guard, the login page and the admin shell are all in, and from this task so is the proxy. A reader would have believed the documented flow was broken, and the guide's own "under 10 minutes" claim with it | The paragraph now says what a reader can actually do — sign in against the real API on `/_auth/login` and walk a shell whose screens are placeholders naming the task that owns them — and names the one stub (`P3-API-03`) that still answers `503 NOT_READY` |
+| 4 | **`02-architecture.md`'s deployment diagram proxied the page prefixes.** The nginx hop was labelled `proxy /_auth, /_admin, /_public, /healthz` — the exact shape `09` §3 and the dev proxy's own comment exist to forbid, where `/_auth` swallows the **login page** and only production's location order saves it. `12-deployment.md` lists `^~ /_auth/api/` and `= /_auth/login` separately, so the two documents disagreed | The label (and the browser arrows) name the three `*/api` prefixes plus `/healthz`, which is what the container does |
+
+Probed and found sound rather than assumed:
+
+- **A dev tool refuses to mint the API's error codes.** The error handler was first written to answer `503` with the shared
+  error envelope, which is what a "service unavailable" looks like — except `SERVICE_UNAVAILABLE` is not one of the 25 codes
+  in `04-api.md` §0.2, so the tool would have invented server behaviour for the browser to parse. It answers `502
+  text/plain` with a sentence instead, and the tests assert the body is **not** JSON.
+- **The double slash is a test bug, caught by running the test.** `server.resolvedUrls.local[0]` ends in `/`; joining it with
+  a path that also begins with `/` produced `//_auth/api/me`, which matches no `startsWith` context, falls through to the SPA
+  fallback, and answers `200 text/html` — a test that reads the index page while believing it read the API. One `url()`
+  helper does the join, and the server's trailing slash is asserted where it is assumed.
+- **The proxy does not slow the suite.** The end-to-end spec is five cases in about 1.5 s on ephemeral ports (`port: 0` for
+  Vite, `listen(0, '127.0.0.1')` for the stub), so it cannot collide with a developer's running server or with a CI job.
+- **Vite's string contexts are prefix tests, on the raw path.** `/_public/api/countries` matches only because the context is
+  the complete prefix; `/_auth/api` does not match `/_auth/login`. The route-table walk that asserts no page path begins
+  with a context is therefore the rule, not a decoration.
 
 ## Pass 36 — 2026-10-26 (a rule that matched nothing, and two behaviours Vuetify already owned)
 

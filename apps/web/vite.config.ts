@@ -1,9 +1,13 @@
 /**
  * Vite configuration for the SPA (`P1-WEB-01`).
  *
- * Kept deliberately small: the pieces that matter now are the Vue plugin, the `@` alias, and a dev server that a
- * **container or a remote preview** can reach. The proxy to the API is `P1-WEB-08`; the production build is what
- * `P1-DOCK-02` copies into nginx.
+ * Kept deliberately small: the pieces that matter are the Vue plugin, the `@` alias, a dev server that a **container or a
+ * remote preview** can reach, and the proxy to the API (`P1-WEB-08`, in its own module because the traps in it are all
+ * silent — `dev-proxy.ts`). The production build is what `P1-DOCK-02` copies into nginx.
+ *
+ * The two helper imports carry their `.ts` extension on purpose: Vite 8 warns that extensionless relative imports do
+ * not survive its planned `native` config loader, and a config that fails to load is a dev server that does not start
+ * (`dev-proxy.ts` records that failure, and `apps/web/tsconfig.json` gains `allowImportingTsExtensions` for it).
  *
  * ## Why `host` is not `localhost`
  *
@@ -25,7 +29,8 @@ import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vite';
 import vuetify from 'vite-plugin-vuetify';
 
-import { SRC_ALIAS } from './alias';
+import { SRC_ALIAS } from './alias.ts';
+import { createDevProxy } from './dev-proxy.ts';
 
 /** The port `09-development.md` §3 documents, and the one the API's CORS allow-list names in dev. */
 const DEV_PORT = 5173;
@@ -51,12 +56,18 @@ export default defineConfig({
     // bookmark all say 5173.
     strictPort: true,
     allowedHosts: true,
+    // One entry per API prefix plus the two probes; everything else is a page this server renders. Built from
+    // `@mapirror/shared`, so the list cannot drift from the route law, and `PORT` is the API's own variable.
+    proxy: createDevProxy(),
   },
   preview: {
     host: true,
     port: DEV_PORT,
     strictPort: true,
     allowedHosts: true,
+    // `vite preview` serves the built bundle, and without this a preview build talks to nothing — every API call 404s
+    // against the static server, which looks like a broken build rather than a missing proxy.
+    proxy: createDevProxy(),
   },
   build: {
     outDir: 'dist',

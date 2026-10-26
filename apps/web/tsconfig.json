@@ -5,6 +5,10 @@
     /* The SPA runs in a browser: add DOM libs and drop the Bun type surface. */
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": [],
+    /* `vite.config.ts` imports its two helpers **with** the extension — Vite 8 warns that the extensionless form does
+       not survive its planned `native` config loader, and a config that stops loading is a dev server that does not
+       start (`dev-proxy.ts` records the failure that made this the rule). */
+    "allowImportingTsExtensions": true,
     /* `@/…` and `vite.config.ts`'s alias must be the same string, or the editor resolves an import the build cannot. */
     "paths": {
       "@/*": ["./src/*"]
