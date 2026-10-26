@@ -76,6 +76,16 @@ describe('security headers', () => {
     await instance.close();
   });
 
+  it('marks every auth API response no-store, including a 404 with no matched route', async () => {
+    const instance = await buildTestApp();
+
+    const response = await instance.inject({ method: 'GET', url: '/_auth/api/nope' });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.headers['cache-control']).toBe('no-store');
+    await instance.close();
+  });
+
   it('sets them on a 404 as well, where a wrong route could otherwise answer bare', async () => {
     const instance = await buildTestApp();
 

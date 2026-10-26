@@ -26,7 +26,7 @@
  * @module modules/auth/admin-accounts
  */
 
-import { LOGIN_USERNAME_MAX } from '@mapirror/shared';
+import { containsControlCharacter, LOGIN_USERNAME_MAX } from '@mapirror/shared';
 import type { Kysely } from 'kysely';
 
 import type { TokenExecutor } from '../../db/repositories/admin-tokens';
@@ -65,26 +65,6 @@ export class AdminUsernameError extends Error {
 }
 
 /**
- * Reports whether a string contains a C0 or C1 control character (NUL, tab, newline, escape, …).
- *
- * Written as a code-point test rather than `/\u0000-\u001F/u` because ESLint's `no-control-regex` is right to flag the
- * pattern: a control character in a regex literal is unreadable in a diff and invisible in a review. Comparing numbers
- * says the same thing in a form a reviewer can check.
- *
- * @param value - Candidate string.
- * @returns `true` when any character is below U+0020 or in U+007F–U+009F.
- */
-function hasControlCharacter(value: string): boolean {
-  // Iterated by code unit, so there is no `undefined` case to handle: `codePointAt` can return `undefined` and the
-  // `?? 0` that guarded it was a branch nothing could ever take (found by the coverage report in pass 26).
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return true;
-  }
-  return false;
-}
-
-/**
  * Validates and normalises a username for storage.
  *
  * Trimming is deliberate and is the one silent change made to operator input: `findAdminByUsername` trims what it
@@ -111,7 +91,7 @@ export function parseAdminUsername(input: string): string {
 
   // Checked on the raw input, not the trimmed one: trimming removes the outer whitespace, and a newline *inside* a name
   // is the case that breaks a log line.
-  if (hasControlCharacter(input)) {
+  if (containsControlCharacter(input)) {
     problems.push({
       rule: 'control-character',
       message: 'The username must not contain control characters or line breaks.',

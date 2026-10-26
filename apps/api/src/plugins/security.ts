@@ -24,6 +24,7 @@
  * @module plugins/security
  */
 
+import { apiScopeOf } from '@mapirror/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { AppConfig } from '../config/env';
@@ -177,6 +178,11 @@ export function installSecurity(app: FastifyInstance, context: PipelineContext):
 
   app.addHook('onRequest', (request, reply, done) => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) reply.header(name, value);
+
+    // Set this at root scope so even an unmatched auth API URL gets the no-store policy. A hook inside the auth route
+    // plugin only runs after route matching and misses the 404 path (`04-api.md` §1 promises every answer in the
+    // namespace, including errors).
+    if (apiScopeOf(request.url) === 'auth') reply.header('cache-control', 'no-store');
 
     // A refusal throws, and the `errors` stage (installed one slot earlier) turns it into the envelope. The
     // headers set above are already on this reply, so even a `403` carries them.

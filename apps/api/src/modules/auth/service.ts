@@ -13,8 +13,10 @@
  * 4. **Then, and only then, look at the account.** A deactivated account answers `403 ACCOUNT_DISABLED`, but only
  *    after the password checked out: answering `403` to a wrong password would confirm the username to an attacker
  *    who has nothing.
- * 5. **On success**, one transaction writes the token, `last_login_at` and the audit row. All three or none: a session
- *    that exists without an audit entry is precisely the thing the audit log is for.
+ * 5. **On success**, one transaction locks and rechecks the account hash before writing the token, `last_login_at` and
+ *    the audit row. That closes the race where a password reset commits after verification but before token issuance;
+ *    all three writes still commit together, because a session without an audit entry is precisely what the audit log
+ *    is for.
  *
  * A failed attempt writes an `auth.login_failed` row and counts against the throttle. That write is deliberately
  * *outside* the transaction (there is none on this path) and wrapped: a broken audit table must not turn a `401` into
@@ -141,27 +143,76 @@ export async function login(deps: LoginDeps, request: LoginRequestLike): Promise
       );
     }
 
-    const issued = await withTransaction(deps.database, async (trx) => {
-      const token = await issueToken(trx, admin.id, {
-        ttlHours: deps.tokenTtlHours,
-        now,
-        userAgent: deps.userAgent ?? null,
-        ip,
+    let rejectedAfterVerify: 'credentials-changed' | 'disabled' | null = null;
+    let issued: Awaited<ReturnType<typeof issueToken>>;
+    try {
+      issued = await withTransaction(deps.database, async (trx) => {
+        // Password verification happened before this transaction to keep Argon2 out of a held DB connection. Lock and
+        // recheck the account row before issuing: if a reset committed in that gap, the old password must not mint a
+        // post-reset token. If this lock wins the race, the reset waits and revokes the token after this commit.
+        const current = await trx
+          .selectFrom('admins')
+          .select(['password_hash', 'is_active'])
+          .where('id', '=', admin.id)
+          .forUpdate()
+          .executeTakeFirst();
+
+        if (current === undefined || current.password_hash !== admin.password_hash) {
+          rejectedAfterVerify = 'credentials-changed';
+          throw new AppError('INVALID_CREDENTIALS', INVALID_CREDENTIALS_MESSAGE);
+        }
+        if (!current.is_active) {
+          rejectedAfterVerify = 'disabled';
+          throw new AppError(
+            'ACCOUNT_DISABLED',
+            'This account is deactivated. Ask an operator to re-enable it.',
+          );
+        }
+
+        const token = await issueToken(trx, admin.id, {
+          ttlHours: deps.tokenTtlHours,
+          now,
+          userAgent: deps.userAgent ?? null,
+          ip,
+        });
+        await recordLogin(trx, admin.id, now);
+        await insertAuditLog(trx, {
+          actorId: admin.id,
+          actorName: admin.username,
+          action: AUDIT_ACTIONS.login,
+          ip,
+          // The token id, not the token: an audit row must never hold a credential, and the id is what a "revoke this
+          // session" screen needs.
+          targetType: 'admin_token',
+          targetId: token.tokenId,
+          metadata: { userAgent: deps.userAgent ?? null },
+        });
+        return token;
       });
-      await recordLogin(trx, admin.id, now);
-      await insertAuditLog(trx, {
-        actorId: admin.id,
-        actorName: admin.username,
-        action: AUDIT_ACTIONS.login,
-        ip,
-        // The token id, not the token: an audit row must never hold a credential, and the id is what a "revoke this
-        // session" screen needs.
-        targetType: 'admin_token',
-        targetId: token.tokenId,
-        metadata: { userAgent: deps.userAgent ?? null },
-      });
-      return token;
-    });
+    } catch (error) {
+      if (rejectedAfterVerify === 'credentials-changed') {
+        // The presented secret is no longer valid. Count it and audit it like a wrong password, but keep the public
+        // answer generic so a reset racing with a request reveals no account state.
+        throttle.recordFailure(ip, username);
+        settled = true;
+        await recordFailure(deps, {
+          adminId: admin.id,
+          actorName: admin.username,
+          metadata: { reason: 'password_changed_during_login' },
+          ip,
+        });
+      } else if (rejectedAfterVerify === 'disabled') {
+        throttle.release(ip, username);
+        settled = true;
+        await recordFailure(deps, {
+          adminId: admin.id,
+          actorName: admin.username,
+          metadata: { reason: 'account_disabled' },
+          ip,
+        });
+      }
+      throw error;
+    }
 
     // Only after the token, the login record and the audit row committed: a transaction that failed is not a success
     // that should forgive the failures before it.

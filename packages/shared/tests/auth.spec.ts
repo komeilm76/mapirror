@@ -48,6 +48,14 @@ describe('LoginRequestSchema', () => {
     }
   });
 
+  it('rejects control characters in usernames before SQL or audit logging', () => {
+    for (const username of ['\u0000admin', 'admin\nowner', 'admin\u0085']) {
+      const result = LoginRequestSchema.safeParse({ username, password: 'x' });
+      expect(result.success, JSON.stringify(username)).toBe(false);
+      if (!result.success) expect(result.error.issues[0]?.path).toEqual(['username']);
+    }
+  });
+
   it('names the failing field, so a form can mark the right input', () => {
     const result = LoginRequestSchema.safeParse({ username: '', password: 'x' });
 

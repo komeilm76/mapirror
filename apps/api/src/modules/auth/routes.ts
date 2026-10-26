@@ -49,12 +49,6 @@ export interface AuthRouteOptions {
 export const authRoutes: FastifyPluginCallback<AuthRouteOptions> = (app, options) => {
   const { throttle } = options;
 
-  // Applied to the namespace, before every handler and every error path, so a response cannot leave without it.
-  app.addHook('onRequest', (_request, reply, done) => {
-    void reply.header('cache-control', 'no-store');
-    done();
-  });
-
   app.post('/login', async (request): Promise<LoginResponse> => {
     const parsed = LoginRequestSchema.safeParse(request.body);
     if (!parsed.success) {

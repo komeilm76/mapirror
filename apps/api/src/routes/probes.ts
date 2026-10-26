@@ -117,7 +117,9 @@ async function cacheWritable(cacheDir: string): Promise<void> {
   const file = join(cacheDir, CACHE_PROBE_FILE);
   try {
     await mkdir(cacheDir, { recursive: true });
-    await writeFile(file, '');
+    // One byte, not an empty file: a full data volume may still allow a zero-byte inode, which would falsely report
+    // readiness while every real cache artifact fails with ENOSPC.
+    await writeFile(file, 'x');
   } finally {
     // Best-effort, and outside the failure path: a leftover probe file is harmless, and a throw here would mask
     // the write error that explains why the probe failed.

@@ -45,6 +45,23 @@ export const LOGIN_PASSWORD_MAX = 256;
 /** Shortest username; the column has no minimum, but an empty name is not a name. */
 export const LOGIN_USERNAME_MIN = 1;
 
+/**
+ * Reports whether a username contains a control character that must not reach PostgreSQL or an audit line.
+ *
+ * Usernames are also validated when an admin is created; exporting the rule keeps the browser/API request contract and
+ * the operator scripts on the same restriction.
+ *
+ * @param value - Candidate username.
+ * @returns `true` when any character is below U+0020 or in U+007F–U+009F.
+ */
+export function containsControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return true;
+  }
+  return false;
+}
+
 /** Shortest password **at login**. See the module comment: the creation policy's floor is 12, this is 1. */
 export const LOGIN_PASSWORD_MIN = 1;
 
@@ -59,7 +76,11 @@ export const LoginRequestSchema = z.object({
   username: z
     .string()
     .min(LOGIN_USERNAME_MIN, 'Enter your username.')
-    .max(LOGIN_USERNAME_MAX, `Use at most ${String(LOGIN_USERNAME_MAX)} characters.`),
+    .max(LOGIN_USERNAME_MAX, `Use at most ${String(LOGIN_USERNAME_MAX)} characters.`)
+    .refine(
+      (username) => !containsControlCharacter(username),
+      'The username must not contain control characters or line breaks.',
+    ),
   password: z
     .string()
     .min(LOGIN_PASSWORD_MIN, 'Enter your password.')

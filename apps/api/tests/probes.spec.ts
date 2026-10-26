@@ -1,6 +1,7 @@
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { Writable } from 'node:stream';
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -177,6 +178,43 @@ describe('GET /readyz', () => {
     expect(response.body).not.toContain('db:5432');
     expect(response.headers['cache-control']).toBe('no-store');
   });
+
+  it.skipIf(process.platform !== 'linux')(
+    'answers 503 when zero-byte files work but data writes fail',
+    () => {
+      // RLIMIT_FSIZE=0 models a filesystem that can create directory entries but cannot allocate file data. The old
+      // zero-byte probe passed this condition and reported cache=ok, even though a download could not write one byte.
+      const script = [
+        "import { mkdtemp, readdir, rm } from 'node:fs/promises';",
+        "import { tmpdir } from 'node:os';",
+        "import { join } from 'node:path';",
+        "import { parseEnv } from './apps/api/src/config/env.ts';",
+        "import { buildTestApp, stubDatabase } from './apps/api/tests/helpers/test-app.ts';",
+        "const dir = await mkdtemp(join(tmpdir(), 'mapirror-fsize-test-'));",
+        'const app = await buildTestApp({ config: parseEnv({ CACHE_DIR: dir }), database: stubDatabase() });',
+        'try {',
+        "  const response = await app.inject({ method: 'GET', url: '/readyz' });",
+        '  console.log(JSON.stringify({ statusCode: response.statusCode, body: response.json(), files: await readdir(dir) }));',
+        '} finally { await app.close(); await rm(dir, { recursive: true, force: true }); }',
+      ].join('\n');
+      const result = spawnSync(
+        'bash',
+        ['-c', 'ulimit -f 0; exec "$@"', 'readyz-fsize-test', 'bun', '-e', script],
+        { cwd: resolve(import.meta.dirname, '../../..'), encoding: 'utf8', timeout: 30_000 },
+      );
+
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(0);
+      const probe = JSON.parse(result.stdout) as {
+        statusCode: number;
+        body: { checks: { cache: string } };
+        files: string[];
+      };
+      expect(probe.statusCode).toBe(503);
+      expect(probe.body.checks.cache).toBe('fail');
+      expect(probe.files).toEqual([]);
+    },
+  );
 
   it('answers 503 naming the cache when the directory cannot be written', async () => {
     // A *file* where the directory should be: `mkdir` fails with ENOTDIR and the write cannot succeed. Chmod

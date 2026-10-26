@@ -136,6 +136,24 @@ describe.skipIf(skipReason !== null)('POST /_auth/api/login', () => {
     });
   });
 
+  it('rejects control characters in usernames before they reach PostgreSQL', async () => {
+    await withApp(async ({ app }) => {
+      const response = await post(app, { username: '\u0000admin', password: PASSWORD });
+
+      expect(response.statusCode).toBe(400);
+      expect(
+        response.json<{ error: { code: string; details?: { issues: { path: string }[] } } }>().error
+          .code,
+      ).toBe('VALIDATION_ERROR');
+      expect(
+        response.json<{ error: { code: string; details?: { issues: { path: string }[] } } }>().error
+          .details,
+      ).toMatchObject({
+        issues: [expect.objectContaining({ path: 'username' })],
+      });
+    });
+  });
+
   it('accepts a 256-unit password at the boundary the login schema documents', async () => {
     // The ceiling is UTF-16 code units (`LOGIN_PASSWORD_MAX`), and a password at exactly the limit must reach the
     // handler — here it fails the *credential* check, which proves validation let it through.

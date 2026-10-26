@@ -3,9 +3,24 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 46 passes · 186 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3).
+**Totals:** 47 passes · 190 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 47 — 2026-10-26 (Phase 1 input handling and readiness edge cases)
+
+A focused adversarial review of the completed Phase 1 API foundation followed unusual-but-valid HTTP and filesystem conditions through the real route pipeline. Docker-dependent integration was left for the operator's later clean-machine check.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **A NUL in a login username became a server error.** `LoginRequestSchema` accepted control characters even though account creation rejects them. Probed `POST /_auth/api/login` with `\u0000admin` against PostgreSQL: PostgreSQL cannot represent NUL in `text`, so the request reached the query and returned `500 INTERNAL_ERROR` instead of input validation | The shared login schema now rejects C0/C1 control characters before SQL; the same exported predicate is used by admin-account creation. `04-api.md` documents the constraint. The real route now returns `400 VALIDATION_ERROR`, and the shared-schema and integration regression tests cover NUL, newline and C1 control input |
+| 2 | **Readiness reported a cache as writable when no file data could be written.** `writeFile(path, '')` creates/truncates a zero-byte inode but allocates no file data. Probed the real `GET /readyz` under Linux `RLIMIT_FSIZE=0`: zero-byte creation succeeded and the endpoint incorrectly returned `200 {cache:ok}`, while a one-byte write failed with `EFBIG` | The cache probe now writes one byte before cleanup. A subprocess regression test reproduces the file-size limit and requires `503 {cache:fail}`; it failed with the old zero-byte probe and passes with the fix |
+| 3 | **Unmatched auth API URLs missed `Cache-Control: no-store`.** The header was set by a hook scoped inside the auth route plugin, which never runs for an unmatched path. A real `GET /_auth/api/nope` returned `404` without the header, contrary to §1's promise that every auth API answer is non-cacheable | The root security hook now applies `no-store` to the shared auth API scope before route matching; the redundant namespace hook was removed. A regression test checks the unmatched `404` carries the header |
+| 4 | **A password reset could be raced by an already-verifying login.** The login read and verified the old hash, then issued its token in a later transaction without checking that the password was still current. A deterministic integration probe paused just after successful old-password verification, committed a reset, then resumed login: the old code returned `200` and left a live token after the reset had supposedly revoked every session | Token issuance now locks and rechecks the admin row inside its transaction. If reset commits first, login returns the generic `401 INVALID_CREDENTIALS` and records the stale attempt; if login obtains the row lock first, the reset waits and its revocation sees the committed token. The new race regression fails on the old service and passes with the fix |
+
+All four findings were first captured by failing probes, then verified after the fixes. The Phase 1-specific tests and full repository gate pass. **Totals after this pass: 47 passes · 190 defects · 0 open.**
 
 ---
 

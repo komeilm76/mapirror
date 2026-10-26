@@ -127,7 +127,7 @@ Rate limited per IP; all responses are JSON.
 
 ### `POST /_auth/api/login`
 
-Body: `{ "username": "admin", "password": "…" }` (Zod: username 1–64 chars, password 1–256 chars).
+Body: `{ "username": "admin", "password": "…" }` (Zod: username 1–64 chars, password 1–256 chars). Username control characters are rejected.
 
 > The **login** schema deliberately does not enforce the 12-character minimum: it must accept any
 > existing password and must not reveal the policy to an attacker. The minimum is enforced where
