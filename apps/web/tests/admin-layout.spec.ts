@@ -264,7 +264,12 @@ describe('the way out', () => {
 
     expect(auth.isAuthenticated).toBe(false);
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBeNull();
-    expect(router.currentRoute.value.path).toBe(LOGIN_PAGE);
+    // The menu cannot await `replace()` in the middle of its own handler, and the router commits a tick or three
+    // later — which a loaded machine pushes past any fixed number of `flushPromises()`. Measured: this file failed
+    // once in four full-gate runs with two flushes, and never with `waitFor`.
+    await vi.waitFor(() => {
+      expect(router.currentRoute.value.path).toBe(LOGIN_PAGE);
+    });
     // The page they were on, so signing back in puts them there: the same `loginRedirectFor` the guard uses.
     expect(router.currentRoute.value.query['redirect']).toBe(adminPagePaths.jobs());
   });

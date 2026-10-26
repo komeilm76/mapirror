@@ -3,11 +3,41 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 37 passes · 160 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4).
+**Totals:** 38 passes · 163 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
 ---
+
+## Pass 38 — 2026-10-26 (a test that failed once in four runs, and two tests that proved nothing)
+
+The defect is in the suite, not the app, and it was found by running the gate rather than by reading anything: the same
+commit, the same machine, one red run out of four.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The sign-out case passed three times in four.** `admin-layout.spec.ts` clicked the menu's sign-out item, awaited `flushPromises()` twice, then asserted the address bar. But the handler cannot `await` its own `replace()` — the revoke request, the store reset and the navigation are a chain of promises the test has no handle on — so "two flushes" is a guess about how many microtask turns that chain needs. Measured: 1 failure in 4 runs of the file (`expected '/_site/admin/jobs' to be '/_auth/login'`), and the same case passed on every rerun, which is exactly what makes a flake expensive: the next person to see it assumes their own change broke something | The route assertions are inside `vi.waitFor()`, the rule the router cases in this repository already follow for a commit the test does not drive. The state assertions (store empty, storage cleared) stay outside it, because they are true the moment the click returns. 5 consecutive runs of the file, then the whole gate, green |
+| 2 | **The credential scan let a database URL through.** The case that forbids baking a secret into `ARG`/`ENV` filtered the *names* for `PASSWORD`, `SECRET`, `TOKEN` and `_FILE` — so `ENV DATABASE_URL=postgres://mapirror:mapirror@db:5432/mapirror` sailed past it, which is precisely the mistake that gets made: the DSN looks like configuration, and it holds the password in the clear. Found by the mutation batch, not by reading: the mutation that adds it changed no test | Two checks instead of one. `DATABASE_URL` and `DSN` join the name list, because compose derives the DSN from `POSTGRES_PASSWORD` at run time and a copy in the image is a copy nobody rotates; and a second check looks at the **shape** of every value — `scheme://user:password@host` is a credential whatever the variable is called. Both mutations now fail |
+| 3 | **The `.dockerignore` matcher's `!` rule was untested, so a broken one passed.** `check-hygiene` asserts that secrets are excluded and that the files an image needs are kept; neither list contains the one line that needs a re-include (`!.env.example`), so `excluded = !negated` could be changed to `excluded = true` — every path excluded — with the whole gate green. The gate was not lying; it was answering a question nobody had asked | The matcher now has its own cases (`scripts/tests/dockerignore.spec.ts`, 11): the real file's keep/exclude lists, the template that must survive `*.env`, and the rules themselves — last match wins, `!` re-includes in order, `*` never crosses `/`, `**` does, a trailing slash covers a directory, `?` is one character, dots are escaped, comments are not patterns. Six mutations of the matcher, six failures |
+
+Probed and found sound rather than assumed:
+
+- **`bun install --production` hoists nothing.** The first draft of the Dockerfile copied `/app/node_modules` and nothing else,
+  on the assumption that a production install is a flat tree. Measured in a staging copy: the store lands in
+  `node_modules/.bun` and the *workspace's* dependencies are symlinked into `apps/api/node_modules` — so the image needs
+  three copies, and the version that copied one would have booted and then failed on `Cannot find module 'fastify'`. The
+  test now names all three by path.
+- **The Dockerfile's stages were executed, not merely read.** With no daemon in this environment, `docker/api.Dockerfile`
+  was parsed and its `COPY`/`RUN` lines replayed into a scratch tree (`/tmp/dockersim`): the install ran, the tree came out
+  at 27 MB, the API booted from it (`/healthz` 200, `/readyz` 200 with `database`/`cache` ok, `/_auth/api/me` 401), SIGTERM
+  produced `{"msg":"shutting down"}`, and `scripts/migrate.ts` and `scripts/init-admin.ts` ran from inside it. That is what
+  the "it boots" claim rests on until `P1-DOCK-05` builds the real image on a Docker host.
+- **`--frozen-lockfile` tolerates the missing web workspace.** `apps/web/package.json` is deliberately not copied into the
+  API image; bun answers with a note (`skipped 1 workspace listed in bun.lock but not on disk: "@mapirror/web"`) and exits 0.
+  Worth knowing before someone reads that line in a build log as a failure.
+- **`.dockerignore` matching is now one implementation.** The Dockerfile test needs the same answer the hygiene check does
+  ("would this path be in the build context?"), so the matcher moved to `scripts/lib/dockerignore.ts` and both import it.
+  Two copies of an ignore-file rule is two answers, and the one that disagrees is always the one that is not running.
 
 ## Pass 37 — 2026-10-26 (a config that could not load, and two documents that had stopped being true)
 

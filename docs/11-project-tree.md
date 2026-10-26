@@ -175,7 +175,8 @@ mapirror/
 │  ├─ tests/                       # CLI tests (scripts project in Vitest)
 │  ├─ init-admin.ts                # Launch script: create admin from ADMIN_PASSWORD* (idempotent, never echoes)
 │  ├─ lib/
-│  │  └─ secret-prompt.ts         # Hidden terminal input: raw mode first, no echo, Ctrl-C/Ctrl-D
+│  │  ├─ secret-prompt.ts         # Hidden terminal input: raw mode first, no echo, Ctrl-C/Ctrl-D
+│  │  └─ dockerignore.ts          # exists (P1-DOCK-01): .dockerignore matching, one answer for gate + image test
 │  ├─ reset-admin-password.ts      # Reset + revoke all sessions (--generate / --password-stdin / prompt)
 │  ├─ migrate.ts                   # Run Kysely migrations (also run on boot)
 │  ├─ sync-catalog.ts              # Manual catalog sync (cron-friendly)
@@ -183,7 +184,7 @@ mapirror/
 │  └─ seed-dev.ts                  # Dev fixtures (never runs in production)
 │
 ├─ docker/
-│  ├─ api.Dockerfile               # Multi-stage Bun build → non-root runtime
+│  ├─ api.Dockerfile               # exists (P1-DOCK-01): deps → runtime, uid 10001, bun 1.4.4
 │  ├─ web.Dockerfile               # Vite build → nginx runtime
 │  ├─ nginx.conf                   # /_auth/api/ before /_auth/login, SPA fallback, proxy, tuning
 │  ├─ entrypoint.api.sh            # migrate → init-admin → start API+worker

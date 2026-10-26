@@ -49,6 +49,27 @@ docker compose ps
 docker compose logs -f api
 ```
 
+### What gets built
+
+| Image | Dockerfile | Contents | Status |
+|---|---|---|---|
+| `api` | `docker/api.Dockerfile` | Fastify + worker + scheduler, one Bun process, sources shipped as written | exists (`P1-DOCK-01`) |
+| `web` | `docker/web.Dockerfile` | the Vite bundle, served by nginx, which also proxies the API prefixes | `P1-DOCK-02` |
+
+Both are multi-stage and both run as a **non-root** user. The API image is worth knowing three things about, because they
+are the difference between an image that starts and one that does not:
+
+- **`oven/bun:1.4.4`**, the same version the repository pins in `packageManager`. `scripts/tests/dockerfile.spec.ts` fails
+  if the two drift.
+- **Dependencies are installed with `--frozen-lockfile --production`**, so a build resolves nothing the lockfile does not
+  already name and no test runner reaches production.
+- **The process runs as uid `10001`, and `/data` belongs to it.** A bind-mounted cache directory therefore needs
+  `chown 10001:10001` on the host once:
+
+```bash
+sudo chown -R 10001:10001 /srv/mapirror/data
+```
+
 **Do not edit `DATABASE_URL`.** Inside the containers it is derived — `postgres://mapirror:<POSTGRES_PASSWORD>@db:5432/mapirror` — so changing `POSTGRES_PASSWORD` is enough and the two can never disagree. The copy in `.env` is for running the API outside Docker (native dev, tests). The same rule applies to `CACHE_DIR` / `TMP_DIR`, which compose points at the mounted volumes (`/data/cache`, `/data/tmp`).
 
 First boot performs, in order: wait for DB → run migrations → create the admin (idempotent) → start

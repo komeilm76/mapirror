@@ -28,6 +28,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+import { isExcludedFromBuild, parseDockerIgnore } from './lib/dockerignore';
+
 import { TEST_PROJECTS } from '../vitest.projects';
 
 const ROOT = resolve(import.meta.dir, '..');
@@ -134,68 +136,6 @@ function trackedButIgnored(): string[] | null {
 }
 
 /**
- * Turns one `.dockerignore` line into a regular expression, following Docker's pattern rules closely
- * enough for this repository: `**` spans directories, `*` and `?` never match `/`.
- *
- * @param pattern - A single pattern (leading `!` already removed).
- * @returns The compiled matcher, anchored and allowing trailing path segments.
- */
-function globToRegExp(rawPattern: string): RegExp {
-  // `secrets/` means the directory and everything under it, so the trailing slash is not part of the
-  // match — without this, `secrets/admin_password` slipped through a pattern that read as covering it.
-  const pattern = rawPattern.replace(/\/+$/, '');
-  let source = '';
-  for (let index = 0; index < pattern.length; index += 1) {
-    const char = pattern[index] as string;
-    if (char === '*') {
-      if (pattern[index + 1] === '*') {
-        index += 1;
-        if (pattern[index + 1] === '/') index += 1;
-        source += '.*';
-      } else {
-        source += '[^/]*';
-      }
-    } else if (char === '?') {
-      source += '[^/]';
-    } else {
-      source += char.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-    }
-  }
-  return new RegExp(`^${source}(/.*)?$`);
-}
-
-/**
- * Extracts the patterns from `.dockerignore`, ignoring comments and blanks.
- *
- * @returns Patterns in file order.
- */
-function dockerIgnorePatterns(): string[] {
-  return read('.dockerignore')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.startsWith('#'));
-}
-
-/**
- * Decides whether `.dockerignore` excludes a path, with ignore-file semantics: the **last** matching
- * line wins, and a `!` line re-includes. Stripping the `!` instead would let `!.env.example` satisfy a
- * "secrets are excluded" assertion for `.env.example`, and `!.env` would hide a leak.
- *
- * @param path - Repository-relative path to test.
- * @param patterns - Patterns from `.dockerignore`.
- * @returns `true` when the path would be excluded from the build context.
- */
-function isExcludedFromBuild(path: string, patterns: string[]): boolean {
-  let excluded = false;
-  for (const line of patterns) {
-    const negated = line.startsWith('!');
-    const pattern = negated ? line.slice(1) : line;
-    if (globToRegExp(pattern).test(path)) excluded = !negated;
-  }
-  return excluded;
-}
-
-/**
  * Extracts the environment table from `docs/09-development.md` §5.
  *
  * @returns Variable name → raw default cell.
@@ -286,7 +226,7 @@ check(
 );
 
 // ── 3. both ignore files protect the same secrets ────────────────────────────────────────────────
-const dockerPatterns = dockerIgnorePatterns();
+const dockerPatterns = parseDockerIgnore(read('.dockerignore'));
 check(dockerPatterns.length > 0, '.dockerignore has patterns');
 for (const secret of MUST_BE_SECRET) {
   check(isIgnored(secret), `.gitignore covers ${secret}`);
