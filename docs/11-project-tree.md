@@ -59,6 +59,7 @@ mapirror/
 │  │  │  │  ├─ public/             # /_public/api: countries, versions, download, stats
 │  │  │  │  ├─ geofabrik/          # MapSource impl: index sync, page parse, HEAD, versions
 │  │  │  │  │  ├─ source.ts        # MapSource interface (thin, 4 methods)
+│  │  │  │  │  ├─ index-client.ts  # Zod-validated index-v1-nogeom catalog fetch + mapping
 │  │  │  │  │  ├─ geofabrik.ts     # Implementation
 │  │  │  │  │  ├─ parse-region.ts  # HTML table parser for dated snapshots
 │  │  │  │  │  └─ fixtures/        # Saved HTML/JSON samples for offline tests

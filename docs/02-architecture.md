@@ -240,7 +240,7 @@ export interface MapSource {
   listRegions(): Promise<SourceRegion[]>;
   getRegionDetail(regionId: string): Promise<SourceRegionDetail>;
   listSnapshots(regionId: string): Promise<SourceSnapshot[]>;
-  resolveDownload(regionId: string, version: string): Promise<ResolvedDownload>;
+  resolveDownload(regionId: string, version: string): Promise<ResolvedDownload>; // dated id or `latest`
 }
 ```
 
