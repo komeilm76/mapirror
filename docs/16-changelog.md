@@ -3,9 +3,52 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 43 passes · 179 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4).
+**Totals:** 44 passes · 182 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 44 — 2026-10-26 (a proxy that keeps dialing a container that is gone, and a secret nobody could mount)
+
+The pass started where pass 43 stopped: the deployment. `compose.yaml` now describes the whole install, so the question is
+no longer "is it configured" but "what does it do on the second day, after an upgrade or a password rotation". Two of the
+answers were wrong, and two of the three findings came from running the pieces rather than reading them.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The web container would answer `502` to every API call after the API container was recreated.** `docker/nginx.conf` wrote `proxy_pass http://api:3000`, which nginx resolves **once**, when the configuration loads, from `/etc/hosts` — a file Docker rewrites whenever a container is recreated. `docker compose up -d` recreates `api` on a new address, and the documented password rotation in `12-deployment.md` §2 ends with exactly that command: the mirror keeps serving pages, login fails, and the error log names an address nothing answers on. Measured on a real nginx 1.29.0 with the file unmodified: `200` from the API, then the address changed and `getent hosts api` already returned the new one, then `502` with `connect() failed (111: Connection refused) … upstream: "http://127.0.0.1:3000/"` on every request until `nginx -s reload` — which is the proof the address was read at load time and never again | An `upstream api_upstream { zone api_upstream 64k; server api:3000 resolve; }` and `resolver 127.0.0.11 valid=10s ipv6=off` — Docker's embedded DNS, which every user-defined network has, and a ten-second cap on how long a stale address may outlive its container (without `valid=` nginx honours Docker's 600 s TTL). Re-probed with the same file: the same recreation is followed within ten seconds with **no** reload and no restart. Also probed, because a dynamic upstream can fail in a new way: `web` started while the resolver was unreachable **starts anyway**, answers `502` with `could not be resolved`/`no live upstreams` in the log, and recovers on its own once DNS answers — where the old form refused to start at all |
+| 2 | **`.env.example` recommended the one deployment its own compose file refuses.** Line 7 said "In production prefer the `*_FILE` variants below (mounted as Docker secrets) over plain values", and `12-deployment.md` §2 said `POSTGRES_PASSWORD_FILE` "works too (`docker compose` secrets …)", but compose interpolates `POSTGRES_PASSWORD` into **both** `db` and `api`: with only the `_FILE` set, compose stops before starting anything (`required variable POSTGRES_PASSWORD is missing a value`); with both set — the only way to get past that line — the API refuses at boot (`POSTGRES_PASSWORD: cannot be combined with POSTGRES_PASSWORD_FILE; set exactly one of the two`), because `.env` reaches the container whole through `env_file`. So the documented "preferred" production path could not start a single container, in either spelling. Both messages were produced, not guessed | The docs now say which deployment each variable belongs to: `.env.example`'s header, §2's paragraph (a secrets install **replaces** the mechanism — `POSTGRES_PASSWORD_FILE` in both services plus a `secrets:` block — and the password rule survives the swap because it is about the DSN, not about where the secret came from), the §4 table, and the `09-development.md` §5 row. `compose.yaml` says at the line itself why `_FILE` must not be added beside it, and a new case in `compose.spec.ts` holds the invariant: no service sets the file variant, while `db` and `api` read the one interpolation |
+| 3 | **The configuration's own summary table described a setting the file argues against.** The header of `docker/nginx.conf` listed the streaming row as "`proxy_request_buffering off`, `proxy_buffering off`, long timeouts", while forty lines below the file spends a paragraph explaining that buffering is deliberately **on** — its temp file removed by `proxy_max_temp_file_size 0` — because with buffering off nginx cannot compress what it forwards (measured, pass 40). A reader who trusted the table would have reintroduced the exact defect pass 40 removed, and the two statements were in the same file | The row now names the pair that is actually there, and says what it costs to get it wrong |
+
+Probed and found sound, so that "no bug here" is a measurement rather than an impression:
+
+- **The API hop itself, through the new upstream.** The requests that matter still arrive intact: `/_auth/api/login?next=%2F_site%2Fadmin`
+  reached the backend as that path *and* query, `POST /_admin/api/import` arrived with the body, `X-Forwarded-For`/`X-Real-IP`
+  were set, and an outer proxy's `X-Forwarded-Proto: https` was passed through rather than downgraded.
+- **Streaming, still.** A 100 MB upload went through the proxy with **zero** files in `/tmp/client_temp` and `/tmp/proxy_temp`
+  and the worker at 2.8 MB RSS; a 25 kB JSON answer was `Content-Encoding: gzip` with buffering on and
+  `proxy_max_temp_file_size 0`, which is the pass-40 behaviour surviving the switch to an upstream block.
+- **The rest of the routing map, re-run against the edited file.** `/` → `302 /_site/` (query string kept), `/_site` →
+  `301`, `/_site/admin/cache` → the shell with CSP and `Cache-Control: no-cache`, `/_auth/login` → the shell (the one page
+  outside `/_site`), `/assets/index-*.js` → `max-age=31536000` with `nosniff` and no CSP, `/nothing-here` and
+  `/_auth/apix` → `404`, `Server: nginx` with no version.
+- **`access_log /dev/stdout` with a pipe for stdout**, which the pass-39 note about `/dev/stderr` made worth re-checking: the
+  access log arrived on the container's stdout with no permission error, at startup and under load.
+- **The boot drill from pass 43, re-read.** `entrypoint.api.sh` + compose's environment + a password-protected PostgreSQL:
+  four step lines, admin created, `/healthz`, `/readyz`, `login 200`, a second boot that changes nothing.
+
+Mutations, one at a time, reverted between runs — **8 tested, 8 killed**: one `proxy_pass` put back to `http://api:3000`,
+`resolve` dropped, `resolver` dropped, the stale window raised to 600 s, the `zone` dropped, the upstream port drifted to
+3001, a `POSTGRES_PASSWORD_FILE` line added to the API service, and a literal password in its place.
+
+Two things about the evidence: there is still **no Docker daemon here**, so the proof is nginx 1.29.0 **built from source**
+(PCRE2 and zlib compiled in, no SSL) running this exact file, with Docker's embedded DNS imitated by a 40-line server bound
+to `127.0.0.11:53` so `resolver` and `resolve` were exercised as written; and the API side of the same stack was a real
+PostgreSQL 16 with a role that demands a password.
+
+**Totals after this pass: 44 passes · 182 defects · 0 open.** Gate: `bun run check` green — 1 189 tests in 81 files,
+coverage 98.25 % statements / 96.73 % branches / 98.64 % functions / 98.62 % lines.
 
 ---
 

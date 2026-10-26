@@ -158,6 +158,56 @@ describe('the web server config', () => {
 });
 
 /**
+ * Where the API is, and how often nginx asks.
+ *
+ * `proxy_pass http://api:3000` is the obvious form and it is wrong in one specific, reproducible way: the host name is
+ * resolved from `/etc/hosts` when the configuration loads, and **never again**. Docker rewrites that file whenever a
+ * container is recreated — `docker compose up -d` does exactly that to `api` after the documented password rotation — so
+ * the web container keeps dialing an address nothing answers on. Measured with this file on nginx 1.29.0 (pass 44): one
+ * `200` before the recreation, `502` afterwards while `getent hosts api` already returned the new address, and a normal
+ * answer again after `nginx -s reload`. Nothing in the response or the log said "wrong address"; the log named the old IP.
+ *
+ * The fix has two halves, and a test for each: a resolver, and an upstream whose server carries `resolve`.
+ */
+describe('the API address', () => {
+  it('is re-resolved instead of read once at startup', () => {
+    // Docker's embedded DNS, which every user-defined network has — compose always creates one. `valid=` is what caps how
+    // long a stale address can outlive the container it pointed at: without it nginx honours Docker's 600 s TTL.
+    expect(directive('resolver')).toBe('127.0.0.11 valid=10s ipv6=off');
+    const window = /valid=(\d+)s/u.exec(directive('resolver') ?? '');
+    expect(window?.[1]).toBeDefined();
+    expect(Number(window?.[1])).toBeLessThanOrEqual(60);
+    // A resolver that is down must not hold a request for its 30 s default.
+    expect(directive('resolver_timeout')).toBe('5s');
+  });
+
+  it('goes through one upstream, whose server asks for a fresh answer', () => {
+    const upstream = /upstream\s+api_upstream\s*\{([^}]*)\}/u.exec(text);
+    expect(upstream, 'an `upstream api_upstream` block must exist').not.toBeNull();
+    const body = upstream?.[1] ?? '';
+
+    // `resolve` is the whole point; `zone` is what it requires — the address lives in shared memory, so the workers share
+    // one answer rather than each holding its own.
+    expect(body).toMatch(/server\s+api:3000\s+resolve;/u);
+    expect(body).toMatch(/zone\s+api_upstream\s+\d+k;/u);
+  });
+
+  it('never names a host directly in `proxy_pass`', () => {
+    // The regression guard: the old form back in one location is enough to reintroduce the `502`, so every target is
+    // checked, not just the first. Comments are removed first — this file's own header explains the old form by quoting
+    // it, and a quote is not a directive.
+    const code = text.replace(/^[ \t]*#.*$/gmu, '');
+    const targets = [...code.matchAll(/proxy_pass\s+(\S+);/gu)].map((match) => match[1] as string);
+
+    expect(targets).toHaveLength(5);
+    for (const target of targets) {
+      expect(target, `${target} must be an upstream name, not a host`).toBe('http://api_upstream');
+    }
+    expect(code).not.toMatch(/proxy_pass\s+http:\/\/[a-z0-9.-]+:\d+/u);
+  });
+});
+
+/**
  * The tuning `P1-DOCK-03` is about: how a multi-gigabyte import and a 773 MB download get through a proxy that also has to
  * compress JSON, and what the API is told about the client on the other side.
  *

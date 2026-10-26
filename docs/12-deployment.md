@@ -63,9 +63,10 @@ benefit), and `api` only through nginx — otherwise a client could skip the pro
 `no-new-privileges`.
 
 `api` waits for `db` to be **healthy**, so a first boot does not spend the entrypoint's 60 s wait. `web` waits only for the
-API container to exist: nginx resolves `api` when it starts, and holding the UI back until the API is healthy would leave
-the operator staring at an empty port during a long first migration instead of nginx's `502`, which names the upstream it
-could not reach.
+API container to exist: holding the UI back until the API is healthy would leave the operator staring at an empty port
+during a long first migration instead of nginx's `502`, which names the upstream it could not reach. It is an ordering
+convenience rather than a requirement — nginx does not resolve `api` at startup, so a `web` that started before the API
+existed would begin proxying to it the moment Docker's DNS answered (§3).
 
 `healthy` in `docker compose ps` therefore means **ready**, not alive: `/readyz` is what the API's probe asks. `/healthz`
 stays liveness only, for the kernel and for `restart` decisions — a container whose database is gone is unhealthy but is not
@@ -101,8 +102,20 @@ step 1 fail against a password nobody has set yet. `psql` over the container's l
 all, which is why the `ALTER ROLE` can be the first command. Connections the API already holds are not re-authenticated,
 so the seconds between the two edits do not interrupt a running mirror.
 
-`POSTGRES_PASSWORD_FILE` works too (`docker compose` secrets, systemd `LoadCredential`): the API reads the file and strips
-only the trailing newline.
+**Docker secrets are a different install, not a flag.** `POSTGRES_PASSWORD_FILE` is read by the API (trailing newline
+stripped), and it is what a systemd `LoadCredential` unit or a secrets-based compose file uses — but it cannot be added to
+`.env` beside the value compose already sends. Compose interpolates `POSTGRES_PASSWORD` into both `db` and `api`, and
+`.env` reaches the API *whole*, so a `POSTGRES_PASSWORD_FILE` line there arrives at the same time and the API refuses the
+pair: `POSTGRES_PASSWORD: cannot be combined with POSTGRES_PASSWORD_FILE; set exactly one of the two`. Setting only the
+`_FILE` does not get that far — compose stops at `required variable POSTGRES_PASSWORD is missing a value`, because the
+database would otherwise be created with a password nobody has. A secrets deployment therefore replaces the mechanism:
+drop `POSTGRES_PASSWORD` from `.env`, point `POSTGRES_PASSWORD_FILE` at the mounted file in **both** services, and add a
+`secrets:` block.
+
+The password rule survives that swap, because it is about the DSN rather than about where the password came from:
+`databaseUrlFor` completes the password-less `postgres://mapirror@db:5432/mapirror` from whichever of the two variables
+`parseEnv` accepted. What does *not* change is `POSTGRES_PASSWORD`'s second job — it is the value `initdb` gets on a
+**fresh** volume, so the file's owner and the database's password have to agree from the first boot.
 
 **Where the cache lives.** `data` is a named Docker volume by default, because a fresh clone has no `./data` owned by uid
 `10001` and a bind mount would turn the first boot into a permission error. For a cache of hundreds of gigabytes, point it
@@ -274,9 +287,10 @@ bound to localhost or firewalled when a proxy fronts it.
 
 ```nginx
 # in docker/nginx.conf — APIs first, then pages
-location ^~ /_auth/api/   { proxy_pass http://api:3000; }            # auth JSON  ─┐ must come before
-location ^~ /_admin/api/  { proxy_pass http://api:3000; }            # admin JSON  │ the page rules,
-location ^~ /_public/api/ { proxy_pass http://api:3000; }            # public JSON │ otherwise the SPA
+# every target is the upstream, never `api:3000` itself — see the first bullet below
+location ^~ /_auth/api/   { proxy_pass http://api_upstream; }        # auth JSON  ─┐ must come before
+location ^~ /_admin/api/  { proxy_pass http://api_upstream; }        # admin JSON  │ the page rules,
+location ^~ /_public/api/ { proxy_pass http://api_upstream; }        # public JSON │ otherwise the SPA
 location =  /healthz      { access_log off; proxy_pass …; }          # probes      ┘ fallback swallows them
 location =  /readyz       { access_log off; proxy_pass …; }
 location =  /             { return 302 /_site/$is_args$args; }
@@ -288,8 +302,18 @@ location ^~ /assets/      { expires 1y; add_header …; }              # content
 location /                { try_files $uri =404; }                   # anything else: a real 404
 ```
 
-Five things in there are worth knowing before editing it:
+Six things in there are worth knowing before editing it:
 
+- **The API is reached through an `upstream`, never by host name.** `proxy_pass http://api:3000` looks right and is
+  wrong in a way that only shows up after a deploy: the name is resolved from `/etc/hosts` when the configuration
+  loads and never again, and `docker compose up -d` recreates `api` on a **new address** — the password rotation above
+  ends with exactly that command. Every API call then answers `502` until someone restarts web, and the log names the
+  address that no longer exists (measured on nginx 1.29.0, pass 44: `connect() failed … upstream:
+  "http://127.0.0.1:3000/"` while `getent hosts api` already returned the new one). The pair that fixes it is in the
+  file: `resolver 127.0.0.11` — Docker's embedded DNS on any user-defined network — and
+  `upstream api_upstream { zone …; server api:3000 resolve; }`, with `valid=10s` capping how long a stale address can
+  outlive its container. Re-probed: a recreated API on a new address is followed within ten seconds, with no restart,
+  and a `web` container that started while DNS was unreachable recovers on its own.
 - **A redirect keeps the query string only if you write it.** `return` sends the target exactly as written, so the first
   version of these two lines dropped it: `/?utm_source=newsletter` landed on `/_site/` with the campaign gone (measured,
   pass 41). `$is_args$args` is what re-attaches it — `?` plus the arguments when there are any, nothing when there are not.
@@ -329,7 +353,7 @@ All configuration is environment-based (list in `09-development.md` §5). Produc
 
 | Concern | Recommendation |
 |---|---|
-| Secrets | `chmod 600 .env`, or mount `ADMIN_PASSWORD_FILE` / `POSTGRES_PASSWORD_FILE` as Docker secrets |
+| Secrets | `chmod 600 .env`; `ADMIN_PASSWORD_FILE` / `POSTGRES_PASSWORD_FILE` for a non-compose deployment, or for compose with a `secrets:` block (§2) |
 | Storage | `CACHE_DIR` on a dedicated volume/disk; **plan ~1 TB for a dozen countries** (Europe alone is ~33 GB) |
 | Disk reserve | `DISK_RESERVE_BYTES` default 2 GiB — increase on small disks |
 | Tokens | `AUTH_TOKEN_TTL_HOURS` 8–12 for admins |

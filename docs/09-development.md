@@ -142,7 +142,7 @@ sibling are mutually exclusive, and the hygiene check counts commented declarati
 | `IP_HASH_SALT` | *(generated on first boot, stored in `settings`)* | — | Salt for hashed download IPs |
 | `TRUST_PROXY` | `loopback` | — | Which peers may assert a client address in `X-Forwarded-For`: an address, CIDR block or comma-separated list (`loopback`/`linklocal`/`uniquelocal`), or `none`. A named preset **replaces** the default rather than extending it — `uniquelocal` does not include loopback, so a proxy reached over `http://127.0.0.1` needs `loopback,uniquelocal`. Every per-IP behaviour (rate limits, hashed download IPs) depends on it — without it every client behind the proxy shares the proxy's address. A **hop count is refused** (Fastify silently trusts nothing for a number) and so is `true` (trusts every peer) |
 | `POSTGRES_PASSWORD` | `mapirror` | ✅ (compose) | Password for the `db` container — the one place it is written — and the value the API completes its password-less DSN from. Any character works: it is percent-encoded, never concatenated into a URL by hand |
-| `POSTGRES_PASSWORD_FILE` | — | — | Docker-secret alternative to `POSTGRES_PASSWORD` |
+| `POSTGRES_PASSWORD_FILE` | — | — | Docker-secret alternative to `POSTGRES_PASSWORD`, read at boot with trailing newlines stripped. Never set beside it: `parseEnv` refuses the pair, and `.env` reaches a compose container whole, so compose's own `POSTGRES_PASSWORD` would arrive at the same time (`12-deployment.md` §2) |
 | `CACHE_DIR` | `./data/cache` | ✅ | Artifact storage root (compose: `/data/cache` volume) |
 | `TMP_DIR` | `./data/tmp` | ✅ | Uploads + `.part` files (compose: `/data/tmp` volume) |
 | `ADMIN_USERNAME` | `admin` | — | Bootstrap username |

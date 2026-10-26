@@ -189,7 +189,8 @@ mapirror/
 │  ├─ api.Dockerfile               # exists (P1-DOCK-01): deps → runtime, uid 10001, bun 1.4.4
 │  ├─ web.Dockerfile               # exists (P1-DOCK-02): Vite build → nginx runtime, uid 101
 │  ├─ nginx.conf                   # exists (P1-DOCK-02/03): unprivileged server, APIs before pages,
-│  │                               # SPA fallback, shell headers, gzip, streaming, cache policy
+│  │                               # SPA fallback, shell headers, gzip, streaming, cache policy,
+│  │                               # `upstream` + `resolve` so a recreated API is followed (pass 44)
 │  ├─ entrypoint.api.sh            # exists (P1-DOCK-04): wait-for-db → migrate → init-admin --bootstrap → exec API
 │  └─ caddy.example                # TLS termination example (D-15)
 │

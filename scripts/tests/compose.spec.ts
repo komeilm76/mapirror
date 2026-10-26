@@ -240,13 +240,37 @@ describe('the container environment', () => {
   });
 
   it('pins the port the web container proxies to', () => {
-    // `docker/nginx.conf` has `proxy_pass http://api:3000`. A `PORT` from `.env` that disagreed with it would produce a
-    // 502 whose message says nothing about ports.
+    // `docker/nginx.conf` proxies to the `api_upstream` upstream, whose one server is `api:3000` — followed through the
+    // indirection here, because a `PORT` from `.env` that disagreed with it would produce a 502 whose message says
+    // nothing about ports.
     const nginx = read('docker/nginx.conf');
-    const upstream = /proxy_pass\s+http:\/\/([a-z0-9.-]+):(\d+)/u.exec(nginx);
+    const block = /upstream\s+api_upstream\s*\{([^}]*)\}/u.exec(nginx);
+    expect(block, 'the upstream `nginx-routing.spec.ts` asserts must exist').not.toBeNull();
+    const server = /server\s+([a-z0-9.-]+):(\d+)\s+resolve;/u.exec(block?.[1] ?? '');
 
-    expect(upstream?.[1]).toBe('api');
-    expect(upstream?.[2]).toBe(String(API.environment?.['PORT']));
+    expect(server?.[1]).toBe('api');
+    expect(server?.[2]).toBe(String(API.environment?.['PORT']));
+  });
+
+  it('never hands the API both halves of the password', () => {
+    // `parseEnv` refuses `POSTGRES_PASSWORD` beside `POSTGRES_PASSWORD_FILE` (measured: "cannot be combined with
+    // POSTGRES_PASSWORD_FILE; set exactly one of the two"). This file supplies the first one, and `.env` arrives whole
+    // through `env_file`, so a `_FILE` line in the template would be the second — a deployment that looks configured and
+    // exits at boot. A secrets-based install replaces the mechanism instead (`12-deployment.md` §2).
+    for (const [name, service] of SERVICES) {
+      expect(service.environment ?? {}, `${name} must not set the file variant`).not.toHaveProperty(
+        'POSTGRES_PASSWORD_FILE',
+      );
+    }
+    // …while the half that is set is the same interpolation in both services: one variable, two readers.
+    for (const [name, service] of [
+      ['db', DB],
+      ['api', API],
+    ] as const) {
+      const value = service.environment?.['POSTGRES_PASSWORD'];
+      expect(typeof value, `${name} must interpolate the password`).toBe('string');
+      expect(String(value), `${name} must read POSTGRES_PASSWORD`).toContain('${POSTGRES_PASSWORD');
+    }
   });
 
   it('trusts the proxy hop that is actually in front of the API', () => {

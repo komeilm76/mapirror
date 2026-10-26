@@ -150,8 +150,14 @@ describe('the API locations', () => {
   it('forward to the API container, with the path untouched', () => {
     // No URI part in `proxy_pass`: with one, nginx would replace the matched prefix and every route would 404. The API
     // serves `/_auth/api/login`; a proxy that "helpfully" stripped the prefix would serve `/login`.
-    for (const target of proxyTargets()) expect(target).toBe('http://api:3000');
-    expect(withoutComments).not.toMatch(/proxy_pass\s+http:\/\/api:3000\//u);
+    //
+    // The target is an upstream **name**, never `api:3000` itself. A host written straight into `proxy_pass` is resolved
+    // once, when the configuration loads, and `docker compose up -d` recreates the API container on a new address — after
+    // which every API call is a `502` until someone restarts web (measured, pass 44). `nginx-conf.spec.ts` holds the
+    // upstream that makes the name re-resolvable.
+    for (const target of proxyTargets()) expect(target).toBe('http://api_upstream');
+    expect(withoutComments).not.toMatch(/proxy_pass\s+http:\/\/api_upstream\//u);
+    expect(withoutComments).not.toMatch(/proxy_pass\s+http:\/\/api:3000/u);
     expect(withoutComments).not.toMatch(/^\s*rewrite\s/mu);
   });
 

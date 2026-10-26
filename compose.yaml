@@ -21,9 +21,10 @@
 #    mounted volume, not `./data`), and `TRUST_PROXY` (the API's peer is the `web` container, so a loopback-only default
 #    would make every client one address — `14-security.md` §7).
 # 3. **`depends_on` waits for health, not for order.** `api` starts once the database answers `pg_isready`. `web` only
-#    waits for the API container to exist: nginx resolves `api` when it starts, and holding the UI back until the API is
-#    *healthy* would mean a long first migration shows the operator an empty port instead of nginx's 502, which at least
-#    names the upstream it could not reach.
+#    waits for the API container to exist, because holding the UI back until the API is *healthy* would mean a long first
+#    migration shows the operator an empty port instead of nginx's 502, which at least names the upstream it could not
+#    reach. nginx does not resolve `api` at startup at all — `docker/nginx.conf` puts it in an `upstream` with `resolve`,
+#    so a recreated API container (new address, same name) is picked up without restarting web.
 # 4. **"Healthy" means ready.** The API's probe asks `/readyz`, so `docker compose ps` says `healthy` only when the
 #    database and the cache directory both answer. `/healthz` stays what it is — liveness, for the kernel and for
 #    Docker's restart decision — and a container whose database is gone is not restarted on that basis.
@@ -84,7 +85,9 @@ services:
       # password alone is then enough, and there is no second copy of the DSN to keep in step.
       DATABASE_URL: postgres://mapirror@db:5432/mapirror
       # …and the password that DSN leaves out. Interpolated here as well as inherited from `env_file`, so the value is
-      # the same wherever it came from — `.env`, or the shell of whoever ran `docker compose up`.
+      # the same wherever it came from — `.env`, or the shell of whoever ran `docker compose up`. Never add
+      # `POSTGRES_PASSWORD_FILE` beside it: `.env` reaches the container whole, so both halves would arrive and the API
+      # refuses the pair (a Docker-secret deployment replaces this line, it does not accompany it — `12-deployment.md` §2).
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env — see .env.example}
       # The entrypoint migrated before this process started; this flag keeps the boot-time check from migrating a second
       # time (`09-development.md` §4). The *version check* still runs, so a schema that is behind or ahead still stops
