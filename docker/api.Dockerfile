@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # The API image (task `P1-DOCK-01`): Fastify routes, the job worker and the interval scheduler in one process, running
-# as a non-root user.
+# as a non-root user, started through `docker/entrypoint.api.sh` (task `P1-DOCK-04`).
 #
 # ## Why two stages
 #
@@ -91,7 +91,14 @@ COPY --chown=10001:10001 packages/shared/src ./packages/shared/src
 # one by one, with `secret-prompt.ts` — the only `lib/` module they import — because `scripts/lib/` also holds the
 # build-context matcher, which is a gate tool the container has no use for.
 COPY --chown=10001:10001 scripts/migrate.ts scripts/init-admin.ts scripts/reset-admin-password.ts ./scripts/
+COPY --chown=10001:10001 scripts/wait-for-db.ts ./scripts/
 COPY --chown=10001:10001 scripts/lib/secret-prompt.ts ./scripts/lib/
+
+# The entrypoint the container starts from (`P1-DOCK-04`). Copied to `/usr/local/bin`, outside the application tree, so
+# `docker compose exec api ...` from `/app` cannot shadow it with a stray file; `--chmod=0755` because an `ENTRYPOINT`
+# in exec form has to be executable and `COPY` preserves the *build context's* mode, which is not a thing this
+# repository should depend on (`git` does record the bit — `scripts/tests/entrypoint.spec.ts` asserts both).
+COPY --chown=10001:10001 --chmod=0755 docker/entrypoint.api.sh /usr/local/bin/entrypoint.api.sh
 
 USER 10001:10001
 
@@ -102,6 +109,11 @@ EXPOSE 3000
 # if the `CMD` ever gains a wrapper.
 STOPSIGNAL SIGTERM
 
-# `P1-DOCK-04` replaces this with an `ENTRYPOINT` that migrates and bootstraps the admin first. Until then the image is
-# the API on its own, which is what `docker run` + `docker compose exec` are for.
+# The boot sequence (`P1-DOCK-04`): wait for the database, migrate, bootstrap the admin, then start the API. The script
+# needs nothing from the shell beyond `sh`, which the Debian-based `oven/bun` image has.
+ENTRYPOINT ["/usr/local/bin/entrypoint.api.sh"]
+
+# What the entrypoint starts once the three bootstrap steps are done — and what an override replaces: `docker run <image>
+# bun scripts/migrate.ts --reset` still gets steps 1–3 first. Signals reach the API directly because the entrypoint
+# `exec`s it (pid 1), which is what makes `STOPSIGNAL SIGTERM` above mean "drain", not "kill".
 CMD ["bun", "apps/api/src/server.ts"]

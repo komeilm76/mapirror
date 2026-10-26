@@ -151,7 +151,9 @@ describe('the Dockerfile', () => {
       'scripts/migrate.ts',
       'scripts/init-admin.ts',
       'scripts/reset-admin-password.ts',
+      'scripts/wait-for-db.ts',
       'scripts/lib/secret-prompt.ts',
+      'docker/entrypoint.api.sh',
     ]) {
       expect(sources, `${required} must be in the image`).toContain(required);
     }
@@ -246,6 +248,12 @@ describe('the Dockerfile', () => {
     expect(cmd).toContain('bun');
     expect(cmd).toContain('apps/api/src/server.ts');
     expect(existsSync(join(ROOT, 'apps/api/src/server.ts'))).toBe(true);
+
+    // `CMD` is the *last* boot step, not the boot: the entrypoint waits for the database, migrates and bootstraps the
+    // admin first (`P1-DOCK-04`; `scripts/tests/entrypoint.spec.ts` asserts the order). An image with a `CMD` and no
+    // `ENTRYPOINT` starts the API against an empty volume and answers 500 until someone runs the scripts by hand.
+    const entrypoint = instructionsOf(runtime, 'ENTRYPOINT').at(-1)?.args ?? '';
+    expect(entrypoint).toBe('["/usr/local/bin/entrypoint.api.sh"]');
   });
 
   it('needs no operating-system packages', () => {

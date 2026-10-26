@@ -29,6 +29,7 @@
 import { LOGIN_USERNAME_MAX } from '@mapirror/shared';
 import type { Kysely } from 'kysely';
 
+import type { TokenExecutor } from '../../db/repositories/admin-tokens';
 import { insertAuditLog, AUDIT_ACTIONS } from '../../db/repositories/audit-logs';
 import {
   findAdminByUsername,
@@ -36,7 +37,7 @@ import {
   updateAdminPassword,
 } from '../../db/repositories/admins';
 import { revokeAllTokens } from './tokens';
-import type { Database } from '../../db/schema';
+import type { Admin, Database } from '../../db/schema';
 import { withTransaction } from '../../db/transaction';
 import { hashPassword, assertPasswordAcceptable } from './password';
 
@@ -134,6 +135,42 @@ export type EnsureAdminOutcome =
   | { readonly status: 'created'; readonly admin: EnsuredAdmin }
   | { readonly status: 'exists'; readonly admin: EnsuredAdmin };
 
+/**
+ * Narrows a stored row to what a caller may report back.
+ *
+ * One definition for the three places that answer "which account, and is it active" — the lookup below, the
+ * already-exists branch of {@link ensureAdmin}, and the branch that loses a creation race. They must agree: an account
+ * that reads as active in one of them and deactivated in another is a message an operator cannot act on.
+ *
+ * @param row - Row from `admins`, with `password_hash` and timestamps that are nobody's business here.
+ * @returns The same account without the hash.
+ */
+function toEnsuredAdmin(row: Admin): EnsuredAdmin {
+  return { id: row.id, username: row.username, isActive: row.is_active };
+}
+
+/**
+ * Reports the account with this name, or `null` when there is none.
+ *
+ * Exists for the container entrypoint (`P1-DOCK-04`): on every boot after the first there is nothing to create, and
+ * `init-admin --bootstrap` has to establish that **before** asking for a password — a restart with `ADMIN_PASSWORD`
+ * removed from `.env` must not be refused by a script whose whole job at that point is to say "already there". The
+ * username is validated through the same contract as creation, so a bootstrap cannot report on a name the login route
+ * would never accept.
+ *
+ * @param executor - Kysely instance or transaction.
+ * @param username - Submitted name, any case and any surrounding whitespace.
+ * @returns The account, or `null`.
+ * @throws {AdminUsernameError} When the name is not a username.
+ */
+export async function findExistingAdmin(
+  executor: TokenExecutor,
+  username: string,
+): Promise<EnsuredAdmin | null> {
+  const existing = await findAdminByUsername(executor, parseAdminUsername(username));
+  return existing === null ? null : toEnsuredAdmin(existing);
+}
+
 /** What {@link ensureAdmin} needs. */
 export interface EnsureAdminOptions {
   /** Name to create, in any case and with any surrounding whitespace. */
@@ -169,12 +206,7 @@ export async function ensureAdmin(
 
   const now = options.now ?? new Date();
   const existing = await findAdminByUsername(database, username);
-  if (existing !== null) {
-    return {
-      status: 'exists',
-      admin: { id: existing.id, username: existing.username, isActive: existing.is_active },
-    };
-  }
+  if (existing !== null) return { status: 'exists', admin: toEnsuredAdmin(existing) };
 
   // Hashed outside the transaction: 74 ms of Argon2 holding a connection open is 74 ms of pool the API cannot use, and
   // nothing in the hash depends on what the transaction does.
@@ -210,10 +242,7 @@ export async function ensureAdmin(
     if (!isUniqueViolation(error)) throw error;
     const raced = await findAdminByUsername(database, username);
     if (raced === null) throw error;
-    return {
-      status: 'exists',
-      admin: { id: raced.id, username: raced.username, isActive: raced.is_active },
-    };
+    return { status: 'exists', admin: toEnsuredAdmin(raced) };
   }
 }
 

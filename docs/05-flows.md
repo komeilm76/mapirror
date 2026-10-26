@@ -16,20 +16,33 @@ sequenceDiagram
   participant M as migrate
   participant I as init-admin.ts
   participant DB as PostgreSQL
-  Op->>Entry: docker compose up -d (ADMIN_PASSWORD set)
-  Entry->>DB: wait for readiness (pg_isready loop, max 60s)
-  Entry->>M: bun run scripts/migrate.ts
-  M->>DB: apply pending SQL migrations
-  Entry->>I: bun run scripts/init-admin.ts
+  Op->>Entry: docker compose up -d (ADMIN_PASSWORD set on the first boot)
+  Entry->>DB: wait for readiness (bun scripts/wait-for-db.ts, select 1, 60s deadline)
+  Entry->>M: bun scripts/migrate.ts
+  M->>DB: apply pending SQL migrations (serialised by the migrator's own lock)
+  Entry->>I: bun scripts/init-admin.ts --bootstrap
   I->>DB: SELECT admin WHERE lower(username)=lower($ADMIN_USERNAME)
-  alt no admin
-    I->>DB: INSERT admin (argon2id hash)
-    I-->>Op: "Admin 'admin' created." (no password echo)
+  alt no admin, password source present
+    I->>DB: INSERT admin (argon2id hash) + auth.admin_created audit row
+    I-->>Op: "admin 'admin' created (password from ADMIN_PASSWORD)" (never the password)
   else admin exists
-    I-->>Op: "Admin 'admin' already exists — unchanged." (idempotent)
+    I-->>Op: "admin 'admin' already exists — unchanged." (no password needed)
+  else no admin and no password source
+    I-->>Entry: exit 1, "Set ADMIN_PASSWORD …"
+    Entry-->>Op: "step 3/4 … failed (exit 1); the API is not started"
   end
-  Entry->>Entry: start Fastify + worker
+  Entry->>Entry: exec bun apps/api/src/server.ts  (the API becomes PID 1)
 ```
+
+Every step prints `entrypoint: step N/4: …` to stderr, and a failing step exits with **its own** status after
+`… failed (exit N); the API is not started` — so `docker compose logs api` names the step. The wait is a real query
+through the API's own pool rather than a port probe: a PostgreSQL that is recovering accepts TCP and answers `57P03`,
+which a `pg_isready`-shaped loop cannot see, and the runtime image has no OS packages to run one with. `--bootstrap`
+asks the database before it asks for a secret, because after the first boot there is nothing to create; on a fresh
+volume with no password source it still refuses. Verified against a real PostgreSQL, pass 42: an empty volume boots to
+`/readyz` `{"database":"ok","cache":"ok"}` and stops on `SIGTERM` with exit 0; a second boot with `ADMIN_PASSWORD`
+unset prints `already exists — unchanged`; two entrypoints started at once against one empty database apply **one**
+migration, create **one** admin, and neither fails.
 
 **Rules:** password from `ADMIN_PASSWORD`, `ADMIN_PASSWORD_FILE`, or a hidden prompt (in that order — a flag is
 deliberately absent, because an argument is visible in `ps` and in the shell's history); the creation policy of
@@ -40,8 +53,13 @@ leaves it alone. The insert and its `auth.admin_created` audit row commit togeth
 `modules/auth/admin-accounts.ts`, which is also where the reset script and a future "add admin" endpoint will get the
 same rules.
 **Tests:** `scripts/tests/init-admin.spec.ts` — create, idempotent re-run (including a different password and a
-different case), weak password rejected with every rule listed, missing source + non-interactive → one line and exit 1,
-the secret absent from both streams; `scripts/tests/secret-prompt.spec.ts` — raw mode before reading, restored
+different case), `--bootstrap` on a second boot with no password, `--bootstrap` on a fresh database with no password →
+exit 1 and **no** row, a deactivated account reported and left deactivated, weak password rejected with every rule
+listed, missing source + non-interactive → one line and exit 1, the secret absent from both streams;
+`scripts/tests/wait-for-db.spec.ts` — the deadline, the progress line every ten attempts, the masked DSN, and an
+unusable environment refused before it connects; `scripts/tests/entrypoint.spec.ts` — the four steps in order, `exec`
+for the last one, the exit code of a failing step, the installed path and the `ENTRYPOINT` that names it, and the guide
+documenting the same four commands in the same order; `scripts/tests/secret-prompt.spec.ts` — raw mode before reading, restored
 afterwards, backspace/Ctrl-C/Ctrl-D/escape sequences; `apps/api/tests/integration/admin-accounts.spec.ts` — the
 transaction (a forced audit failure leaves no account), the concurrent boot (one account, one audit row), a `23505`
 that is not ours re-thrown.

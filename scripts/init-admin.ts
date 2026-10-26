@@ -10,6 +10,12 @@
  *
  * The rules AUTH-1 sets, and where each is enforced:
  *
+ * `--bootstrap` is the container entrypoint's mode (`P1-DOCK-04`): the account is looked up **before** a password is
+ * asked for, so a restart of a working install succeeds even when `ADMIN_PASSWORD` has been removed from the
+ * environment — the one thing a boot script must not do is refuse to start because it cannot re-create what is already
+ * there. On a fresh database nothing changes: with no password source it still exits `1` rather than inventing an
+ * account nobody knows the password to.
+ *
  * | Requirement | Here |
  * |---|---|
  * | Username and password, default username `admin` | `--username`, then `ADMIN_USERNAME` (default `admin`) |
@@ -29,8 +35,12 @@ import { readFile } from 'node:fs/promises';
 
 import { parseEnv, type AppConfig, type EnvSource } from '../apps/api/src/config/env';
 import { createDatabase, type SqlDatabase } from '../apps/api/src/db/client';
-import { ensureAdmin } from '../apps/api/src/modules/auth/admin-accounts';
-import { AdminUsernameError } from '../apps/api/src/modules/auth/admin-accounts';
+import {
+  AdminUsernameError,
+  ensureAdmin,
+  findExistingAdmin,
+  type EnsuredAdmin,
+} from '../apps/api/src/modules/auth/admin-accounts';
 import { PasswordPolicyError } from '../apps/api/src/modules/auth/password';
 import { isInteractive, promptSecret } from './lib/secret-prompt';
 
@@ -40,12 +50,20 @@ export interface InitAdminArgs {
   readonly username?: string;
   /** Print usage and do nothing. */
   readonly help: boolean;
+  /**
+   * Look for the account before asking for a password — the entrypoint's mode.
+   *
+   * Named for its caller rather than for its mechanism: `--bootstrap` means "this runs on every boot", and the
+   * behaviour that follows from it is "an existing account is reported without a secret".
+   */
+  readonly bootstrap: boolean;
 }
 
 /** Usage text, next to the parser so the two cannot disagree. */
-const USAGE = `Usage: bun run admin:init [--username <name>] [--help]
+const USAGE = `Usage: bun run admin:init [--username <name>] [--bootstrap] [--help]
 
   --username <name>  Account to create. Defaults to ADMIN_USERNAME, which defaults to "admin".
+  --bootstrap        Report an existing account without needing a password (the container entrypoint's mode).
   --help             Show this message.
 
 Password, in this order: ADMIN_PASSWORD, ADMIN_PASSWORD_FILE, or a hidden prompt when a terminal is available.
@@ -63,11 +81,16 @@ An existing account is reported and left unchanged — use reset-admin-password 
  */
 export function parseArgs(argv: readonly string[]): InitAdminArgs {
   let username: string | undefined;
+  let bootstrap = false;
   const unknown: string[] = [];
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === '--help') return { help: true };
+    if (arg === '--help') return { help: true, bootstrap };
+    if (arg === '--bootstrap') {
+      bootstrap = true;
+      continue;
+    }
     if (arg === '--username') {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith('--')) {
@@ -83,7 +106,7 @@ export function parseArgs(argv: readonly string[]): InitAdminArgs {
   if (unknown.length > 0) {
     throw new Error(`unknown argument(s): ${unknown.join(' ')}\n\n${USAGE}`);
   }
-  return username === undefined ? { help: false } : { help: false, username };
+  return username === undefined ? { help: false, bootstrap } : { help: false, bootstrap, username };
 }
 
 /** Where the password may come from, and what was found. */
@@ -91,6 +114,22 @@ interface ResolvedPassword {
   readonly password: string;
   /** Where it came from — safe to print, because it is a location and never a value. */
   readonly source: 'ADMIN_PASSWORD' | 'ADMIN_PASSWORD_FILE' | 'prompt';
+}
+
+/**
+ * What to print for an account that already exists.
+ *
+ * One definition, because `--bootstrap` reaches it by a different route than a creation race does, and the two must
+ * not drift. A deactivated account is **reported rather than fixed**: re-activating one is a decision, and a bootstrap
+ * script that "repairs" whatever it finds can undo an operator's deliberate lockout on every restart.
+ *
+ * @param admin - The account that was found.
+ * @returns The line to print.
+ */
+function existingAdminLine(admin: EnsuredAdmin): string {
+  return admin.isActive
+    ? `admin '${admin.username}' already exists — unchanged`
+    : `admin '${admin.username}' already exists and is deactivated — unchanged (re-enable it in the admin UI)`;
 }
 
 /** Everything {@link main} touches outside the database; injected so tests need no terminal and no process mutating. */
@@ -191,18 +230,38 @@ export async function main(
     return 1;
   }
 
-  let resolved: ResolvedPassword;
-  try {
-    resolved = await resolvePassword(config, deps);
-  } catch (error) {
-    err(`error: ${(error as Error).message}`);
-    return 1;
-  }
-
   const username = args.username ?? config.adminUsername;
   const database = (deps.connect ?? createDatabase)(config);
 
   try {
+    // `--bootstrap` asks the database before it asks the operator. On a second boot there is nothing to create, and
+    // demanding a password to establish that is what made the entrypoint refuse to start a working install once
+    // `ADMIN_PASSWORD` was removed from `.env` (see the module comment). The lookup is one indexed query, and it only
+    // happens in this mode — the hand-run path keeps failing on a missing password before it touches the network.
+    if (args.bootstrap) {
+      let existing: EnsuredAdmin | null;
+      try {
+        existing = await findExistingAdmin(database.db, username);
+      } catch (error) {
+        // Its own message, because the outer one would read `could not create the admin account` for a lookup that
+        // never inserted anything — and a boot log that blames the wrong step sends the operator to the wrong file.
+        err(`error: could not check the admin account: ${(error as Error).message}`);
+        return 1;
+      }
+      if (existing !== null) {
+        out(existingAdminLine(existing));
+        return 0;
+      }
+    }
+
+    let resolved: ResolvedPassword;
+    try {
+      resolved = await resolvePassword(config, deps);
+    } catch (error) {
+      err(`error: ${(error as Error).message}`);
+      return 1;
+    }
+
     const outcome = await ensureAdmin(database.db, {
       username,
       password: resolved.password,
@@ -211,14 +270,8 @@ export async function main(
 
     if (outcome.status === 'created') {
       out(`admin '${outcome.admin.username}' created (password from ${resolved.source})`);
-    } else if (outcome.admin.isActive) {
-      out(`admin '${outcome.admin.username}' already exists — unchanged`);
     } else {
-      // Reported rather than fixed: re-activating an account is a decision, and a bootstrap script that "repairs"
-      // whatever it finds is a bootstrap script that can undo an operator's deliberate lockout on every restart.
-      out(
-        `admin '${outcome.admin.username}' already exists and is deactivated — unchanged (re-enable it in the admin UI)`,
-      );
+      out(existingAdminLine(outcome.admin));
     }
     return 0;
   } catch (error) {

@@ -3,9 +3,60 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 41 passes · 171 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3).
+**Totals:** 42 passes · 175 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 42 — 2026-10-26 (a second boot that refused to start, and the wait nobody could have written in shell)
+
+`P1-DOCK-04` is the task that makes `docker compose up -d` enough on a clean Ubuntu box, so the review started where the
+acceptance criterion ends: *does the container actually start, twice, with nothing typed by a human?* It did not — and the
+reason was one line away from the code the task was about. The four defects below were each reproduced on a real
+PostgreSQL with the real image files before they were fixed, and re-probed after.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The second boot refused to start.** `entrypoint.api.sh` runs `init-admin.ts` on *every* boot, and `init-admin` resolved the password before it looked at the database. So the moment an operator did the sensible thing — delete `ADMIN_PASSWORD` from `.env` once the account exists — every restart exited `1` with `no admin password supplied`, and `restart: unless-stopped` turned that into a crash loop on a database that was perfectly fine. Probed on a database that already had its admin: `bun scripts/init-admin.ts` with no password and no TTY → `error: no admin password supplied …`, exit `1`. A container that cannot restart is worse than one that never booted, because it looks healthy in `docker ps` | `--bootstrap` for the entrypoint's mode: the account is looked up **first** (`findExistingAdmin`, next to `ensureAdmin` in `modules/auth/admin-accounts.ts`) and, when it exists, reported as `admin 'admin' already exists — unchanged` and the script returns `0` *before* any password source is touched. A fresh database with no password still exits `1` with the `set ADMIN_PASSWORD` message, so the failure DOCK-2 describes survives as a message rather than a server nobody can log into; a deactivated account is reported and left deactivated. The hand-run path is deliberately unchanged, which is why the flag exists instead of a new default: `bun run admin:init` on an existing install still fails on a missing password and points at `reset-admin-password`. Re-probed: second boot with `ADMIN_PASSWORD` **unset** → `already exists — unchanged`, exit `0`, API serving |
+| 2 | **`--bootstrap` blamed the wrong step.** With the database gone between step 1 and step 3 — the exact window a restart-looping PostgreSQL creates — the lookup threw into the outer handler, which printed `error: could not create the admin account: connect ECONNREFUSED 127.0.0.1:1`. Nothing was being created: the sentence sends an operator to look for a failed `INSERT`, a constraint, a permission on `admins`, when the database was simply not there. Measured before the fix, on a closed port | The lookup has its own `try`: `error: could not check the admin account: connect ECONNREFUSED 127.0.0.1:1`, and it is fatal rather than falling through to the create path — an account that cannot be read must not be created again. Two cases pin it (the message, and that the run stops with a password *present*), and both fail if the wrapper is removed. Re-probed after: same command, same closed port, the new sentence |
+| 3 | **`05-flows.md` F1 documented a wait the image cannot perform.** The diagram said `pg_isready loop, max 60s`. The runtime image is bare Bun — no `psql`, no `pg_isready`, and `dockerfile.spec.ts` forbids OS packages — so the step as drawn could not exist; worse, a port probe is not the unit even if it did, because a PostgreSQL in recovery accepts TCP and then answers `57P03 the database system is starting up`. The diagram also ended with `start Fastify + worker`, and no worker process is started by anything (the queue arrives in `P2-JOB-01`) | The diagram now draws the four real steps with the four real commands, the `57P03` reason, both bootstrap branches (created / already exists / no password → exit 1 naming the step), and `exec` as the last line. `entrypoint.spec.ts` parses the guide and asserts the same four commands in the same order, so the two cannot drift again; four mutations (a step dropped, two steps swapped, `--bootstrap` dropped, the file name removed) all fail it |
+| 4 | **Two documents stated the boot as it was going to be, not as it is.** `12-deployment.md` said "first boot performs, in order: wait for DB → run migrations → create the admin (idempotent) → start the API, worker and scheduler" — no file name, no flag, no failure shape, no deadline, and a third process that does not exist. `09-development.md` §4 said "in compose the migration entrypoint owns the step and the API runs with `MIGRATE_ON_BOOT=false`", as fact — but there is no `compose.yaml` in the repository yet; it is `P1-DOCK-05`. An operator reading either would expect a boot that this build does not have, and look for the cause in the wrong place when it stops | §2 is now a table of the four steps with the reason each is where it is, the exact log lines (success and failure), the `--timeout` flag and why the wait is a query, the second-boot behaviour with its `--bootstrap` explanation, a real failure transcript, and the one-off-command note (`exec "$@"` still gets steps 1–3). The compose sentence is marked as `P1-DOCK-05`'s, with what happens at the default (`MIGRATE_ON_BOOT=true`: the boot check still runs and finds nothing pending — the flag removes a second pass, not the check) |
+
+What was probed and found sound, so that "no bug here" is a measurement rather than an impression:
+
+- **The four steps, on a fresh volume, with the real files.** First boot logged `step 1/4`…`step 4/4`, created the admin,
+  and served `/healthz` `{"status":"ok"}` and `/readyz`
+  `{"status":"ok","checks":{"database":"ok","cache":"ok"}}`. `ps -o pid,ppid,comm` showed the entrypoint's
+  PID equal to `bun`'s with zero children — the `exec` is real — and `SIGTERM` produced `{"signal":"SIGTERM","msg":"shutting
+  down"}` with exit `0` well inside the grace period.
+- **Two containers at once on one empty database.** Started together against the same fresh database: one applied
+  `0001_init`, the other logged `migrations: already up to date`; one printed `created`, the other `already exists —
+  unchanged`; neither exited non-zero and `admins` held exactly one row. Kysely's migrator lock and the `lower(username)`
+  unique index are doing the work, and nothing in the entrypoint needed to know about it.
+- **`MIGRATE_ON_BOOT=false`.** A second boot with the flag off still ran all four steps and served: the entrypoint owns
+  the migration, and the API's boot check then finds nothing pending instead of refusing.
+- **A database that is not there.** `wait-for-db.ts` against a closed port: four attempts in three seconds, one masked
+  reason per line, exit `1`. The entrypoint against a dead database: the full 60 s, `step 1/4 … failed (exit 1); the API
+  is not started`, and nothing listening on the port afterwards — the failure DOCK-2 wants instead of a `503` server.
+- **The override path.** `… entrypoint.api.sh bun --version` printed `1.4.4` *after* steps 1–3, which is the property that
+  makes one-off maintenance commands (`reset-admin-password`, `migrate --reset`) safe in this image.
+
+Mutations, in `scripts` project only, one at a time, reverted between runs — **20 tested, 20 killed**: `#!/bin/bash`,
+`set -e` without `-u`, `cd /app` removed, steps 1 and 2 swapped, no `exec` on the API, `"$@"` without `exec`, steps 2
+and 3 swapped, `--bootstrap` dropped, a duplicated step number (`step 2/4` twice), `sleep 5 && wait-for-db`, no
+`ENTRYPOINT`, a `COPY` destination that disagrees with it, `wait-for-db.ts` missing from the image, the bootstrap lookup
+moved after the password, the bootstrap reporting `created`, the bootstrap re-activating a deactivated account — plus four
+against the guide (a step dropped, two steps swapped, `--bootstrap` dropped, the file name removed).
+
+One honest survivor from the same batch: an earlier version of the entrypoint case asserted the *line order* of the
+locations in `docker/nginx.conf` and was kept for pass 41's file; re-testing it here showed that moving the API block to
+the end of the server block leaves every test green — because nginx picks the longest matching prefix whatever the line
+order, so only the `^~` modifier is load-bearing. The assertion was replaced by one that reads the guide instead of the
+file's layout, which is the property that can actually break (defect 3).
+
+**Totals after this pass: 42 passes · 175 defects · 0 open.** Gate: `bun run check` green — 1 138 tests in 79 files,
+coverage 98.23 % statements / 96.37 % branches / 98.64 % functions / 98.61 % lines.
 
 ---
 

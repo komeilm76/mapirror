@@ -76,8 +76,49 @@ the rest of this guide uses.
 
 **Do not edit `DATABASE_URL`.** Inside the containers it is derived — `postgres://mapirror:<POSTGRES_PASSWORD>@db:5432/mapirror` — so changing `POSTGRES_PASSWORD` is enough and the two can never disagree. The copy in `.env` is for running the API outside Docker (native dev, tests). The same rule applies to `CACHE_DIR` / `TMP_DIR`, which compose points at the mounted volumes (`/data/cache`, `/data/tmp`).
 
-First boot performs, in order: wait for DB → run migrations → create the admin (idempotent) → start
-the API, worker and scheduler. Nothing manual is required (DOCK-2).
+### What the first boot actually does
+
+The API container's `ENTRYPOINT` is `docker/entrypoint.api.sh`: four steps, in this order, and the order is the point.
+
+| # | Command | Why it is here |
+|---|---|---|
+| 1 | `bun scripts/wait-for-db.ts` | a migration against a database that is still starting fails, and a container that gives up is a restart loop |
+| 2 | `bun scripts/migrate.ts` | the `admins` table does not exist until `0001_init.sql` has run, and step 3 needs it |
+| 3 | `bun scripts/init-admin.ts --bootstrap` | creates the account on a fresh volume; on every boot after, reports it and changes nothing |
+| 4 | `exec bun apps/api/src/server.ts` | `exec` makes the API **PID 1**, so `docker stop`'s `SIGTERM` reaches it and the process drains instead of being killed after the grace period |
+
+Each step prints one line to stderr — `entrypoint: step 2/4: applying migrations` — and a failing step prints
+`entrypoint: step 2/4: … failed (exit 3); the API is not started` and exits with **that** code. So `docker compose logs
+api` names the step that failed, and the API never starts against a database it could not prepare. Nothing manual is
+required (DOCK-2); the worker and scheduler start inside the API process (the queue arrives with `P2-JOB-01`), and the
+migration stays in the entrypoint, in the open, rather than in the API's boot path — compose will also pass
+`MIGRATE_ON_BOOT=false` (`P1-DOCK-05`) so the second pass does not happen at all.
+
+**A slow database.** The wait is 60 s by default; `docker run … bun scripts/wait-for-db.ts --timeout 300` (up to 3600)
+covers a cold NAS volume or a database on another host. It is a `select 1` through the API's own pool, not a port probe:
+a PostgreSQL that is still recovering accepts TCP and then answers `57P03`, which `pg_isready`-shaped waits cannot see,
+and the runtime image deliberately carries no OS packages to run one with. With the database down entirely, step 1
+spends the minute, prints the deadline it waited for, and exits `1` — `restart: unless-stopped` is where retries belong,
+not inside the script.
+
+**A second boot asks for nothing.** Step 3 runs every time. `--bootstrap` looks the account up *before* it looks for a
+password, so a restart succeeds after you delete `ADMIN_PASSWORD` from `.env` — which is what one does once the account
+exists; without the flag the step demanded a password it did not need and exited `1`, so a working install could not
+restart. It prints `admin 'admin' already exists — unchanged`, touches nothing, and leaves a deactivated account
+deactivated (re-enabling is a decision, not a repair — use the admin UI or `reset-admin-password`). On a **fresh** volume
+with no password source it still stops, with the message naming `ADMIN_PASSWORD` and `ADMIN_PASSWORD_FILE`, instead of
+starting a server nobody can log into:
+
+```bash
+$ docker compose logs api | tail -2
+entrypoint: step 3/4: bootstrapping the admin account
+error: no admin password supplied. Set ADMIN_PASSWORD or ADMIN_PASSWORD_FILE, or run in a terminal.
+entrypoint: step 3/4: bootstrapping the admin account failed (exit 1); the API is not started
+```
+
+**One-off commands still get steps 1–3.** `docker compose run --rm api bun scripts/reset-admin-password.ts` waits for the
+database and migrates before it runs, because an explicit command replaces only step 4 (`exec "$@"`). That is why the
+image has a single entrypoint and not two.
 
 Verify:
 

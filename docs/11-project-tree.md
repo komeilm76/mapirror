@@ -179,6 +179,7 @@ mapirror/
 │  │  └─ dockerignore.ts          # exists (P1-DOCK-01): .dockerignore matching, one answer for gate + image test
 │  ├─ reset-admin-password.ts      # Reset + revoke all sessions (--generate / --password-stdin / prompt)
 │  ├─ migrate.ts                   # Run Kysely migrations (also run on boot)
+│  ├─ wait-for-db.ts               # exists (P1-DOCK-04): `select 1` until the database answers, 60 s deadline
 │  ├─ sync-catalog.ts              # Manual catalog sync (cron-friendly)
 │  ├─ backup.sh / restore.sh       # pg_dump + cache manifest
 │  └─ seed-dev.ts                  # Dev fixtures (never runs in production)
@@ -188,7 +189,7 @@ mapirror/
 │  ├─ web.Dockerfile               # exists (P1-DOCK-02): Vite build → nginx runtime, uid 101
 │  ├─ nginx.conf                   # exists (P1-DOCK-02/03): unprivileged server, APIs before pages,
 │  │                               # SPA fallback, shell headers, gzip, streaming, cache policy
-│  ├─ entrypoint.api.sh            # migrate → init-admin → start API+worker
+│  ├─ entrypoint.api.sh            # exists (P1-DOCK-04): wait-for-db → migrate → init-admin --bootstrap → exec API
 │  └─ caddy.example                # TLS termination example (D-15)
 │
 ├─ docs/                           # This folder (Phase 0)

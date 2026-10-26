@@ -97,14 +97,29 @@ afterAll(async () => {
 });
 
 describe('parseArgs', () => {
-  it('defaults to no username and no help', () => {
-    expect(parseArgs([])).toEqual({ help: false });
+  it('defaults to no username, no bootstrap mode and no help', () => {
+    expect(parseArgs([])).toEqual({ help: false, bootstrap: false });
   });
 
   it('reads --username and --help in any order', () => {
-    expect(parseArgs(['--username', 'owner'])).toEqual({ help: false, username: 'owner' });
-    expect(parseArgs(['--username', 'owner', '--help'])).toEqual({ help: true });
-    expect(parseArgs(['--help', '--username', 'owner'])).toEqual({ help: true });
+    expect(parseArgs(['--username', 'owner'])).toEqual({
+      help: false,
+      bootstrap: false,
+      username: 'owner',
+    });
+    expect(parseArgs(['--username', 'owner', '--help'])).toEqual({ help: true, bootstrap: false });
+    expect(parseArgs(['--help', '--username', 'owner'])).toEqual({ help: true, bootstrap: false });
+  });
+
+  it('reads --bootstrap, which is the container entrypoint’s mode', () => {
+    expect(parseArgs(['--bootstrap'])).toEqual({ help: false, bootstrap: true });
+    expect(parseArgs(['--bootstrap', '--username', 'owner'])).toEqual({
+      help: false,
+      bootstrap: true,
+      username: 'owner',
+    });
+    // A help request in bootstrap mode still answers: the caller asked a question, not for a boot.
+    expect(parseArgs(['--bootstrap', '--help'])).toEqual({ help: true, bootstrap: true });
   });
 
   it('refuses --username without a value', () => {
@@ -226,6 +241,46 @@ describe('main — where the password comes from', () => {
     // No database here, so the run fails at the connection — but it must have got that far without asking.
     expect(prompted).toBe(false);
     expect(result.err).not.toContain('do not match');
+  });
+});
+
+describe('main — with a database it cannot reach', () => {
+  it('says the account could not be checked, not that it could not be created', async () => {
+    // A boot whose database disappears between step 1 and step 3 lands here. The outer handler's sentence ("could not
+    // create the admin account") describes an INSERT that never ran, so it sends the operator to the wrong place.
+    const broken = {
+      db: {
+        selectFrom: () => {
+          throw new Error('connect ECONNREFUSED 10.0.0.5:5432');
+        },
+      },
+    } as unknown as SqlDatabase;
+
+    const result = await run(['--bootstrap'], {}, { database: broken });
+
+    expect(result.code).toBe(1);
+    expect(result.out).toBe('');
+    expect(result.err).toBe(
+      'error: could not check the admin account: connect ECONNREFUSED 10.0.0.5:5432',
+    );
+  });
+
+  it('makes that failure fatal, because an unread account must not be created again', async () => {
+    // Continuing with a password in the environment would attempt an INSERT against a database it cannot read: either a
+    // crash or, worse on a replica, an account created where one may already exist.
+    const broken = {
+      db: {
+        selectFrom: () => {
+          throw new Error('timeout exceeded when trying to connect');
+        },
+      },
+    } as unknown as SqlDatabase;
+
+    const result = await run(['--bootstrap'], { ADMIN_PASSWORD: SECRET }, { database: broken });
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain('could not check the admin account');
+    expect(`${result.out}${result.err}`).not.toContain(SECRET);
   });
 });
 
@@ -396,6 +451,87 @@ describe.skipIf(skipReason !== null)('main — against a real database', () => {
         .select('password_hash')
         .executeTakeFirstOrThrow();
       await expect(verifyPassword(row.password_hash, SECRET)).resolves.toBe(true);
+    });
+  });
+
+  it('boots a second time without a password, because there is nothing to create', async () => {
+    // The defect `P1-DOCK-04` found (pass 42): `init-admin` resolved the password *before* looking at the database, so
+    // every boot after the first demanded `ADMIN_PASSWORD` — and refused to start when the operator had removed it from
+    // `.env`, which is exactly what one does once the account exists. `--bootstrap` asks the database first.
+    await onFreshDatabase(async (database, env) => {
+      expect((await run([], { ...env, ADMIN_PASSWORD: SECRET }, { database })).code).toBe(0);
+      const before = await database.db
+        .selectFrom('admins')
+        .select(['id', 'password_hash'])
+        .executeTakeFirstOrThrow();
+
+      // No `ADMIN_PASSWORD`, no file, no terminal: nothing to read, and nothing that needs reading.
+      const second = await run(['--bootstrap'], env, { database, interactive: false });
+
+      expect(second.code).toBe(0);
+      expect(second.out).toBe(`admin 'admin' already exists — unchanged`);
+      expect(second.err).toBe('');
+      const after = await database.db
+        .selectFrom('admins')
+        .select(['id', 'password_hash'])
+        .executeTakeFirstOrThrow();
+      expect(after).toEqual(before);
+    });
+  });
+
+  it('reports a deactivated account on a password-less boot, and leaves it deactivated', async () => {
+    // Re-activating is a decision, not a repair: a bootstrap that "fixed" whatever it found would undo an operator's
+    // deliberate lockout on every restart. This is the same line the idempotent path prints, reached without a secret.
+    await onFreshDatabase(async (database, env) => {
+      expect((await run([], { ...env, ADMIN_PASSWORD: SECRET }, { database })).code).toBe(0);
+      await database.db.updateTable('admins').set({ is_active: false }).execute();
+
+      const second = await run(['--bootstrap'], env, { database, interactive: false });
+
+      expect(second.code).toBe(0);
+      expect(second.out).toContain('already exists and is deactivated — unchanged');
+      const row = await database.db
+        .selectFrom('admins')
+        .select('is_active')
+        .executeTakeFirstOrThrow();
+      expect(row.is_active).toBe(false);
+    });
+  });
+
+  it('still refuses to invent an account without a password on a fresh database', async () => {
+    // `--bootstrap` is lenient about *existing*, not about creating: a container with no admin and no password must
+    // stop and say which variable to set, rather than start a server nobody can log in to (`12-deployment.md` §2).
+    await onFreshDatabase(async (database, env) => {
+      const result = await run(['--bootstrap'], env, { database, interactive: false });
+
+      expect(result.code).toBe(1);
+      expect(result.err).toContain('ADMIN_PASSWORD');
+      expect(result.err).toContain('ADMIN_PASSWORD_FILE');
+      expect(result.out).toBe('');
+      expect(await database.db.selectFrom('admins').selectAll().execute()).toHaveLength(0);
+    });
+  });
+
+  it('creates the account on a fresh database with --bootstrap, exactly as without it', async () => {
+    await onFreshDatabase(async (database, env) => {
+      const result = await run(['--bootstrap'], { ...env, ADMIN_PASSWORD: SECRET }, { database });
+
+      expect(result.code).toBe(0);
+      expect(result.out).toBe(`admin 'admin' created (password from ADMIN_PASSWORD)`);
+      expect(`${result.out}${result.err}`).not.toContain(SECRET);
+    });
+  });
+
+  it('keeps the strict behaviour for a hand-run second attempt, which is the documented difference', async () => {
+    // The flag is not a new default: an operator running `bun run admin:init` on an existing install and getting
+    // "no admin password supplied" is a prompt to read the usage, and the message names `reset-admin-password`.
+    await onFreshDatabase(async (database, env) => {
+      expect((await run([], { ...env, ADMIN_PASSWORD: SECRET }, { database })).code).toBe(0);
+
+      const again = await run([], env, { database, interactive: false });
+
+      expect(again.code).toBe(1);
+      expect(again.err).toContain('no admin password supplied');
     });
   });
 

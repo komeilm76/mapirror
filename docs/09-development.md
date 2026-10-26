@@ -208,9 +208,10 @@ bun run db:reset                                              # dev only
   migrating** (forward-only: the migrations that would undo it do not exist); rows behind files → migrate when
   `MIGRATE_ON_BOOT=true` (the default), otherwise refuse. Exit code `1`, log line carries `code: SCHEMA_SKEW` and the
   report. **Adding a migration means adding its name to `EXPECTED_MIGRATIONS`** — a test pins the constant to the
-  directory, so the omission fails the gate instead of shipping. In compose the migration entrypoint owns the step
-  (`P1-DOCK-04`) and the API runs with `MIGRATE_ON_BOOT=false`, so a container that silently repaired the schema
-  behind the orchestrator's back is not possible.
+  directory, so the omission fails the gate instead of shipping. In the container the entrypoint owns the step
+  (`P1-DOCK-04`) and compose runs the API with `MIGRATE_ON_BOOT=false` (`P1-DOCK-05`), so a container cannot repair the
+  schema behind the orchestrator's back; left at its default the boot check still runs and finds nothing pending — the
+  flag removes a second pass, not the check.
 - Transactions in services, not repositories; repositories accept a `Kysely` instance / `tx`.
 - Use `withTransaction(db, work, options)` (`db/transaction.ts`) rather than `db.transaction()` directly: it bounds the
   session (idle-in-transaction timeout, optional statement timeout), can enforce `read only` and `serializable`, and
