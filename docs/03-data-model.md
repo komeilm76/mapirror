@@ -111,9 +111,12 @@ CREATE INDEX countries_iso_idx ON countries USING gin (iso_alpha2);
 -- region may be absent from the local catalog until the next sync.
 ```
 
-- `slug` must be globally unique because it is used in public URLs and filesystem paths. Collisions
-  (e.g. two `georgia`s across continents) are resolved at sync time by prefixing the parent slug
-  (`asia/georgia` → `asia-georgia`) and recorded in the audit log.
+- `slug` must be globally unique because it is used in public URLs and filesystem paths. It starts from the normalized
+  region name (`europe/finland` → `finland`). Collisions (e.g. two `georgia`s across continents) are resolved by
+  prefixing the parent slug (`asia/georgia` → `asia-georgia`); remaining collisions add a normalized source-id suffix,
+  then a stable numeric suffix if needed. Catalog sync preserves already-assigned source-id/slug pairs when a new
+  collision appears, so URLs and cache paths do not change; new slugs resolve around all reserved assignments. Sync
+  records collision resolution in the audit log.
 - Trigram index powers type-ahead search; ISO arrays power the flag/code display and filtering.
 
 ### 2.4 `country_cache` (1:1 cache + publication state)

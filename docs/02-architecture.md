@@ -42,7 +42,7 @@ operator ever wants a dedicated container.
 | `auth` | Admin credentials, token issue/verify/revoke, login throttling | Touch cache/files |
 | `admin` | Admin JSON APIs (`/_admin/api/*`), orchestration of jobs | Stream files without going through `storage` |
 | `public` | Published read model, public downloads, stats counters | Return unpublished data, mutate anything |
-| `geofabrik` (MapSource) | Catalog fetch, region page parse, version discovery, bounded HEAD/metadata + `.md5` | Write to DB or disk (returns facts only) |
+| `geofabrik` (MapSource) | Catalog fetch, region page parse, local slug derivation, version discovery, bounded HEAD/metadata + `.md5` | Write to DB or disk (returns facts only) |
 | `jobs` | Queue, worker loop, job handlers, progress, cancellation | Contain HTTP concerns |
 | `system` | CPU/RAM/disk sampling, disk preflight | Decide when to prune |
 | `db` | SQL, repositories, transactions | Contain business rules that belong in modules |

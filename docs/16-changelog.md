@@ -3,9 +3,23 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 50 passes · 195 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2).
+**Totals:** 51 passes · 198 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 51 — 2026-10-26 (a long parent erased the region name, and a new collision could move cache paths)
+
+A hostile-input review of P2-SRC-05 checked slug validity, collision families, and what happens when a later catalog sync adds a conflicting name.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **A long parent prefix consumed the entire 64-character slug and erased the child region name.** A same-name pair under a long parent produced two indistinguishable parent-only candidates and numeric suffixes. The regression failed before the fix | Prefix construction now budgets the parent component around the child slug, keeping the region-identifying suffix within the database's 64-character format; source-id and numeric tie-breakers remain bounded |
+| 2 | **Recomputing the full catalog after a new same-name region appeared could rename an established slug.** A lone `europe/georgia` initially maps to `georgia`; after adding `asia/georgia`, pure recomputation changes it to `europe-georgia`, breaking existing public URLs and storage paths. The before/after scenario was probed | Slug derivation now accepts prior source-id/slug assignments, reserves those values (including absent source rows), and preserves each existing mapping while assigning around it to newcomers. A regression extends an initial catalog and asserts the old slug remains unchanged |
+| 3 | **The catalog-sync task omitted its slug-derivation dependency.** `P2-SRC-06` depends on the collision rules from `P2-SRC-05`, but its task row listed only the index client and job worker | The dependency table now includes `P2-SRC-05`; the data model specifies that sync preserves assigned slugs so filesystem paths remain stable |
+
+Slug tests cover 14 cases: normalization, `europe/finland` → `finland`, parent collisions, stable persisted assignments, long prefixes, deterministic fallbacks, and the DB constraint. A separate 1,000-catalog seeded probe also verified order independence, unique/path-safe ≤64-character output, and persisted-assignment stability. `bun run check` passes: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint, Prettier, and 1,072 tests passed across 75 files (182 skipped across 12 files). The post-update docs-contract suite passes 16/16. **Totals after this pass: 51 passes · 198 defects · 0 open.**
 
 ---
 

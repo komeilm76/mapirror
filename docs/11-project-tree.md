@@ -62,6 +62,7 @@ mapirror/
 │  │  │  │  │  ├─ index-client.ts  # Zod-validated index-v1-nogeom catalog fetch + mapping
 │  │  │  │  │  ├─ region-page.ts   # HTML5 parser: dated PBF snapshots, sizes, and “data up to”
 │  │  │  │  │  ├─ file-metadata.ts # Bounded HEAD metadata and .md5 requests
+│  │  │  │  ├─ slug.ts           # Name-based local slugs and deterministic collision resolution
 │  │  │  │  └─ fixtures/          # Saved upstream-shaped samples for offline tests
 │  │  │  │  ├─ jobs/               # Queue + worker
 │  │  │  │  │  ├─ queue.ts         # claim/complete/fail with FOR UPDATE SKIP LOCKED
@@ -90,7 +91,8 @@ mapirror/
 │  │  │     └─ logger.ts           # Pino config with redaction
 │  │  └─ tests/                    # API, integration, and source-adapter tests
 │  │     ├─ geofabrik-region-page.spec.ts   # Three offline HTML fixtures + size/date edge cases
-│  │     └─ geofabrik-file-metadata.spec.ts # Bounded HEAD and MD5 request cases
+│  │     ├─ geofabrik-file-metadata.spec.ts # Bounded HEAD and MD5 request cases
+│  │     └─ geofabrik-slug.spec.ts          # Normalization, collisions, stability, path constraints
 │  │
 │  └─ web/                         # Vue 3 + Vuetify 3 SPA (served by nginx)
 │     ├─ package.json              # vue, vue-router, vuetify, pinia, @vueuse/core
