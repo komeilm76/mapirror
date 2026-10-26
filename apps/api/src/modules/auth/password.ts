@@ -60,7 +60,7 @@ export const ARGON2_PARAMS = {
  * and `Passw0rd2!`, which is exactly what the blocklist is for, so the rule that looks stricter is weaker.
  */
 export const PASSWORD_POLICY = {
-  /** Minimum length in characters (Unicode code points, after NFKC normalisation). */
+  /** Minimum length in characters (Unicode code points, in both the submitted and NFKC-normalised forms). */
   minLength: 12,
   /**
    * Maximum length, counted the way the login schema counts.
@@ -194,18 +194,21 @@ export function passwordProblems(
   }
 
   const problems: PasswordProblem[] = [];
-  // The floor counts code points of the **normalised** form: that is what the person sees and types. Normalisation
-  // only ever shortens, so a password that clears the floor here also clears it unnormalised.
+  // NFKC can both expand (for example, `ﬃ` → `ffi`) and contract (a base letter plus combining mark → one
+  // precomposed character). Requiring the minimum in both forms prevents compatibility ligatures from bypassing the
+  // floor and prevents redundant combining marks from being counted as password length.
   const characters = characterCount(value);
   // The ceiling counts code points of the **submitted** string, which is the value the login schema measures (see
-  // `PASSWORD_POLICY.maxLength`). The `else if` is a message choice, not a safety one: a string cannot be both too
-  // short and too long, and naming one problem is more useful than naming two.
+  // `PASSWORD_POLICY.maxLength`). The floor uses the shorter representation for the paired NFKC/raw check. The `else
+  // if` is a message choice, not a safety one: a string cannot be both too short and too long, and naming one problem is
+  // more useful than naming two.
   const submittedCharacters = characterCount(password);
+  const minimumCharacters = Math.min(characters, submittedCharacters);
 
-  if (characters < PASSWORD_POLICY.minLength) {
+  if (minimumCharacters < PASSWORD_POLICY.minLength) {
     problems.push({
       rule: 'too-short',
-      message: `Use at least ${String(PASSWORD_POLICY.minLength)} characters — this one has ${String(characters)}.`,
+      message: `Use at least ${String(PASSWORD_POLICY.minLength)} characters — this one has ${String(minimumCharacters)}.`,
     });
   } else if (submittedCharacters > PASSWORD_POLICY.maxLength) {
     problems.push({

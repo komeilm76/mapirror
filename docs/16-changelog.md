@@ -3,9 +3,21 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 51 passes · 198 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3).
+**Totals:** 52 passes · 199 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 52 — 2026-10-26 (NFKC expansion let a four-character password clear the twelve-character floor)
+
+A Phase 1 password-policy review tested compatibility normalization in both directions instead of assuming NFKC only shortens input.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **NFKC expansion bypassed the creation-time minimum.** Four typed `ﬃ` ligatures normalize to twelve code points (`ffiffiffiffi`), so the old normalized-only check accepted a four-code-point password. The before-fix probe showed `passwordProblems()` returned no issues while login accepted it | The policy now requires at least 12 code points in both the submitted and NFKC-normalized forms, and reports the shorter count. A regression covers both expansion (`ﬃ`) and contraction (decomposed accents); mutating back to the normalized-only check makes the test fail |
+
+The focused password suite passes 37/37 after the fix. `bun run check` passes: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint, Prettier, and 1,073 tests passed across 75 files (182 skipped across 12 files). `docs/08-tasks.md` and `docs/14-security.md` now describe the two-form minimum. **Totals after this pass: 52 passes · 199 defects · 0 open.**
 
 ---
 

@@ -210,6 +210,21 @@ describe('passwordProblems', () => {
     expect(passwordProblems('😀😀😀😀😀😀😀😀😀😀😀😀')).toEqual([]);
   });
 
+  it('enforces the minimum in both raw and NFKC forms', () => {
+    // NFKC expands the four typed ligatures to twelve code points; counting only the normalized form bypassed the floor.
+    const expands = 'ﬃ'.repeat(4);
+    expect([...expands.normalize('NFKC')]).toHaveLength(PASSWORD_POLICY.minLength);
+    expect(passwordProblems(expands).map((problem) => problem.rule)).toEqual(['too-short']);
+    expect(passwordProblems(expands).at(0)?.message).toContain('has 4');
+
+    // It can also contract: six decomposed accents are twelve raw code points but only six after normalization.
+    const contracts = 'e\u0301'.repeat(6);
+    expect([...contracts]).toHaveLength(PASSWORD_POLICY.minLength);
+    expect([...contracts.normalize('NFKC')]).toHaveLength(6);
+    expect(passwordProblems(contracts).map((problem) => problem.rule)).toEqual(['too-short']);
+    expect(passwordProblems(contracts).at(0)?.message).toContain('has 6');
+  });
+
   it('rejects a password longer than the login endpoint accepts', () => {
     const tooLong = 'a'.repeat(PASSWORD_POLICY.maxLength + 1);
     expect(passwordProblems(tooLong).map((p) => p.rule)).toEqual(['too-long']);
