@@ -1,0 +1,112 @@
+/**
+ * Shell rules that are neither tokens nor type (`P1-WEB-07`).
+ *
+ * `tokens.css` holds the numbers `13-ui-ux.md` §2 fixes and the one global focus rule; `typography.css` holds the type
+ * roles. What is left is the handful of styles an *element* needs to exist at all — today, the skip link — and they are
+ * here rather than in a component's `<style>` block for the same reason the palette is in one file: no SFC in this app
+ * carries a style block, so there is exactly one place to look.
+ *
+ * ## The skip link
+ *
+ * §7 asks for one in the admin. A skip link has to be **visible when focused and invisible otherwise**, and there is no
+ * token that expresses that: it is a rule. Written with `clip-path` rather than `display: none` or `visibility: hidden`,
+ * because a hidden element cannot receive focus — the link would exist for a screen reader's browse mode and never for
+ * the Tab key, which is the only way to reach it.
+ */
+
+.mm-skip-link {
+  position: absolute;
+  top: var(--mm-space-2);
+  left: var(--mm-space-2);
+  z-index: 3000; /* above Vuetify's app bar (2000) and drawers (1005): a skip link under the bar is not a skip link */
+  padding: var(--mm-space-2) var(--mm-space-4);
+  border-radius: var(--mm-radius-sm);
+  background: rgb(var(--v-theme-primary));
+  color: rgb(var(--v-theme-on-primary));
+  font-size: 0.875rem;
+  text-decoration: none;
+  /* Off-screen but focusable: the element keeps its box, so Tab reaches it and :focus-visible still applies. */
+  clip-path: inset(50%);
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.mm-skip-link:focus-visible {
+  clip-path: none;
+  width: auto;
+  height: auto;
+  overflow: visible;
+}
+
+/*
+ * The breadcrumb trail (§3). `v-breadcrumbs` would render Vuetify's own list with an icon divider — and the icon font is
+ * not installed, so the divider would be an empty element. An `<ol>` with a text chevron is the whole component, and it
+ * is a list because that is what a screen reader announces it as.
+ */
+.mm-breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mm-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+}
+
+.mm-breadcrumbs li {
+  display: flex;
+  align-items: center;
+  gap: var(--mm-space-2);
+}
+
+.mm-breadcrumb-link {
+  color: rgb(var(--v-theme-text-secondary));
+  text-decoration: none;
+}
+
+.mm-breadcrumb-link:hover {
+  color: rgb(var(--v-theme-primary));
+  text-decoration: underline;
+}
+
+/* The current page is written plainly: it is a label, not a control. */
+.mm-breadcrumbs [aria-current='page'] {
+  color: rgb(var(--v-theme-text-primary));
+  font-weight: 600;
+}
+
+.mm-breadcrumb-divider {
+  color: rgb(var(--v-theme-text-secondary));
+}
+
+.mm-admin-search {
+  max-width: 260px;
+}
+
+/*
+ * §3: "responsive to 360 px". Below 600 px the trail is the first thing to go — the page title an inch below says the
+ * same thing — while the menu button, the search and the user menu stay. Without this the topbar scrolls sideways on the
+ * narrowest phone the document names.
+ *
+ * The selector names the trail itself, not `.mm-admin-topbar .mm-breadcrumbs`: the first version of this rule used an
+ * ancestor class the layout never rendered, so it matched nothing and the fix was invisible (measured in pass 36 — the
+ * shell had no `.mm-admin-topbar` anywhere). `tests/admin-layout.spec.ts` now walks every class this stylesheet styles
+ * and asserts the shell renders one.
+ */
+@media (max-width: 599px) {
+  .mm-breadcrumbs {
+    display: none;
+  }
+
+  .mm-admin-search {
+    max-width: 120px;
+  }
+}
+
+/* The admin content keeps the page's own padding off the drawer's edge. */
+.mm-admin-content {
+  padding: var(--mm-space-6);
+}

@@ -273,10 +273,15 @@ describe('no component holds a colour', () => {
     expect(sources.some((path) => path.endsWith('.vue'))).toBe(true);
   });
 
-  it('finds colours only in the token module and the two stylesheets', () => {
+  it('finds colours only in the token module and the three stylesheets', () => {
     // The stylesheets hold `rgb(var(--v-theme-…))` — a reference, not a colour — and one `rgb(0 0 0 / 16%)` shadow,
     // which is §2's shadow token spelled out. Everything else must be a theme key.
-    const allowed = ['src/styles/tokens.ts', 'src/styles/tokens.css', 'src/styles/typography.css'];
+    const allowed = [
+      'src/styles/tokens.ts',
+      'src/styles/tokens.css',
+      'src/styles/typography.css',
+      'src/styles/shell.css',
+    ];
     const offenders: string[] = [];
 
     for (const path of sources) {
@@ -291,10 +296,14 @@ describe('no component holds a colour', () => {
     expect(offenders, 'components use theme keys, not colours').toEqual([]);
   });
 
-  it('keeps the two stylesheets free of literal colours other than the documented shadow', () => {
+  it('keeps the three stylesheets free of literal colours other than the documented shadow', () => {
     // A weaker promise for the files that are allowed literals: the only one is `--mm-shadow-overlay`, so a new
     // `background: #fafafa` in a stylesheet still fails.
-    for (const name of ['src/styles/tokens.css', 'src/styles/typography.css']) {
+    for (const name of [
+      'src/styles/tokens.css',
+      'src/styles/typography.css',
+      'src/styles/shell.css',
+    ]) {
       const lines = readFileSync(resolve(import.meta.dirname, '..', name), 'utf8')
         .split('\n')
         .filter((line) => colourLiteral.test(line) && !line.includes('var(--v-theme-'))

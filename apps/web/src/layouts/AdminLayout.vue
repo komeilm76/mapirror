@@ -1,0 +1,169 @@
+<script setup lang="ts">
+/**
+ * The admin shell (`P1-WEB-07`, `13-ui-ux.md` §3).
+ *
+ * ```
+ * ┌────────────┬──────────────────────────────────────────────┐
+ * │ MapMirror  │  Menu  Dashboard › Cache      [search] [user]│  64 px topbar
+ * ├────────────┼──────────────────────────────────────────────┤
+ * │ Dashboard  │                                              │
+ * │ Catalog    │  <slot/> — the page's own container and title │
+ * │ Cache      │                                              │
+ * └────────────┴──────────────────────────────────────────────┘
+ * ```
+ *
+ * Four decisions worth more than the markup:
+ *
+ * 1. **The drawer is one control at every size.** §3 calls for 248 px, collapsible on a desktop and a temporary drawer
+ *    under 1024 px. One `open` ref gives both: on a desktop the panel pushes the content aside, on a phone it slides over
+ *    it, and the same button toggles either. A permanent drawer plus a second mobile one would be two states to keep in
+ *    step, and the handover is where they disagree.
+ *
+ *    **Who owns the responsive rules matters, and the first version of this file got it wrong.** It passed
+ *    `:temporary="mobile"` and wrote a `watch(mobile)` that re-opened or closed the drawer on a resize — two statements of
+ *    things Vuetify already does: `isTemporary` is `!permanent && (mobile || temporary)`, a `watch(isTemporary)` sets the
+ *    drawer's own state on a resize, and a `watch(router.currentRoute)` closes a temporary drawer on every navigation
+ *    (read in `VNavigationDrawer`, measured in pass 36 — a mutation that deleted this file's watcher changed nothing,
+ *    which is how the duplication was found). Both were removed: the shell now states only what is *its* decision — which
+ *    is open to begin with — and the three behaviours Vuetify supplies are **asserted** in `tests/admin-layout.spec.ts`,
+ *    so an upgrade that drops one fails a test rather than quietly stranding a phone behind a panel.
+ * 2. **The 1024 px boundary belongs to `useDisplay`.** `plugins/vuetify.ts` sets `display.mobileBreakpoint` to §3's
+ *    number, so `mobile` is the same fact for the drawer and for any screen that asks later — and a test can prove it by
+ *    setting `window.innerWidth` before the app is built.
+ * 3. **The trail is not the page title.** §3 puts breadcrumbs in the topbar and §7 asks for one `h1` per page: the page
+ *    owns the heading, the topbar owns the trail (`router/breadcrumbs.ts` says where it comes from).
+ * 4. **No icon the app cannot draw.** The Material Design set is not installed, so `v-app-bar-nav-icon` and any
+ *    `icon="mdi-…"` render an empty element — a control only a screen reader can find (measured in pass 35 on the login
+ *    page). The menu button says "Menu", the breadcrumb divider is a text chevron, and the user menu button carries the
+ *    name. `tests/admin-layout.spec.ts` asserts the shell renders **no `.mdi` element**.
+ *
+ * The skip link (§7) is the shell's, and it is the first focusable element in the DOM so it is reachable before nine
+ * sidebar entries. Its "hidden until focused" styling is in `styles/shell.css`: a rule, not a token.
+ *
+ * @module layouts/AdminLayout
+ */
+
+import { computed, onMounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { useDisplay } from 'vuetify';
+
+import AdminUserMenu from '@/components/admin/UserMenu.vue';
+import { useApi } from '@/composables/useApi';
+import { breadcrumbsFor } from '@/router/breadcrumbs';
+import { ADMIN_NAV, isNavItemActive } from '@/router/nav';
+import { useAuth } from '@/stores/auth';
+
+import { MAIN_ID, SIDEBAR_WIDTH, TOPBAR_HEIGHT } from './adminShell';
+
+const route = useRoute();
+const router = useRouter();
+const display = useDisplay();
+const auth = useAuth();
+const client = useApi();
+
+/** Whether the viewport is below §3's boundary. */
+const mobile = computed(() => display.mobile.value);
+
+/** Whether the sidebar is showing. Open on a desktop, closed on a phone, where it would cover the page. */
+const drawerOpen = ref(!mobile.value);
+
+/** The trail, from the path alone, so a filtered URL (`?status=failed`) has the same crumbs as its page. */
+const crumbs = computed(() => breadcrumbsFor(route));
+
+/** The catalog search term (§3: global search in the topbar). */
+const search = ref('');
+
+/**
+ * Sends the typed term to the catalog screen.
+ *
+ * A navigation, not a live filter: `P2-WEB-01` owns the query and the results, and the term rides in the URL where that
+ * page — and a bookmark of it — can find it. Bound to the form's `submit`, so Enter is the browser's job.
+ */
+async function submitSearch(): Promise<void> {
+  const term = search.value.trim();
+  await router.push({
+    name: 'admin-catalog',
+    ...(term === '' ? {} : { query: { q: term } }),
+  });
+}
+
+onMounted(() => {
+  // The boot check of `04-api.md` §1: the token survived the reload, the profile did not (`stores/auth.ts` keeps it out of
+  // `sessionStorage` on purpose), and the topbar is the first thing that needs a name. A session that cannot be checked —
+  // offline, a proxy in the way — is left alone: `restore()` answers `unverified` and the menu falls back to "Signed in".
+  if (auth.isAuthenticated && auth.admin === null) void auth.restore(client);
+});
+</script>
+
+<template>
+  <a class="mm-skip-link" :href="`#${MAIN_ID}`">Skip to content</a>
+
+  <v-app-bar flat :height="TOPBAR_HEIGHT">
+    <v-btn
+      aria-controls="mm-admin-drawer"
+      :aria-expanded="drawerOpen"
+      class="ml-2"
+      variant="text"
+      @click="drawerOpen = !drawerOpen"
+    >
+      {{ drawerOpen ? 'Hide menu' : 'Menu' }}
+    </v-btn>
+
+    <nav v-if="crumbs.length > 0" aria-label="Breadcrumb">
+      <ol class="mm-breadcrumbs">
+        <li v-for="(crumb, index) in crumbs" :key="`${crumb.label}-${String(index)}`">
+          <router-link v-if="crumb.to !== null" class="mm-breadcrumb-link" :to="crumb.to">{{
+            crumb.label
+          }}</router-link>
+          <span v-else aria-current="page">{{ crumb.label }}</span>
+          <span v-if="index < crumbs.length - 1" aria-hidden="true" class="mm-breadcrumb-divider"
+            >›</span
+          >
+        </li>
+      </ol>
+    </nav>
+
+    <v-spacer />
+
+    <form class="mm-admin-search" role="search" @submit.prevent="submitSearch">
+      <v-text-field
+        v-model="search"
+        aria-label="Search the catalog"
+        density="compact"
+        hide-details
+        placeholder="Search catalog"
+        single-line
+        type="search"
+        variant="solo"
+      />
+    </form>
+
+    <AdminUserMenu />
+  </v-app-bar>
+
+  <v-navigation-drawer id="mm-admin-drawer" v-model="drawerOpen" :width="SIDEBAR_WIDTH">
+    <div class="px-4 py-4">
+      <p class="mm-caption ma-0">MapMirror</p>
+      <p class="mm-body-public ma-0">Administration</p>
+    </div>
+
+    <v-divider />
+
+    <v-list aria-label="Administration" density="compact" nav>
+      <v-list-item
+        v-for="item in ADMIN_NAV"
+        :key="item.name"
+        :active="isNavItemActive(item, route.path)"
+        :aria-current="isNavItemActive(item, route.path) ? 'page' : undefined"
+        :title="item.label"
+        :to="{ name: item.name }"
+      />
+    </v-list>
+  </v-navigation-drawer>
+
+  <v-main :id="MAIN_ID" tabindex="-1">
+    <div class="mm-admin-content mx-auto" :style="{ maxWidth: 'var(--mm-container-admin)' }">
+      <slot />
+    </div>
+  </v-main>
+</template>

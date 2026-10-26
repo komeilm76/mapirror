@@ -1,25 +1,49 @@
 <script setup lang="ts">
 /**
- * The application shell (`P1-WEB-01`).
+ * The application shell (`P1-WEB-01`, admin area from `P1-WEB-07`).
  *
  * `v-app` is not decoration: Vuetify's layout components (`v-main`, `v-app-bar`, `v-navigation-drawer`) resolve their
- * sizes from the provider it installs, so a page rendered outside it gets a broken grid rather than an error. Every
- * layout in `13-ui-ux.md` §3 — the admin sidebar and the public header — therefore nests inside this element, and
- * this element exists exactly once, here.
+ * sizes from the provider it installs, so a page rendered outside it gets a broken grid rather than an error. It exists
+ * exactly once, here.
  *
- * `v-main` is the scroll container the router renders into. The layouts that wrap individual pages (`AdminLayout`,
- * `PublicLayout`, `AuthLayout`) are `P1-WEB-07` and `P2`'s work; until then every route renders straight into the
- * main region, which is why the placeholder page below carries its own container.
+ * ## Why the admin area has its own branch
  *
- * `ToastHost` sits inside `v-app` (`P1-WEB-04`) so that toasts inherit both the theme and the locale, and outside
- * `v-main` so a toast is never part of the scrollable page it is reporting on.
+ * The admin shell (`layouts/AdminLayout.vue`) owns an app bar, a drawer **and** the `v-main` those two offset — Vuetify
+ * computes the main region's padding from the bars and drawers registered with the layout, so a `v-main` wrapped around a
+ * drawer by a parent would leave the content under the bar. Everywhere else the page is the whole screen and a bare
+ * `v-main` is exactly right, so the branch is on the **area**, from the same predicate the theme uses
+ * (`theme/policy.ts`, `areaForPath`): a path is in the admin panel or it is not, and both the theme and the shell ask the
+ * same function rather than each keeping a list.
+ *
+ * The public and auth shells (`PublicLayout`, `AuthLayout` in `docs/11-project-tree.md`) arrive with their screens
+ * (`P2`, `P3`); until then their pages render into the bare `v-main`, which is what they were written against.
+ *
+ * `ToastHost` sits inside `v-app` (`P1-WEB-04`) so toasts inherit the theme, and outside `v-main` so a toast is never
+ * part of the scrollable page it is reporting on.
+ *
+ * @module App
  */
+
+import { computed } from 'vue';
+import { useRoute } from 'vue-router';
+
 import ToastHost from '@/components/common/ToastHost.vue';
+import AdminLayout from '@/layouts/AdminLayout.vue';
+import { areaForPath } from '@/theme/policy';
+
+const route = useRoute();
+
+/** Whether the current page belongs to the admin panel. */
+const isAdmin = computed(() => areaForPath(route.path) === 'admin');
 </script>
 
 <template>
   <v-app>
-    <v-main>
+    <AdminLayout v-if="isAdmin">
+      <router-view />
+    </AdminLayout>
+
+    <v-main v-else>
       <router-view />
     </v-main>
 

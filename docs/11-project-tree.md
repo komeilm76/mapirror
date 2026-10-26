@@ -104,6 +104,8 @@ mapirror/
 │     │  ├─ router/guards.ts       # Path-keyed admin guard (no per-route flag): 401 → /_auth/login?redirect=…
 │     │  ├─ router/redirect.ts     # The `redirect` parameter, validated on both sides of the round trip
 │     │  ├─ router/titles.ts       # document.title from meta.title ("Cache · MapMirror")
+│     │  ├─ router/nav.ts          # the sidebar, as data; active-state and trail predicates live here
+│     │  ├─ router/breadcrumbs.ts  # path → trail, from the sidebar plus the URL's tail
 │     │  ├─ router/paths.ts        # Page path builders, all derived from @mapirror/shared
 │     │  ├─ auth/token-storage.ts  # The session token in sessionStorage; every access wrapped (D-13)
 │     │  ├─ types/vue-router.d.ts  # RouteMeta augmentation: title/screen/owner required on every route
@@ -115,19 +117,24 @@ mapirror/
 │     │  ├─ stores/auth.ts         # The session: token + profile + expiry; signIn/signOut/forget/restore (D-13)
 │     │  ├─ stores/notifications.ts # Toasts: one per action, errors persist, newest three at most
 │     │  ├─ components/common/ToastHost.vue  # Renders the queue (position is P1-WEB-07's)
+│     │  ├─ components/admin/UserMenu.vue    # exists: who is signed in, and the way out
 │     │  ├─ plugins/vuetify.ts     # createAppVuetify(): both themes, built from styles/tokens.ts
 │     │  ├─ plugins/pinia.ts
 │     │  ├─ theme/policy.ts        # Path → theme (admin dark, public light, auth follows the system)
 │     │  ├─ styles/
 │     │  │  ├─ tokens.ts           # The palette of 13 §2 + themeFrom() + contrastRatio()/bestOn()
 │     │  │  ├─ tokens.css          # --mm-* spacing/radius/motion/focus, focus ring, reduced motion
+│     │  │  ├─ shell.css           # exists: skip link and the breadcrumb trail (P1-WEB-07)
 │     │  │  └─ typography.css      # @font-face (Space Grotesk, 22 kB) + the type roles
 │     │  ├─ assets/fonts/          # space-grotesk-latin-wght.woff2 + OFL.txt
 │     │  ├─ stores/                # notifications + auth (exist), catalog, cache, versions,
 │     │  │                         # intervals, jobs, system
 │     │  ├─ composables/           # useApi (exists), usePolling (VueUse),
 │     │  │                         # useConfirm, useByteFormat, useUpdateTicker
-│     │  ├─ layouts/               # AdminLayout, PublicLayout, AuthLayout
+│     │  ├─ layouts/
+│     │  │  ├─ AdminLayout.vue     # exists: topbar, drawer, trail, skip link (P1-WEB-07)
+│     │  │  ├─ adminShell.ts       # exists: 248 / 64 / 1024, the numbers §3 states
+│     │  │  └─ PublicLayout.vue, AuthLayout.vue  # owed (P3-WEB-01, P2)
 │     │  ├─ pages/
 │     │  │  ├─ PlaceholderPage.vue       # The one screen not built yet: names its §4 row and the owning task
 │     │  │  ├─ auth/LoginPage.vue        # exists (P1-WEB-06): the one page outside /_site

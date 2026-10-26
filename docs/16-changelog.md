@@ -3,11 +3,36 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 35 passes · 153 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1).
+**Totals:** 36 passes · 156 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
 ---
+
+## Pass 36 — 2026-10-26 (a rule that matched nothing, and two behaviours Vuetify already owned)
+
+All three were found while building the admin shell, and two of them were found *by the process* rather than by reading:
+one by a probe that looked for the class a CSS rule hangs on, and one by a mutation that changed nothing.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The 360 px rule hid nothing.** `styles/shell.css` hid the breadcrumb trail on the narrowest phone §3 names with `.mm-admin-topbar .mm-breadcrumbs` — an ancestor class the layout never rendered (the app bar has no custom class at all). The selector matched no element, so on a 360 px screen the trail stayed in the topbar beside the menu button, the search field and the user menu: exactly the row that overflows. Measured with a probe: `.mm-admin-topbar` present: **false**, `.mm-breadcrumbs` present: true. Nothing could have caught it — jsdom computes no CSS, and the typecheck sees strings | The rule names `.mm-breadcrumbs`. A new case walks **every class the stylesheet styles** (comments stripped) and asserts the mounted shell renders one, so a rule with no target fails a test; and a second case reads the media query itself and fails if its selector gains an ancestor class again. Mutation — restoring the dead selector — fails both |
+| 2 | **Two responsive behaviours were written twice, and the copies were dead.** The drawer passed `:temporary="mobile"` and carried a `watch(mobile)` that re-opened or closed it on a resize, with a comment claiming that watcher is what keeps a phone's page uncovered. Vuetify computes `isTemporary` as `!permanent && (mobile \|\| temporary)`, already closes a temporary drawer on **every navigation** (`watch(router.currentRoute)`), and already re-opens or closes it when the breakpoint is crossed (`watch(isTemporary)`). The mutation that deleted the watcher changed nothing — which is how the duplication surfaced | Both removed. The shell states only what is its own decision (which is open to begin with), and the three behaviours Vuetify supplies are **asserted** — the drawer is closed at 360 px, opens as a temporary overlay, closes after a navigation, and is back on a desktop at 1025 px — so an upgrade that drops one fails a test instead of stranding a phone behind a panel |
+| 3 | **`13-ui-ux.md` §3 listed a control that §1 makes dead.** The admin topbar was specified to hold a "theme toggle", while §1 fixes the admin area to the dark theme "always — a control room at 02:00 is not a place for a white page". A toggle there could only do nothing, and "no dead clicks" is §6's first line. The per-visitor theme override §1 does allow belongs to the **public** shell (`P3-WEB-01`) | §3's bullet now says where the toggle lives and why the admin has none, and the shell's topbar carries breadcrumbs, the catalog search and the user menu. `13-ui-ux.md` §3 also records the two **badges** as owed: a dot on Jobs and a counter on Catalog need `P2-WEB-06` and `P2-WEB-01`, and a badge hard-coded to `0` claims the queue is empty |
+
+Probed and found sound rather than assumed:
+
+- **A closed drawer is not a trap.** Vuetify renders `inert` on a drawer that is not active (`VNavigationDrawer`), so the
+  nine links inside it are not in the tab order while it is closed — a phone cannot Tab into an invisible panel.
+- **`aria-controls` resolves with the drawer closed.** The element stays in the DOM (`<nav id="mm-admin-drawer">`), so the
+  menu button never points at an id that is not there.
+- **An admin 404 keeps the shell.** `/_site/admin/nope` classifies as the admin area (`theme/policy.ts`), so the not-found
+  page renders *inside* the shell with the trail "Dashboard › Not found" and the sidebar still available — the reader can
+  see the URL was wrong without losing the way out.
+- **The public home grows no shell.** The area branch in `App.vue` renders the bare `v-main` there: measured, no
+  `.v-navigation-drawer`, no `.v-app-bar` and no skip link on `/_site/`.
+- **The main region is offset by the bar.** With the bar mounted, `v-main` carries `--v-layout-top: 64px` — the number
+  §3's diagram gives, asserted against the document in the tests.
 
 ## Pass 35 — 2026-10-26 (a button nobody could see)
 

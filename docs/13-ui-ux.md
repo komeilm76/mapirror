@@ -127,9 +127,20 @@ yet. Until then `font-display: swap` means text paints in the fallback face firs
 └────────────┴──────────────────────────────────────────────────────────┘
 ```
 
-- Sidebar 248 px, collapsible; on `< 1024 px` it becomes a temporary drawer with a hamburger.
-- A dot badge on **Jobs** shows running jobs; a counter on **Catalog** shows updates available.
-- Topbar holds breadcrumbs, global search (catalog), theme toggle, user menu (logout).
+- Sidebar 248 px, collapsible; on `< 1024 px` it becomes a temporary drawer with a hamburger. The numbers live in
+  `apps/web/src/layouts/adminShell.ts` (248 / 64 / 1024) and `plugins/vuetify.ts` hands the last one to Vuetify as
+  `display.mobileBreakpoint`, so "mobile" means this document's boundary and not the framework's 1280 px. A temporary
+  drawer closes itself on navigation and re-opens on a desktop when the boundary is crossed — Vuetify does both, and
+  `tests/admin-layout.spec.ts` asserts them so an upgrade cannot quietly take them away (pass 36).
+- A dot badge on **Jobs** shows running jobs; a counter on **Catalog** shows updates available. **Owed**: the numbers need
+  `P2-WEB-06` (jobs) and `P2-WEB-01` (catalog). A badge hard-coded to `0` is a claim that the queue is empty, so the
+  sidebar carries none until the data does.
+- Topbar holds the menu button, breadcrumbs, global search (catalog) and the user menu (logout). **No theme toggle**: §1
+  fixes the admin area to the dark theme, so a toggle there could only do nothing — the per-visitor override §1 allows is
+  the public shell's (`P3-WEB-01`). The menu button says "Menu" / "Hide menu" rather than wearing a hamburger icon,
+  because the icon set is not installed yet (§5). The trail is `<nav aria-label="Breadcrumb">` with `aria-current="page"`
+  on the last step, and it is hidden below 600 px where the topbar has no room for it; the page's own `h1` says the same
+  thing a line lower. The first focusable element on every admin page is a skip link to `#mm-main` (§7).
 
 ### Public shell
 

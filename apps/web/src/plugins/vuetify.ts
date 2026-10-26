@@ -14,6 +14,7 @@
 
 import { createVuetify } from 'vuetify';
 
+import { MOBILE_BREAKPOINT } from '@/layouts/adminShell';
 import {
   DARK_PALETTE,
   DARK_THEME_NAME,
@@ -41,6 +42,10 @@ export type AppVuetify = ReturnType<typeof createVuetify>;
  */
 export function createAppVuetify(): AppVuetify {
   return createVuetify({
+    // `13-ui-ux.md` §3 puts the sidebar's temporary-drawer boundary at 1024 px. Vuetify's default is 1280, which would
+    // call a 1100 px laptop a phone — and the drawer, the topbar and any screen that asks `useDisplay()` would all be
+    // answering a question the document never asked. One number, in `layouts/adminShell.ts`, used by both.
+    display: { mobileBreakpoint: MOBILE_BREAKPOINT },
     theme: {
       defaultTheme: LIGHT_THEME_NAME,
       themes: {
