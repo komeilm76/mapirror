@@ -101,6 +101,13 @@ when the request presented a token and only from an admin page; `GET /_auth/api/
 must not be signed out). No auto-refresh (D-3). Every `/_admin/api/*` request passes the Bearer
 guard first (`P1-AUTH-05`): `onRequest`, before the body is parsed, no opt-out — so the SPA's `401` handling is one
 branch for every admin call, not one per screen.
+The form is the client half of the same contract: both fields are validated with the **shared** `LoginRequestSchema` — the
+object the API parses — so a rule cannot differ between the two sides, and the three refusals a person can cause are
+sentences, not codes: *"That username and password do not match."* (`INVALID_CREDENTIALS`), *"This account has been
+deactivated."* (`ACCOUNT_DISABLED`) and *"Too many attempts."* with a live countdown from `details.retryAfterSeconds`
+(`RATE_LIMITED`, which also disables the form until it lifts). A failed sign-in leaves the typed pair in place and the
+session — if there was one — untouched.
+
 **Tests:** login happy path, wrong password, unknown user, deactivated account, lockout (`429` with `Retry-After`),
 expired token, revoked token, cookie-only rejected, `?token=` rejected, SPA guard redirects when `sessionStorage` is
 empty or `/me` fails. The throttle is checked **before** the hash on purpose: a locked-out client costs a map lookup,

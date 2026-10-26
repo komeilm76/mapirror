@@ -130,7 +130,7 @@ mapirror/
 │     │  ├─ layouts/               # AdminLayout, PublicLayout, AuthLayout
 │     │  ├─ pages/
 │     │  │  ├─ PlaceholderPage.vue       # The one screen not built yet: names its §4 row and the owning task
-│     │  │  ├─ auth/LoginPage.vue        # served at /_auth/login (the one page outside /_site)
+│     │  │  ├─ auth/LoginPage.vue        # exists (P1-WEB-06): the one page outside /_site
 │     │  │  ├─ admin/{Dashboard,Catalog,Cache,CountryDetail,Intervals,Import,Jobs,
 │     │  │  │        System,Settings,Audit}Page.vue
 │     │  │  ├─ public/{Home,CountryDetail,ApiDocs,NotFound}Page.vue  # HomePage + NotFoundPage exist

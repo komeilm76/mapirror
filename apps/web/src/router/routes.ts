@@ -13,10 +13,10 @@
  *
  * ## Which screens are real today
  *
- * Two: `/_site/` renders `HomePage.vue` — which is still a token/wiring preview until `P3-WEB-01` replaces it — and the
- * not-found catch-all renders `NotFoundPage.vue`. The other thirteen are `PlaceholderPage`, which says which screen it
- * stands in for and which task replaces it. A router tree full of invented screens would be worse than one that names
- * its own gaps.
+ * Three: `/_site/` renders `HomePage.vue` — still a token/wiring preview until `P3-WEB-01` replaces it — the login page
+ * renders `LoginPage.vue` (`P1-WEB-06`), and the not-found catch-all renders `NotFoundPage.vue`. The other twelve are
+ * `PlaceholderPage`, which says which screen it stands in for and which task replaces it. A router tree full of invented
+ * screens would be worse than one that names its own gaps.
  *
  * ## The two records that are not pages
  *
@@ -30,6 +30,7 @@
 import { ROUTE_PREFIXES } from '@mapirror/shared';
 import type { RouteRecordRaw } from 'vue-router';
 
+import LoginPage from '@/pages/auth/LoginPage.vue';
 import NotFoundPage from '@/pages/public/NotFoundPage.vue';
 import HomePage from '@/pages/public/HomePage.vue';
 import PlaceholderPage from '@/pages/PlaceholderPage.vue';
@@ -161,7 +162,12 @@ export const APP_ROUTES: readonly RouteRecordRaw[] = [
   }),
 
   // ---- Auth (S1): the only page outside `/_site` (D-19) ----
-  pending({ path: LOGIN_PAGE, name: 'login', title: 'Sign in', screen: 'S1', owner: 'P1-WEB-06' }),
+  {
+    path: LOGIN_PAGE,
+    name: 'login',
+    component: LoginPage,
+    meta: { title: 'Sign in', screen: 'S1', owner: 'P1-WEB-06' },
+  },
 
   // ---- Not found (S15) ----
   {

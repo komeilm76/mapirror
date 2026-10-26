@@ -3,11 +3,40 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 34 passes · 152 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2).
+**Totals:** 35 passes · 153 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
 ---
+
+## Pass 35 — 2026-10-26 (a button nobody could see)
+
+One defect, found by reading the *built* artefact rather than the source: the page, the tests and the typecheck were all
+happy with a control that does not exist on screen.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The show/hide control was an icon the app cannot draw.** `LoginPage` used `icon="mdi-eye"` on a `v-btn`. The app has no `@mdi/font`, `index.html` loads no icon set, and the built stylesheet contains **zero** `.mdi` rules — so Vuetify rendered `<i class="mdi mdi-eye">` with nothing inside it: an empty 32 px square beside the password field. The `aria-label` made it discoverable to a screen reader and invisible to everyone else. The same measurement caught Vuetify's **default** icon on the error alert (`mdi-close-circle` in `v-alert__prepend`) — an empty box occupying layout beside the message. The page's own tests passed, because jsdom has no CSS and `button[aria-label="Show password"]` was in the DOM exactly as asked | The toggle is a labelled text button whose visible label says which way it goes ("Show" / "Hide", the same decision `ToastHost.vue` took for its "Dismiss" button and for the same reason), and the alert turns Vuetify's default icon off (`:icon="false"`) instead of leaving a gap. New case: the page must render **no `.mdi` element** in either state — idle, and with a failed sign-in on screen — so the next icon name fails a test instead of shipping an invisible control. Mutation — restoring `icon="mdi-eye"`, or dropping `:icon="false"` — fails it |
+
+Probed and found sound rather than assumed:
+
+- **Enter is structural, and the structure is asserted.** jsdom does not turn a key press into a form submission, so the
+  cases drive `form.requestSubmit()` — the exact event a browser fires for Enter and for a click — and a separate case
+  asserts what makes it work: both fields inside a `<form>`, a `type="submit"` button inside that form, and no key
+  handler to keep in step. The button's own `.click()` path is tested too.
+- **`role="alert"` is the page's, not only Vuetify's.** Vuetify's `VAlert` already emits it (measured: three
+  `[role="alert"]` nodes — the alert and two empty `v-input__details`), so removing the page's own attribute changes
+  nothing. The attribute stays as the page's guarantee, and the mutation is recorded as **provably equivalent** rather
+  than counted as killed.
+- **The retry clock is a deadline, not a counter.** A `429` carries `retryAfterSeconds`; the page stores the instant it
+  lifts and renders `m:ss` from `Date.now()`, so a throttled background tab (timers coalesced to once a minute) cannot
+  promise a retry that is still an hour away.
+- **A failed sign-in is not a sign-out.** `POST /_auth/api/login` answering `401 INVALID_CREDENTIALS` reaches the page as
+  an `ApiError` whose `sessionEnded` is false, and the request carried no credential by rule, so the client's policy does
+  not fire: no cleared token, no navigation, the typed pair still in the fields.
+- **A leak in the suite, not in the app.** The first run of the end-to-end case failed on the address bar. The cause was
+  a `Storage.prototype.setItem` spy installed by the "browser will not keep the session" case and never taken down:
+  `vi.restoreAllMocks()` is now in the file's `afterEach`, because a spy on a prototype outlives the case that needed it.
 
 ## Pass 34 — 2026-10-26 (two answers that arrived too late, and a token that was already gone)
 

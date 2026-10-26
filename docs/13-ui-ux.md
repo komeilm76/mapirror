@@ -175,7 +175,7 @@ yet. Until then `font-display: swap` means text paints in the fallback face firs
 | **Error states** | What failed, why (if known), what to do. Retry button. Request id in small mono text for support. |
 | **Toasts** | Bottom-right (admin), success 3 s, error persists with a close button; one toast at a time per action. |
 | **Skeletons** | Match final layout (same heights) to avoid shift; no spinners for tables. |
-| **Icons** | Material Design Icons only, 20/24 px, consistent stroke; **never emoji** as UI icons. |
+| **Icons** | Material Design Icons only, 20/24 px, consistent stroke; **never emoji** as UI icons. **Not installed yet** (`P1-WEB-07`/`P5-UX-05` choose and add the set): the built CSS has no `.mdi` rule, so an icon name renders an empty `<i>` — an invisible control, or a gap where a glyph should be. Until then, controls that would wear an icon carry a visible text label ("Dismiss", "Show"/"Hide"), Vuetify's default icons are turned off (`:icon="false"`), and a `.mdi` element in the DOM is a **defect** — `tests/login-page.spec.ts` asserts its page renders none (pass 35). |
 
 ## 6. Interaction standards
 

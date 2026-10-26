@@ -207,10 +207,11 @@ describe('the app router ships with the guard already on', () => {
     expect(router.currentRoute.value.path).toBe(LOGIN_PAGE);
     const redirect = router.currentRoute.value.query.redirect;
     expect(redirect).toBe(`${ADMIN_ROOT}/audit`);
-    // The login page is a placeholder (§4 S1 is `P1-WEB-06`'s), and it prints the URL it is at — so the destination is
-    // readable on screen, not only in the object graph.
+    // The real login page renders (it stopped being a placeholder in `P1-WEB-06`), with its form in the DOM — the
+    // destination is carried in the query above and used on submit, which is `login-page.spec.ts`'s case to prove; what
+    // belongs here is that the refusal lands on a page a person can sign in on.
     expect(container.textContent).toContain('Sign in');
-    expect(container.textContent).toContain(`${ADMIN_ROOT}/audit`);
+    expect(container.querySelector('form')).not.toBeNull();
   });
 
   it('survives a hostile destination in the address bar', async () => {
