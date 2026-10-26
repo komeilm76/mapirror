@@ -11,6 +11,7 @@ import {
   EXPECTED_MIGRATIONS,
   SchemaSkewError,
 } from '../../src/index';
+import { migrateToLatest } from '../../src/db/migrator';
 import { freshDatabaseSkipReason, withFreshDatabase } from '../helpers/fresh-db';
 
 /**
@@ -132,7 +133,7 @@ describe.skipIf(skipReason !== null)('checkSchemaVersion', () => {
   it('refuses a migration file that the constant does not know about', async () => {
     // A file added without updating EXPECTED_MIGRATIONS. Applying it would record a name the *next* build also
     // rejects, so the boot stops with the inconsistency rather than baking it into the database.
-    const dir = await tempMigrations([...EXPECTED_MIGRATIONS, '0002_unannounced']);
+    const dir = await tempMigrations([...EXPECTED_MIGRATIONS, '0003_unannounced']);
     try {
       await withFreshDatabase(
         async (database) => {
@@ -141,7 +142,7 @@ describe.skipIf(skipReason !== null)('checkSchemaVersion', () => {
           );
 
           expect(error).toBeInstanceOf(SchemaSkewError);
-          expect((error as SchemaSkewError).report.unexpectedOnDisk).toEqual(['0002_unannounced']);
+          expect((error as SchemaSkewError).report.unexpectedOnDisk).toEqual(['0003_unannounced']);
           expect(await appliedMigrations(database)).toEqual([]);
         },
         { prefix: 'vc' },
@@ -153,10 +154,12 @@ describe.skipIf(skipReason !== null)('checkSchemaVersion', () => {
 
   it('applies the pending subset and reports it, when the extra migration is expected', async () => {
     // The happy path for a second migration: one applied, one pending, both shipped by this build.
-    await withFreshDatabase(
-      async (database) => {
-        const dir = await tempMigrations(['0001_init', '0002_catalog']);
-        try {
+    const dir = await tempMigrations(['0001_init', '0002_catalog']);
+    const appliedDir = await tempMigrations(['0001_init']);
+    try {
+      await withFreshDatabase(
+        async (database) => {
+          await migrateToLatest(database.db, appliedDir);
           const report = await checkSchemaVersion(database, {
             migrateOnBoot: true,
             dir,
@@ -167,11 +170,14 @@ describe.skipIf(skipReason !== null)('checkSchemaVersion', () => {
           expect(report.applied).toEqual(['0001_init', '0002_catalog']);
           expect(report.pending).toEqual([]);
           expect(await appliedMigrations(database)).toEqual(['0001_init', '0002_catalog']);
-        } finally {
-          await rm(dir, { recursive: true, force: true });
-        }
-      },
-      { prefix: 'vc', migrate: true },
-    );
+        },
+        { prefix: 'vc' },
+      );
+    } finally {
+      await Promise.all([
+        rm(dir, { recursive: true, force: true }),
+        rm(appliedDir, { recursive: true, force: true }),
+      ]);
+    }
   });
 });

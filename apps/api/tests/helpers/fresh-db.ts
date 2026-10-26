@@ -2,7 +2,7 @@
  * A throwaway database per test (integration helper).
  *
  * Several suites assert something about a database in a known state — "a fresh database, migrate, then the
- * documented tables exist" (`P1-DB-01`), "the Kysely types match the columns that actually exist" (`P1-DB-02`).
+ * documented tables exist" (`P1-DB-01`, `P2-DB-01`), "the Kysely types match the columns that actually exist" (`P1-DB-02`, `P2-DB-01`).
  * A shared `mapirror_test` cannot answer either: it is whatever the last run left behind, and two suites running
  * in parallel would contend for it.
  *
@@ -46,7 +46,7 @@ const created = new Set<string>();
  * Creates an empty database and hands it over, dropping it afterwards whatever happens.
  *
  * @param run - Receives a handle to the fresh database and its name.
- * @param options - `prefix` names the database for easier debugging; `migrate` runs `0001_init` first.
+ * @param options - `prefix` names the database for easier debugging; `migrate` applies all shipped migrations.
  * @throws {SkipError} When the "postgres" database is unreachable or the role may not create databases.
  */
 export async function withFreshDatabase(

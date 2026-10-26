@@ -1,9 +1,9 @@
 /**
- * Kysely types for the phase-1 tables (task `P1-DB-02`).
+ * Kysely types for the phase-1 and phase-2 foundation tables (`P1-DB-02`, `P2-DB-01`).
  *
- * The columns here mirror `03-data-model.md` §2.1, §2.2 and §2.11 and `0001_init.sql`. Repositories import these
- * types — never `any`, never `unknown` for a row — so a query against a column that does not exist fails to
- * compile instead of at 3 a.m. (`10-laws.md` L5).
+ * The columns here mirror `03-data-model.md` §§2.1–2.6 and §2.11, and migrations `0001_init.sql` and
+ * `0002_catalog.sql`. Repositories import these types — never `any`, never `unknown` for a row — so queries against
+ * nonexistent columns fail to compile instead of at 3 a.m. (`10-laws.md` L5).
  *
  * **Every select type below was measured, not assumed.** `pg` does not hand back what the SQL type suggests:
  *
@@ -105,8 +105,107 @@ export interface AdminTokens {
   created_at: CreatedTimestamp;
 }
 
-/**
- * `settings` (`03-data-model.md` §2.11).
+/** A PostgreSQL `bigint`: `pg` returns int8 values as decimal strings to avoid precision loss. */
+export type Int8Column = ColumnType<string, string | number | bigint, string | number | bigint>;
+/** A nullable PostgreSQL `bigint`, with nullable/omittable insert values. */
+export type NullableInt8Column = ColumnType<
+  string | null,
+  string | number | bigint | null | undefined,
+  string | number | bigint | null
+>;
+/** A PostgreSQL `bigint` with a database default. */
+export type GeneratedInt8Column = ColumnType<
+  string,
+  string | number | bigint | undefined,
+  string | number | bigint
+>;
+
+/** Local region catalog row (`03-data-model.md` §2.3). */
+export interface Countries {
+  id: GeneratedAlways<string>;
+  source: Generated<string>;
+  source_id: string;
+  parent_id: string | null;
+  slug: string;
+  name: string;
+  iso_alpha2: Generated<string[]>;
+  iso_other: Generated<string[]>;
+  source_pbf_url: string | null;
+  source_size_hint_bytes: NullableInt8Column;
+  catalog_synced_at: CreatedTimestamp;
+  created_at: CreatedTimestamp;
+  updated_at: CreatedTimestamp;
+}
+
+/** Cached publication and update state, created with a country's first version (`03-data-model.md` §2.4). */
+export interface CountryCache {
+  country_id: string;
+  is_public: Generated<boolean>;
+  public_since: NullableTimestamp;
+  update_state: Generated<'unknown' | 'up_to_date' | 'update_available'>;
+  available_version: string | null;
+  available_size_bytes: NullableInt8Column;
+  available_at: NullableTimestamp;
+  update_checked_at: NullableTimestamp;
+  versions_ready_count: Generated<number>;
+  total_size_bytes: GeneratedInt8Column;
+  created_at: CreatedTimestamp;
+  updated_at: CreatedTimestamp;
+}
+
+/** Immutable downloaded or uploaded map version (`03-data-model.md` §2.5). */
+export interface MapVersions {
+  id: GeneratedAlways<string>;
+  country_id: string;
+  version: string;
+  origin: 'geofabrik_snapshot' | 'geofabrik_latest' | 'upload';
+  source_url: string | null;
+  source_filename: string;
+  data_timestamp: NullableTimestamp;
+  file_size_bytes: Int8Column;
+  checksum_md5: string | null;
+  checksum_sha256: string | null;
+  storage_path: string;
+  status: Generated<'pending' | 'ready' | 'failed'>;
+  failure_reason: string | null;
+  job_id: string | null;
+  uploaded_by: string | null;
+  created_at: CreatedTimestamp;
+  ready_at: NullableTimestamp;
+}
+
+/** Values of PostgreSQL's `job_type` enum. */
+export type JobType = 'download' | 'import' | 'update_check' | 'catalog_sync' | 'prune';
+/** Values of PostgreSQL's `job_status` enum. */
+export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
+
+/** Durable background work item (`03-data-model.md` §2.6). */
+export interface Jobs {
+  id: GeneratedAlways<string>;
+  type: JobType;
+  status: Generated<JobStatus>;
+  priority: Generated<number>;
+  payload: JsonValue;
+  result: JsonValue | null;
+  error_code: string | null;
+  error_message: string | null;
+  phase: string | null;
+  progress_bytes: GeneratedInt8Column;
+  total_bytes: NullableInt8Column;
+  speed_bps: NullableInt8Column;
+  attempts: Generated<number>;
+  max_attempts: Generated<number>;
+  run_after: CreatedTimestamp;
+  cancel_requested: Generated<boolean>;
+  locked_by: string | null;
+  locked_at: NullableTimestamp;
+  started_at: NullableTimestamp;
+  finished_at: NullableTimestamp;
+  created_by: string | null;
+  created_at: CreatedTimestamp;
+}
+
+/** `settings` (`03-data-model.md` §2.11).
  *
  * A key/value store rather than a wide row: adding a setting must not need a migration. `key` is the primary key
  * and has no default, so it is required on insert while the other two are not.
@@ -153,6 +252,14 @@ export interface AuditLogs {
 export type Admin = SelectRow<Admins>;
 /** A row of `admin_tokens`, as selected. */
 export type AdminToken = SelectRow<AdminTokens>;
+/** A row of `countries`, as selected. */
+export type Country = SelectRow<Countries>;
+/** A row of `country_cache`, as selected. */
+export type CountryCacheRow = SelectRow<CountryCache>;
+/** A row of `map_versions`, as selected. */
+export type MapVersion = SelectRow<MapVersions>;
+/** A row of `jobs`, as selected. */
+export type Job = SelectRow<Jobs>;
 /** A row of `settings`, as selected. */
 export type Setting = SelectRow<Settings>;
 /** A row of `audit_logs`, as selected. */
@@ -171,13 +278,17 @@ export type SelectRow<T> = {
 /**
  * Every table Kysely knows about.
  *
- * Phase 2 (`P2-DB-01`) adds `countries`, `country_cache`, `map_versions`, `jobs`, the interval tables, upload
- * sessions, metrics and download events. Until a table is listed here, a query against it does not compile — which
- * is the property that makes this file worth having.
+ * `P2-DB-01` adds the catalog, cache, version and job tables. Interval, upload, metrics and download-event tables
+ * remain future tasks. Until a table is listed here, a query against it does not compile — which is the property that
+ * makes this file worth having.
  */
 export interface Database {
   admins: Admins;
   admin_tokens: AdminTokens;
+  countries: Countries;
+  country_cache: CountryCache;
+  map_versions: MapVersions;
+  jobs: Jobs;
   settings: Settings;
   audit_logs: AuditLogs;
 }

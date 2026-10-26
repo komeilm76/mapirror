@@ -72,10 +72,10 @@ mapirror/
 │  │  │  │  │  └─ scheduler.ts     # Interval evaluation (daily/weekly/monthly)
 │  │  │  │  └─ system/             # Metrics sampler (CPU/RAM/disk), disk preflight
 │  │  │  ├─ db/
-│  │  │  │  ├─ migrations/         # 0001_init.sql … (SQL only, Kysely migrator)
+│  │  │  │  ├─ migrations/         # 0001_init.sql, 0002_catalog.sql … (SQL only, Kysely migrator)
 │  │  │  │  ├─ migrator.ts         # SQL provider, migrateToLatest/resetDatabase, name rules
 │  │  │  │  ├─ transaction.ts      # withTransaction: idle/statement bounds, read-only, retry 40001/40P01
-│  │  │  │  ├─ schema.ts           # Kysely table types, phase 1 (measured JS types, no `any`)
+│  │  │  │  ├─ schema.ts           # Kysely table types, phases 1–2 (measured JS types, no `any`)
 │  │  │  │  ├─ version-check.ts    # Boot gate: disk vs EXPECTED_MIGRATIONS vs kysely_migration (SCHEMA_SKEW)
 │  │  │  │  └─ repositories/       # Typed queries per aggregate
 │  │  │  │     └─ admin-tokens.ts  # Token rows: insert, find-with-admin, touch, revoke, prune

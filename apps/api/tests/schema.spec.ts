@@ -10,14 +10,17 @@ import {
   type Admin,
   type AdminToken,
   type AuditLog,
+  type Country,
+  type CountryCacheRow,
   type Database,
+  type Job,
+  type MapVersion,
   type Setting,
 } from '../src/index';
 
 /**
- * Acceptance test for `P1-DB-02`, the half that needs no server: that the Kysely types describe the phase-1 tables
- * with the types the driver actually returns, that every table and column in the document is covered, and that
- * nothing in `db/` reached for `any`.
+ * Acceptance test for `P1-DB-02` and `P2-DB-01`, the half that needs no server: Kysely types describe every migrated
+ * table with the values the driver returns, every documented column is covered, and nothing in `db/` uses `any`.
  *
  * The other half (`tests/integration/schema-db.spec.ts`) compares these names against `information_schema` on a
  * freshly migrated database, so a column renamed in SQL but not in TypeScript fails there.
@@ -30,6 +33,10 @@ const DB_DIR = resolve(import.meta.dirname, '../src/db');
 const TABLE_INTERFACES = {
   admins: 'Admins',
   admin_tokens: 'AdminTokens',
+  countries: 'Countries',
+  country_cache: 'CountryCache',
+  map_versions: 'MapVersions',
+  jobs: 'Jobs',
   settings: 'Settings',
   audit_logs: 'AuditLogs',
 } as const;
@@ -55,11 +62,19 @@ function interfaceProperties(): Map<string, string[]> {
   return found;
 }
 
-/** The `CREATE TABLE` blocks of `03-data-model.md` §2.1, §2.2 and §2.11. */
+/** The `CREATE TABLE` blocks in the sections backed by the first two migrations. */
 const DOC = resolve(import.meta.dirname, '../../../docs/03-data-model.md');
 
-/** Section headings whose tables belong to `0001_init.sql`. */
-const PHASE_ONE_HEADINGS = ['### 2.1 ', '### 2.2 ', '### 2.11 '] as const;
+/** Document sections backed by `0001_init.sql` and `0002_catalog.sql`. */
+const MIGRATED_HEADINGS = [
+  '### 2.1 ',
+  '### 2.2 ',
+  '### 2.3 ',
+  '### 2.4 ',
+  '### 2.5 ',
+  '### 2.6 ',
+  '### 2.11 ',
+] as const;
 
 /** One column as the document declares it. */
 interface DocColumn {
@@ -77,7 +92,7 @@ function documentedColumns(): DocColumn[] {
   const doc = readFileSync(DOC, 'utf8');
   const columns: DocColumn[] = [];
 
-  for (const heading of PHASE_ONE_HEADINGS) {
+  for (const heading of MIGRATED_HEADINGS) {
     const start = doc.indexOf(heading);
     expect(start, `${heading.trim()} must exist in 03-data-model.md`).toBeGreaterThan(-1);
     const nextHeading = doc.indexOf('\n### ', start + heading.length);
@@ -86,19 +101,18 @@ function documentedColumns(): DocColumn[] {
     for (const match of section.matchAll(/CREATE TABLE (\w+) \(([\s\S]*?)\n\);/g)) {
       const table = match[1] as string;
       for (const line of (match[2] as string).split('\n')) {
-        const trimmed = line.trim();
-        if (trimmed === '' || trimmed.startsWith('--')) continue;
-        const column = /^(\w+)\s+/.exec(trimmed);
+        // Table columns and table constraints start at two spaces; wrapped CHECK expressions are indented further.
+        // Restricting this parse to top-level lines prevents `status <> 'ready'` inside a constraint from becoming a
+        // second, phantom `status` column.
+        const column = /^ {2}(\w+)\s+(.+)$/.exec(line);
         if (column === null) continue;
-        // Continuation lines of a multi-line column definition (`CHECK (...)`) start with a keyword, not a name
-        // followed by a type; they are skipped by requiring lower-case first word and a following type-ish word.
         const name = column[1] as string;
         if (['CONSTRAINT', 'PRIMARY', 'UNIQUE', 'CHECK', 'FOREIGN'].includes(name.toUpperCase()))
           continue;
         columns.push({
           table,
           name,
-          nullable: !/NOT NULL|PRIMARY KEY/i.test(trimmed),
+          nullable: !/NOT NULL|PRIMARY KEY/i.test(column[2] as string),
         });
       }
     }
@@ -106,7 +120,7 @@ function documentedColumns(): DocColumn[] {
   return columns;
 }
 
-describe('the phase-1 interfaces', () => {
+describe('the migrated table interfaces', () => {
   it('declare every column the document declares, and nothing else', () => {
     const properties = interfaceProperties();
     const columns = documentedColumns();
@@ -124,6 +138,10 @@ describe('the phase-1 interfaces', () => {
       'admin_tokens',
       'admins',
       'audit_logs',
+      'countries',
+      'country_cache',
+      'jobs',
+      'map_versions',
       'settings',
     ]);
     const source = readFileSync(join(DB_DIR, 'schema.ts'), 'utf8');
@@ -158,6 +176,17 @@ describe('the selected row types match what the driver returns', () => {
     expectTypeOf<Admin['is_active']>().toEqualTypeOf<boolean>();
   });
 
+  it('types phase-2 bigint columns as strings on reads and scalar JSON as a JSON value', () => {
+    // PostgreSQL int8 is returned as decimal text; `int` and `smallint` remain numbers.
+    expectTypeOf<Country['source_size_hint_bytes']>().toEqualTypeOf<string | null>();
+    expectTypeOf<CountryCacheRow['total_size_bytes']>().toEqualTypeOf<string>();
+    expectTypeOf<CountryCacheRow['versions_ready_count']>().toEqualTypeOf<number>();
+    expectTypeOf<MapVersion['file_size_bytes']>().toEqualTypeOf<string>();
+    expectTypeOf<Job['progress_bytes']>().toEqualTypeOf<string>();
+    expectTypeOf<Job['attempts']>().toEqualTypeOf<number>();
+    expectTypeOf<Job['payload']>().not.toBeAny();
+  });
+
   it('lets the database generate ids and timestamps, so an insert does not have to invent them', () => {
     const database = createDatabase(parseEnv({}));
     try {
@@ -166,7 +195,17 @@ describe('the selected row types match what the driver returns', () => {
         .insertInto('admins')
         .values({ username: 'admin', password_hash: 'argon2id$…' })
         .returning(['id', 'created_at']);
+      const countryInsert = database.db
+        .insertInto('countries')
+        .values({ source_id: 'europe/finland', slug: 'finland', name: 'Finland' })
+        .returning(['id', 'slug']);
+      const jobInsert = database.db
+        .insertInto('jobs')
+        .values({ type: 'catalog_sync', payload: { source: 'geofabrik' } })
+        .returning(['id', 'status']);
       expect(insert).toBeDefined();
+      expect(countryInsert).toBeDefined();
+      expect(jobInsert).toBeDefined();
     } finally {
       void database.close();
     }
@@ -184,8 +223,8 @@ describe('the selected row types match what the driver returns', () => {
     // The guarantee `P1-DB-02` exists for ("no `any` in repositories"). `@ts-expect-error` is checked by `tsc`:
     // if these expressions ever start compiling, the typecheck fails instead of the mistake shipping.
     const unknownTable = (db: Kysely<Database>): unknown =>
-      // @ts-expect-error - `countries` is a phase-2 table and is not in the map yet
-      db.selectFrom('countries').selectAll();
+      // @ts-expect-error - `intervals` is a later phase-4 table and is not in the map yet
+      db.selectFrom('intervals').selectAll();
 
     const unknownColumn = (db: Kysely<Database>): unknown =>
       // @ts-expect-error - `password` does not exist; the column is `password_hash`

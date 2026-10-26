@@ -19,7 +19,7 @@ import { freshDatabaseSkipReason, withFreshDatabase } from '../helpers/fresh-db'
  * digest (not by its prefix), it expires, it can be revoked individually or in bulk, and `last_used_at` is written at
  * most once a minute.
  *
- * Each case gets its own database, migrated with `0001_init`, because the interesting assertions are about rows: what
+ * Each case gets its own database, migrated to the current schema, because the interesting assertions are about rows: what
  * a dumped table contains, what a second request changes, what the server does with a token whose `expires_at` has
  * passed.
  */

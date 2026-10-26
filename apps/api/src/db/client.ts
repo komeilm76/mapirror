@@ -8,8 +8,7 @@
  *
  * **Typed, not `any`.** The table map lives in `db/schema.ts` (`P1-DB-02`) and is re-exported from here, so a
  * query against a table or column that does not exist fails to compile — the guarantee law `L5` asks for. The
- * phase-2 tables join the same map (`P2-DB-01`); until then a query against one is a type error, which is the
- * correct behaviour for a table the schema does not have yet.
+ * catalog, cache, version and job tables join this map with `P2-DB-01`; later tables join with their own migrations.
  *
  * @module db/client
  */

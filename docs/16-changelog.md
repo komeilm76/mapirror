@@ -3,9 +3,24 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 52 passes · 199 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1).
+**Totals:** 53 passes · 203 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 53 — 2026-10-26 (phase-2 database parity tests lagged the new migration)
+
+A P2-DB-01 review checked the SQL against §§2.3–2.6, the Kysely types, and real PostgreSQL behavior. Docker runtime tests were left to the operator as requested; database tests ran against a temporary PostgreSQL 16.2 server.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The schema-parity parser read a wrapped `CHECK` expression as a second `status` column.** The new multiline map-version constraints made `schema.spec.ts` fail with one more documented column than the interface had | Parse only top-level, two-space-indented table entries in both offline and live schema comparisons; the continuation expression is no longer treated as a column |
+| 2 | **The unexpected-migration fixture reused sequence `0002` after `0002_catalog` was added.** The migrator rejected the fixture for duplicate sequence numbers before the version checker could assert the intended `unexpectedOnDisk` report | Renamed the synthetic file to `0003_unannounced` and updated its expected report |
+| 3 | **The pending-migration integration fixture pre-migrated both shipped migrations.** Its `migrate: true` setup now means “apply all shipped migrations,” so the test had no pending migration left to apply | It now applies a one-file temporary migration set (`0001_init`) first, then checks against the two-file set and proves only `0002_catalog` is applied |
+| 4 | **The database-client comment still said phase-2 tables were not in the type map.** That became false as soon as this task added the four table interfaces | Updated the comment to describe the shipped catalog/cache/version/job map and future tables |
+
+The migration now creates `countries`, `country_cache`, `map_versions`, `jobs`, both job enums, and all documented indexes/constraints. Kysely types and offline/live schema parity cover all eight migrated tables; live PostgreSQL tests exercise unique/check/foreign-key constraints, cascade behavior, partial active-download uniqueness, enum values, and int8 string round-trips. The parity test was mutation-checked: changing the slug index to non-unique and changing the running-job index predicate each made it fail; the original migration was restored. `bun run check` passes with 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint, Prettier, and **1,258 tests across 87 files**. Docker-specific runtime/operator tests were not run. **Totals after this pass: 53 passes · 203 defects · 0 open.**
 
 ---
 

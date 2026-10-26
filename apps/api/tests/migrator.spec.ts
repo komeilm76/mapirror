@@ -38,7 +38,7 @@ describe('listMigrationFiles', () => {
   it('finds the real provisioned migrations, in order', async () => {
     const files = await listMigrationFiles();
 
-    expect(files.map((file) => file.name)).toEqual(['0001_init']);
+    expect(files.map((file) => file.name)).toEqual(['0001_init', '0002_catalog']);
     expect(files[0]?.path).toBe(join(MIGRATIONS_DIR, '0001_init.sql'));
     // The file has to exist, because the provider reads it by path.
     expect(await readFile(files[0]!.path, 'utf8')).toContain('CREATE TABLE admins');
@@ -112,9 +112,11 @@ describe('SqlMigrationProvider', () => {
   it('exposes each migration as an up-only migration', async () => {
     const migrations = await new SqlMigrationProvider().getMigrations();
 
-    expect(Object.keys(migrations)).toEqual(['0001_init']);
+    expect(Object.keys(migrations)).toEqual(['0001_init', '0002_catalog']);
     const migration = migrations['0001_init']!;
+    const catalogMigration = migrations['0002_catalog']!;
     expect(typeof migration.up).toBe('function');
+    expect(typeof catalogMigration.up).toBe('function');
     // Forward-only (`03-data-model.md` §4): rollback is a restore, not a script. Asserted as the *shape* of the
     // object, because a `down` that exists and does nothing is worse than one that is absent.
     expect(Object.keys(migration)).toEqual(['up']);
@@ -198,6 +200,57 @@ describe('the migration agrees with 03-data-model.md', () => {
       // duplicate row through while every "the index exists" check passed.
       expect(sqlText, `${index.name} is documented but not created`).toContain(declaration);
     }
+  });
+
+  it('creates the documented phase-2 tables and indexes in the catalog migration', async () => {
+    const doc = await readFile(
+      resolve(import.meta.dirname, '../../../docs/03-data-model.md'),
+      'utf8',
+    );
+    const sections = ['### 2.3 ', '### 2.4 ', '### 2.5 ', '### 2.6 '].map((heading) => {
+      const start = doc.indexOf(heading);
+      expect(start, `${heading.trim()} must exist`).toBeGreaterThan(-1);
+      const end = doc.indexOf('\n### ', start + heading.length);
+      return doc.slice(start, end === -1 ? undefined : end);
+    });
+    const documented = sections.join('\n');
+    const sqlText = await readFile(join(MIGRATIONS_DIR, '0002_catalog.sql'), 'utf8');
+    const tables = [...documented.matchAll(/CREATE TABLE (\w+)/g)].map(
+      (match) => match[1] as string,
+    );
+    const migrationTables = [...sqlText.matchAll(/CREATE TABLE (\w+)/g)].map(
+      (match) => match[1] as string,
+    );
+    expect(tables).toEqual(['countries', 'country_cache', 'map_versions', 'jobs']);
+    expect(migrationTables).toEqual(tables);
+
+    const documentedIndexes = [
+      ...[...documented.matchAll(/CREATE (UNIQUE )?INDEX (\w+)/g)].map((match) => ({
+        name: match[2] as string,
+        unique: match[1] !== undefined,
+      })),
+      ...[...documented.matchAll(/CONSTRAINT (\w+) UNIQUE/g)].map((match) => ({
+        name: match[1] as string,
+        unique: true,
+      })),
+    ];
+    const migrationIndexes = [
+      ...[...sqlText.matchAll(/CREATE (UNIQUE )?INDEX (\w+)/g)].map((match) => ({
+        name: match[2] as string,
+        unique: match[1] !== undefined,
+      })),
+      ...[...sqlText.matchAll(/CONSTRAINT (\w+) UNIQUE/g)].map((match) => ({
+        name: match[1] as string,
+        unique: true,
+      })),
+    ];
+    expect(migrationIndexes).toEqual(documentedIndexes);
+
+    const indexDefinitions = (text: string): string[] =>
+      [...text.matchAll(/CREATE (?:UNIQUE )?INDEX\b[\s\S]*?;/g)].map((match) =>
+        match[0].replace(/\s+/g, ' ').trim(),
+      );
+    expect(indexDefinitions(sqlText)).toEqual(indexDefinitions(documented));
   });
 
   it('does not create a table the document never names', async () => {

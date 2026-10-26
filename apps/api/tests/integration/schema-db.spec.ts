@@ -7,8 +7,8 @@ import { describe, expect, it } from 'vitest';
 import { freshDatabaseSkipReason, withFreshDatabase } from '../helpers/fresh-db';
 
 /**
- * Acceptance test for `P1-DB-02` against a real Postgres: the Kysely types, the migration and
- * `03-data-model.md` describe **the same tables**, and the values that come back are the ones the types promise.
+ * Acceptance test for `P1-DB-02` and `P2-DB-01` against a real Postgres: Kysely types, migrations and
+ * `03-data-model.md` describe the same tables, and returned values match the driver types.
  *
  * Three sources are compared rather than two, because the failure this catches is always one of them drifting:
  * a column added to the SQL and forgotten in TypeScript compiles and then returns `undefined` at runtime, and a
@@ -26,12 +26,24 @@ const SCHEMA_SOURCE = resolve(import.meta.dirname, '../../src/db/schema.ts');
 const TABLE_INTERFACES = {
   admins: 'Admins',
   admin_tokens: 'AdminTokens',
+  countries: 'Countries',
+  country_cache: 'CountryCache',
+  map_versions: 'MapVersions',
+  jobs: 'Jobs',
   settings: 'Settings',
   audit_logs: 'AuditLogs',
 } as const;
 
-/** Section headings whose `CREATE TABLE` blocks belong to `0001_init.sql`. */
-const PHASE_ONE_HEADINGS = ['### 2.1 ', '### 2.2 ', '### 2.11 '] as const;
+/** Document sections whose tables are created by the first two migrations. */
+const MIGRATED_HEADINGS = [
+  '### 2.1 ',
+  '### 2.2 ',
+  '### 2.3 ',
+  '### 2.4 ',
+  '### 2.5 ',
+  '### 2.6 ',
+  '### 2.11 ',
+] as const;
 
 /** A column name plus its nullability, as one source states it. */
 interface ColumnShape {
@@ -48,7 +60,7 @@ function documentedColumns(): Record<string, ColumnShape[]> {
   const doc = readFileSync(DOC, 'utf8');
   const tables: Record<string, ColumnShape[]> = {};
 
-  for (const heading of PHASE_ONE_HEADINGS) {
+  for (const heading of MIGRATED_HEADINGS) {
     const start = doc.indexOf(heading);
     expect(start, `${heading.trim()} must exist`).toBeGreaterThan(-1);
     const nextHeading = doc.indexOf('\n### ', start + heading.length);
@@ -58,13 +70,13 @@ function documentedColumns(): Record<string, ColumnShape[]> {
       const table = match[1] as string;
       tables[table] = (match[2] as string)
         .split('\n')
-        .map((line) => line.trim())
-        .filter((line) => line !== '' && !line.startsWith('--') && !line.startsWith('CONSTRAINT'))
-        .map((line) => /^(\w+)\s+([\s\S]*)$/.exec(line))
-        .filter((match): match is RegExpExecArray => match !== null)
-        .map((match) => ({
-          name: match[1] as string,
-          nullable: !/NOT NULL|PRIMARY KEY/i.test(match[2] as string),
+        // Columns and table constraints start at two spaces; indented CHECK continuation lines are not columns.
+        .map((line) => /^ {2}(\w+)\s+([\s\S]*)$/.exec(line))
+        .filter((line): line is RegExpExecArray => line !== null)
+        .filter((line) => line[1]?.toUpperCase() !== 'CONSTRAINT')
+        .map((line) => ({
+          name: line[1] as string,
+          nullable: !/NOT NULL|PRIMARY KEY/i.test(line[2] as string),
         }));
     }
   }
@@ -140,7 +152,7 @@ describe.skipIf(skipReason !== null)('the schema, the document and the database 
     );
   });
 
-  it('round-trips every phase-1 table with the JS types the interfaces declare', async () => {
+  it('round-trips the migrated foundation tables with the declared JS types', async () => {
     await withFreshDatabase(
       async (database) => {
         const db = database.db;
@@ -158,6 +170,82 @@ describe.skipIf(skipReason !== null)('the schema, the document and the database 
         expect(admin.created_at).toBeInstanceOf(Date);
         expect(admin.updated_at).toBeInstanceOf(Date);
         expect(admin.last_login_at).toBeNull();
+
+        const country = await db
+          .insertInto('countries')
+          .values({
+            source_id: 'europe/finland',
+            parent_id: 'europe',
+            slug: 'finland',
+            name: 'Finland',
+            iso_alpha2: ['FI'],
+            iso_other: ['FI-01'],
+            source_pbf_url: 'https://download.geofabrik.de/europe/finland-latest.osm.pbf',
+            source_size_hint_bytes: '9007199254740993',
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        expect(country.source).toBe('geofabrik');
+        expect(country.iso_alpha2).toEqual(['FI']);
+        expect(country.iso_other).toEqual(['FI-01']);
+        expect(country.source_size_hint_bytes).toBe('9007199254740993');
+        expect(country.catalog_synced_at).toBeInstanceOf(Date);
+
+        const cache = await db
+          .insertInto('country_cache')
+          .values({
+            country_id: country.id,
+            is_public: true,
+            update_state: 'up_to_date',
+            versions_ready_count: 1,
+            total_size_bytes: '42',
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        expect(cache.is_public).toBe(true);
+        expect(cache.update_state).toBe('up_to_date');
+        expect(cache.versions_ready_count).toBe(1);
+        expect(cache.total_size_bytes).toBe('42');
+        expect(cache.available_at).toBeNull();
+
+        const version = await db
+          .insertInto('map_versions')
+          .values({
+            country_id: country.id,
+            version: '260101',
+            origin: 'geofabrik_snapshot',
+            source_url: country.source_pbf_url,
+            source_filename: 'finland-260101.osm.pbf',
+            file_size_bytes: '9007199254740993',
+            checksum_md5: 'd41d8cd98f00b204e9800998ecf8427e',
+            storage_path: 'finland/260101/finland-260101.osm.pbf',
+            status: 'ready',
+            ready_at: new Date(),
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        expect(version.file_size_bytes).toBe('9007199254740993');
+        expect(version.status).toBe('ready');
+        expect(version.created_at).toBeInstanceOf(Date);
+        expect(version.ready_at).toBeInstanceOf(Date);
+
+        const job = await db
+          .insertInto('jobs')
+          .values({
+            type: 'download',
+            payload: { countryId: country.id, version: version.version },
+            total_bytes: '9007199254740993',
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        expect(job.status).toBe('queued');
+        expect(job.priority).toBe(0);
+        expect(job.payload).toEqual({ countryId: country.id, version: '260101' });
+        expect(job.progress_bytes).toBe('0');
+        expect(job.total_bytes).toBe('9007199254740993');
+        expect(job.attempts).toBe(0);
+        expect(job.cancel_requested).toBe(false);
+        expect(job.created_at).toBeInstanceOf(Date);
 
         const tokenHash = Buffer.alloc(32, 9);
         const token = await db

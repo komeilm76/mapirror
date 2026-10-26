@@ -34,7 +34,7 @@ import { listMigrationFiles, migrateToLatest, MIGRATIONS_DIR } from './migrator'
  * Must be updated in the same commit as a new `.sql` file — `tests/version-check.spec.ts` asserts exactly that
  * against the files on disk, so the rule is enforced rather than remembered.
  */
-export const EXPECTED_MIGRATIONS: readonly string[] = ['0001_init'];
+export const EXPECTED_MIGRATIONS: readonly string[] = ['0001_init', '0002_catalog'];
 
 /** Startup code for a schema that does not match the code (`INTERNAL_ERROR_CODES`). */
 export const SCHEMA_SKEW_CODE = 'SCHEMA_SKEW';

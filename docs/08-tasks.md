@@ -121,7 +121,7 @@ prove L1–L3.
 
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
-| P2-DB-01 | `0002_*` migration: countries, country_cache, map_versions, jobs | ENG-2 | P1-DB-01 | ⬜ | All indexes from `03` present |
+| P2-DB-01 | `0002_catalog.sql` + Kysely types: countries, country_cache, map_versions, jobs | ENG-2 | P1-DB-01 | ✅ | §§2.3–2.6 parity; real-Postgres indexes/constraints and bigint round-trips; full check green |
 | P2-DB-02 | Repositories for catalog/cache/versions | ENG-2 | P2-DB-01 | ⬜ | Pagination + search pushdown to SQL |
 | P2-JOB-01 | Queue (`FOR UPDATE SKIP LOCKED`) + worker loop | D-11 | P2-DB-01 | ⬜ | Two workers never claim the same job |
 | P2-JOB-02 | Heartbeat + advisory-lock reaper + retry/backoff | D-11 | P2-JOB-01 | ⬜ | Killed worker → job requeued within 5 min; a slow job holding its lock is never stolen |
