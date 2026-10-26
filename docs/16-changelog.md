@@ -3,9 +3,21 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 44 passes · 182 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3).
+**Totals:** 45 passes · 183 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 45 — 2026-10-26 (the task table still said nginx forgets a recreated API)
+
+While documenting the Makefile task, its prerequisite row in `08-tasks.md` was checked against the deployment guide and the live proxy evidence from pass 44. The config had already been fixed; the task table still described the old defect as current behavior.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The `P1-DOCK-05` acceptance record contradicted the implementation it was meant to accept.** It said nginx "resolves `api` at startup". Pass 44 measured that exact configuration's failure: a recreated API left nginx dialing the old address and returning `502`. The fix is a Docker DNS resolver plus `server api:3000 resolve`, which was re-probed to follow a recreated API without a reload. The stale task sentence thus described the removed bug as the deployed design | The row now says the dynamic upstream follows recreated API containers; `12-deployment.md` and the task row are guarded against the stale statement by `docs-contract.spec.ts`. Mutation check: restoring the old one-time-resolution claim makes the contract case fail. |
+
+**Totals after this pass: 45 passes · 183 defects · 0 open.** No new runtime behavior changed. The Makefile target tests and the full repository check pass; the pass-44 proxy measurement remains the runtime proof for the corrected sentence.
 
 ---
 

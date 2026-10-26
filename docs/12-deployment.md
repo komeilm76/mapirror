@@ -374,6 +374,19 @@ Retention keeps 3 versions by default (D-7) — the admin cache page shows the p
 
 ## 6. Operations
 
+The repository `Makefile` provides short wrappers around the common operator commands. Run them from the checkout root:
+
+| Target | Effect |
+|---|---|
+| `make up` | `docker compose up -d --build` — build and start the stack |
+| `make down` | `docker compose down` — stop it and **keep** both named volumes |
+| `make logs` | Follow logs from all services; use `make logs SERVICE=api` (or `web` / `db`) to select one |
+| `make migrate` | Run `bun scripts/migrate.ts` in the running `api` container |
+| `make test` | Run the repository Vitest suite on the host (`bun run test`); set `DATABASE_URL_TEST` for DB-backed tests |
+| `make reset-admin` | Run the password-reset script in the API container, inheriting the terminal for its hidden prompt |
+
+`make down` deliberately does not remove data; use `docker compose down -v` only when you intend to delete the database and cache volumes. The compose executable can be overridden, for example `make up COMPOSE='docker compose -f compose.prod.yaml'`.
+
 ### Logs
 
 ```bash

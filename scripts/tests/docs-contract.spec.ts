@@ -151,6 +151,25 @@ describe('error codes (04-api.md §0.2 ↔ ERROR_STATUS)', () => {
   });
 });
 
+describe('deployment proxy contract (12-deployment.md / 08-tasks.md ↔ nginx.conf)', () => {
+  it('describes Docker DNS re-resolution instead of one-time startup resolution', () => {
+    const nginx = read('docker/nginx.conf');
+    const deployment = read('docs/12-deployment.md');
+    const tasks = read('docs/08-tasks.md');
+    const waitStart = tasks.indexOf('`web` only for the API container to exist:');
+    const waitEnd = tasks.indexOf(' `healthy` means **ready**', waitStart);
+    const documentedWait = tasks.slice(waitStart, waitEnd);
+
+    expect(nginx).toContain('resolver 127.0.0.11 valid=10s ipv6=off;');
+    expect(nginx).toContain('server api:3000 resolve;');
+    expect(deployment).toContain('nginx does not resolve `api` at startup');
+    expect(documentedWait).toContain(
+      "nginx's dynamic upstream resolves `api` through Docker DNS and follows recreated API containers",
+    );
+    expect(documentedWait).not.toContain('nginx resolves `api` at startup');
+  });
+});
+
 describe('enums (03-data-model.md ↔ constants)', () => {
   it.each([
     ['interval_frequency', INTERVAL_FREQUENCIES],
