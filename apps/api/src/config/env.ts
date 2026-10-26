@@ -398,7 +398,12 @@ export interface AppConfig {
    * Handed to Fastify as-is; see {@link trustProxySetting} for why numbers are refused.
    */
   readonly trustProxy: string | false;
-  /** Password for the bundled PostgreSQL container (compose only). */
+  /**
+   * The database password, when `DATABASE_URL` does not carry one.
+   *
+   * compose's derived DSN is username, service and database only (`compose.yaml`), and `db/client.ts` completes it from
+   * this value — so a password containing `@`, `:`, `/`, `?`, `#` or `%` never has to survive a URL.
+   */
   readonly postgresPassword?: string;
   /** Docker-secret alternative to {@link postgresPassword}. */
   readonly postgresPasswordFile?: string;
@@ -534,6 +539,30 @@ export function parseEnv(source: EnvSource = process.env): AppConfig {
     });
   }
 
+  // `POSTGRES_PASSWORD_FILE` is read here rather than where the pool is built, so an unreadable secret is a
+  // configuration problem that names the variable — the shape every other boot failure has — instead of a stack trace
+  // from inside a pool constructor that four callers would each have to wrap. Only trailing line breaks are stripped:
+  // `docker secret` content ends with one, and a password that really ends in `\n` is not a password anyone typed.
+  // Read only when the pair rule above accepted it: with both halves set the file's contents cannot be used anyway, and
+  // reporting it as unreadable too would name a second problem the operator does not have to act on.
+  let postgresPasswordFromFile: string | undefined;
+  if (provided.POSTGRES_PASSWORD === undefined && provided.POSTGRES_PASSWORD_FILE !== undefined) {
+    try {
+      postgresPasswordFromFile = readFileSync(provided.POSTGRES_PASSWORD_FILE, 'utf8').replace(
+        /[\r\n]+$/u,
+        '',
+      );
+      if (postgresPasswordFromFile.length === 0) {
+        throw new Error('the file is empty');
+      }
+    } catch (error) {
+      issues.push({
+        key: 'POSTGRES_PASSWORD_FILE',
+        message: `cannot be read: ${(error as Error).message}`,
+      });
+    }
+  }
+
   if (provided.NODE_ENV === 'production' && provided.DATABASE_URL === undefined) {
     issues.push({
       key: 'DATABASE_URL',
@@ -561,6 +590,9 @@ export function parseEnv(source: EnvSource = process.env): AppConfig {
     ...(env.IP_HASH_SALT === undefined ? {} : { ipHashSalt: env.IP_HASH_SALT }),
     trustProxy: env.TRUST_PROXY,
     ...(env.POSTGRES_PASSWORD === undefined ? {} : { postgresPassword: env.POSTGRES_PASSWORD }),
+    ...(postgresPasswordFromFile === undefined
+      ? {}
+      : { postgresPassword: postgresPasswordFromFile }),
     ...(env.POSTGRES_PASSWORD_FILE === undefined
       ? {}
       : { postgresPasswordFile: env.POSTGRES_PASSWORD_FILE }),

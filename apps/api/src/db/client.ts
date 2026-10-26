@@ -57,6 +57,39 @@ export interface SqlDatabase {
 export const PING_TIMEOUT_MS = 5_000;
 
 /**
+ * The connection string the pool is given.
+ *
+ * `DATABASE_URL` may leave the password out, and `POSTGRES_PASSWORD` / `POSTGRES_PASSWORD_FILE` supplies it. That is how
+ * `compose.yaml` passes it (task `P1-DOCK-05`), and the reason is not tidiness: an operator's password is arbitrary text,
+ * and arbitrary text in a URL does not survive. Measured, pass 43, on a PostgreSQL requiring SCRAM: a `@` written
+ * straight into a DSN makes `pg` connect to a **host called `ss`** (`getaddrinfo ENOTFOUND ss`), a `#`, `?` or `/` makes
+ * the string an invalid URL that the config schema refuses with a message about `DATABASE_URL` — a variable the operator
+ * never edited — and a `%` that is not already an escape makes the driver's `decodeURIComponent` throw `URI malformed`.
+ * Completion, percent-encoded, makes every one of them work and keeps the password in exactly one place.
+ *
+ * Two details worth keeping:
+ *
+ * - **`%` is escaped by hand.** `URL`'s own password setter encodes `@`, `/`, `#`, `?`, spaces and non-ASCII, but leaves a
+ *   bare `%` alone (it is not in the userinfo percent-encode set) — so a password containing `%41` would otherwise
+ *   authenticate as `A`. Measured both ways.
+ * - **A DSN that carries its own password wins** and is returned unchanged. That is the native-development path, where
+ *   the DSN is explicit and `POSTGRES_PASSWORD` exists only for the bundled container; a value that is not needed must not
+ *   silently replace one that is.
+ *
+ * @param config - Validated configuration.
+ * @returns A connection string the driver can parse, with the password in it when one was configured.
+ */
+export function databaseUrlFor(config: AppConfig): string {
+  const password = config.postgresPassword;
+  if (password === undefined) return config.databaseUrl;
+
+  const url = new URL(config.databaseUrl);
+  if (url.password !== '') return config.databaseUrl;
+  url.password = password.replace(/%/gu, '%25');
+  return url.toString();
+}
+
+/**
  * Creates the pool and the Kysely instance from configuration.
  *
  * The pool connects lazily: `new pg.Pool()` does no I/O, so this function cannot fail. That is deliberate — the
@@ -74,7 +107,7 @@ export function createDatabase(
   onConnectionLost?: ConnectionErrorListener,
 ): SqlDatabase {
   const pool = new pg.Pool({
-    connectionString: config.databaseUrl,
+    connectionString: databaseUrlFor(config),
     max: config.dbPoolMax,
     // A connection attempt that hangs is worse than one that fails: the default has no timeout, so a black-holed
     // route to the database would stall the boot until the shutdown timer fired, with a message about shutdown.

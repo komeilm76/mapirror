@@ -49,6 +49,78 @@ docker compose ps
 docker compose logs -f api
 ```
 
+### What `compose.yaml` starts
+
+| Service | From | Published | Volume | Healthcheck | Meaning of `healthy` |
+|---|---|---|---|---|---|
+| `db` | `postgres:16-alpine` | — | `pg-data:/var/lib/postgresql/data` | `pg_isready -U mapirror -d mapirror` | `initdb` finished and the server answers |
+| `api` | `docker/api.Dockerfile` | — | `data:/data` (`CACHE_DIR`, `TMP_DIR`) | `bun -e` → `GET /readyz` | the database **and** the cache directory answer |
+| `web` | `docker/web.Dockerfile` | `8080:8080` | — | `wget` → `/index.html` | nginx serves the shell — not the API |
+
+Only `web` publishes a port. `db` is reachable solely by the API (a published `5432` is a password-guessing surface with no
+benefit), and `api` only through nginx — otherwise a client could skip the proxy and choose its own
+`X-Forwarded-For`. All three restart `unless-stopped`, log through `json-file` capped at 3 × 10 MB, and run with
+`no-new-privileges`.
+
+`api` waits for `db` to be **healthy**, so a first boot does not spend the entrypoint's 60 s wait. `web` waits only for the
+API container to exist: nginx resolves `api` when it starts, and holding the UI back until the API is healthy would leave
+the operator staring at an empty port during a long first migration instead of nginx's `502`, which names the upstream it
+could not reach.
+
+`healthy` in `docker compose ps` therefore means **ready**, not alive: `/readyz` is what the API's probe asks. `/healthz`
+stays liveness only, for the kernel and for `restart` decisions — a container whose database is gone is unhealthy but is not
+restarted on that basis.
+
+```bash
+docker compose ps                       # up, healthy, and on which port
+docker compose logs -f api              # the four entrypoint steps, then the request log
+docker compose exec api bun scripts/reset-admin-password.ts --generate
+docker compose down                     # keeps both volumes
+docker compose down -v                  # removes them: a fresh install
+```
+
+**The database password never enters a URL.** `compose.yaml` derives `DATABASE_URL` as
+`postgres://mapirror@db:5432/mapirror` — user, service, database, no password — and passes `POSTGRES_PASSWORD` alongside;
+the API completes the DSN itself (`db/client.ts`), percent-encoding what it inserts. That is what makes a password with
+`@`, `:`, `/`, `?`, `#` or `%` work, and it is not a nicety: written straight into a DSN, `p@ss` makes the driver
+authenticate with `p`, `pa#ss` makes the string an invalid URL, and `pa%ss` makes the driver's decoder throw. There is one
+copy of the password, in `.env`, and changing it is the only edit needed:
+
+```bash
+# change the password of an existing install
+NEW=$(openssl rand -hex 24)          # hex: URL-safe by construction, and 48 characters of it
+docker compose exec db psql -U mapirror -d postgres \
+  -c "ALTER ROLE mapirror PASSWORD '$NEW'"      # the verifier lives inside the volume, not in .env
+sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$NEW|" .env
+docker compose up -d                 # recreates the API container with the new value
+```
+
+The order matters, and `docker compose up -d` cannot come first: `POSTGRES_PASSWORD` only reaches `initdb`, which an
+existing volume skips — so changing `.env` alone changes nothing in the database, and restarting the API first would make
+step 1 fail against a password nobody has set yet. `psql` over the container's local socket does not need the password at
+all, which is why the `ALTER ROLE` can be the first command. Connections the API already holds are not re-authenticated,
+so the seconds between the two edits do not interrupt a running mirror.
+
+`POSTGRES_PASSWORD_FILE` works too (`docker compose` secrets, systemd `LoadCredential`): the API reads the file and strips
+only the trailing newline.
+
+**Where the cache lives.** `data` is a named Docker volume by default, because a fresh clone has no `./data` owned by uid
+`10001` and a bind mount would turn the first boot into a permission error. For a cache of hundreds of gigabytes, point it
+at a real disk — one line in `compose.yaml`, and one `chown` on the host:
+
+```yaml
+    volumes:
+      - /srv/mapirror/data:/data      # was: data:/data
+```
+
+```bash
+sudo mkdir -p /srv/mapirror/data && sudo chown -R 10001:10001 /srv/mapirror/data
+docker compose up -d                            # now a bind mount
+```
+
+The same applies to the database: `pg-data:/var/lib/postgresql/data` may become a host path, but a *non-empty* directory
+makes `initdb` refuse, so start with an empty one.
+
 ### What gets built
 
 | Image | Dockerfile | Contents | Status |
@@ -100,6 +172,13 @@ a PostgreSQL that is still recovering accepts TCP and then answers `57P03`, whic
 and the runtime image deliberately carries no OS packages to run one with. With the database down entirely, step 1
 spends the minute, prints the deadline it waited for, and exits `1` — `restart: unless-stopped` is where retries belong,
 not inside the script.
+
+**A database that says no.** Four refusals are not waited for, because waiting cannot change them: `28P01`/`28000`
+(the credentials were rejected), `42501` (the role may not connect) and `3D000` (there is no such database). The first
+attempt prints `the database refused the connection and will keep refusing it — … (28P01); check DATABASE_URL and
+POSTGRES_PASSWORD` and exits `1`. This is the shape a wrong `POSTGRES_PASSWORD` takes, and it must not look like a slow
+start: on a volume that already exists, editing `.env` without `ALTER ROLE` produces exactly this, in half a second,
+instead of a silent minute.
 
 **A second boot asks for nothing.** Step 3 runs every time. `--bootstrap` looks the account up *before* it looks for a
 password, so a restart succeeds after you delete `ADMIN_PASSWORD` from `.env` — which is what one does once the account

@@ -4,8 +4,10 @@ import {
   DEFAULT_WAIT_TIMEOUT_SECONDS,
   MAX_REASON_LENGTH,
   MAX_WAIT_TIMEOUT_SECONDS,
+  PERMANENT_FAILURES,
   PROGRESS_EVERY_ATTEMPTS,
   WAIT_INTERVAL_MS,
+  driverCode,
   main,
   parseArgs,
   reasonFor,
@@ -40,6 +42,11 @@ function unreachable(cause: Error): AppError {
 /** A driver-style failure: an errno code and a message. */
 function connectionRefused(): Error {
   return Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5432'), { code: 'ECONNREFUSED' });
+}
+
+/** A PostgreSQL refusal: the server answered, and the answer will not change. */
+function refused(code: string): Error {
+  return Object.assign(new Error(`driver detail for ${code}`), { code });
 }
 
 /** How a harness failure is driven. */
@@ -178,6 +185,73 @@ describe('reasonFor', () => {
   it('describes a thrown non-Error without inventing a reason', () => {
     expect(reasonFor('a string, somehow')).toBe('no reason given');
     expect(reasonFor(undefined)).toBe('no reason given');
+  });
+});
+
+describe('a refusal that cannot change', () => {
+  it('gives up on a wrong password at once, not after the deadline', async () => {
+    // The defect this covers: `28P01` spent the whole 60 s retrying and then said "did not answer", which reads like a
+    // slow database while the actual answer is in `.env`. One attempt, no sleep, one line that names the code.
+    const result = await run({ failures: 'forever', error: () => refused('28P01') });
+
+    expect(result.code).toBe(1);
+    expect(result.attempts).toBe(1);
+    expect(result.sleeps).toEqual([]);
+    expect(result.lines).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('28P01');
+    expect(result.errors[0]).toMatch(/will keep refusing/u);
+    expect(result.errors[0]).toContain('POSTGRES_PASSWORD');
+    // The pool is closed on this path too: a leaked client keeps the process alive past its own failure.
+    expect(result.closes).toBe(1);
+  });
+
+  it('gives up on a database that is not there', async () => {
+    const result = await run({ failures: 'forever', error: () => refused('3D000') });
+
+    expect(result.code).toBe(1);
+    expect(result.attempts).toBe(1);
+    expect(result.errors[0]).toContain('does not exist');
+  });
+
+  it('treats every documented permanent code as permanent', async () => {
+    for (const code of ['3D000', '28P01', '28000', '42501']) {
+      expect(PERMANENT_FAILURES.get(code), code).toBeDefined();
+      const result = await run({ failures: 'forever', error: () => refused(code) });
+      expect(result.code, code).toBe(1);
+      expect(result.attempts, code).toBe(1);
+      expect(result.errors[0], code).toContain(code);
+    }
+  });
+
+  it('keeps waiting while the server is still starting up', async () => {
+    // `57P03` is the opposite answer from the same server: it has not read the request yet. Retrying is the whole
+    // point of step 1 — classifying it as permanent would turn a 20-second recovery into a dead container.
+    const result = await run({ failures: 2, error: () => refused('57P03') });
+
+    expect(result.code).toBe(0);
+    expect(result.attempts).toBe(3);
+    expect(result.sleeps).toHaveLength(2);
+    expect(result.lines[0]).toContain('57P03');
+  });
+
+  it('keeps waiting when the port is closed', async () => {
+    const result = await run({ failures: 2 });
+
+    expect(result.code).toBe(0);
+    expect(result.attempts).toBe(3);
+  });
+});
+
+describe('driverCode', () => {
+  it('reads the code from the cause, which is where `check` puts it', () => {
+    expect(driverCode(unreachable(refused('28P01')))).toBe('28P01');
+  });
+
+  it('prefers nothing over an invented code', () => {
+    expect(driverCode(unreachable(new Error('no code here')))).toBeUndefined();
+    expect(driverCode('a string, somehow')).toBeUndefined();
+    expect(driverCode(undefined)).toBeUndefined();
   });
 });
 

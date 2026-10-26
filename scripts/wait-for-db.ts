@@ -20,6 +20,7 @@
  * | the reason is printed **once**, then every tenth attempt | a database that is down for 55 s would otherwise print 55 identical lines at exactly the moment someone is reading the log; the first line says what is wrong, the periodic one says it is still wrong |
  * | the DSN is **never** printed | `14-security.md` L9. The driver's message comes from `check`'s `cause` and is masked of any `postgres://` URL before it reaches a stream, because a connection string contains a password |
  * | exits `1`, not `0`, on timeout | the entrypoint uses the exit code to decide whether to start the API. A wait that gives up quietly starts a server that answers `503` to everything |
+ * | a **permanent** refusal is not retried | `57P03` and `ECONNREFUSED` mean *not yet*; `28P01` and `3D000` mean *never, until someone edits `.env`*. Retrying those turns a wrong password into a silent minute — exactly the minute an operator spends looking at the wrong thing |
  *
  * @module scripts/wait-for-db
  */
@@ -42,6 +43,26 @@ export const PROGRESS_EVERY_ATTEMPTS = 10;
 
 /** Longest reason kept from the driver; a stack frame or a multi-line driver message is not a log line. */
 export const MAX_REASON_LENGTH = 160;
+
+/**
+ * Refusals that no amount of waiting can fix, mapped to what the operator should look at.
+ *
+ * Everything else in the driver's vocabulary is a *timing* problem — `ECONNREFUSED` while PostgreSQL starts,
+ * `57P03` while it recovers from a crash, `ENOTFOUND` while DNS catches up — and waiting is the right answer. These
+ * four are not: the server is up, it read the request, and it said no. A 60-second silence followed by
+ * `did not answer within 60s` reads like a slow database and sends people to `docker stats`; the truth is that
+ * `POSTGRES_PASSWORD` in `.env` and the one in the volume disagree.
+ *
+ * `42501` (insufficient privilege) and `28000` (invalid authorization) are included because PostgreSQL can raise them
+ * instead of `28P01` depending on the `pg_hba.conf` method, and `3D000` because a `POSTGRES_DB` that never ran
+ * `initdb` — or a mistyped `DATABASE_URL` — never becomes true either.
+ */
+export const PERMANENT_FAILURES: ReadonlyMap<string, string> = new Map([
+  ['3D000', 'that database does not exist on the server'],
+  ['28P01', 'the server rejected the password'],
+  ['28000', 'the server rejected the credentials'],
+  ['42501', 'that role may not connect to that database'],
+]);
 
 /** What the command line asked for. */
 export interface WaitArgs {
@@ -103,6 +124,22 @@ export function parseArgs(argv: readonly string[]): WaitArgs {
 }
 
 /**
+ * The driver's `code` for a failure, when it has one.
+ *
+ * `check` wraps the driver's error as `cause`, so the code lives one level down — in `code` for a socket or a
+ * PostgreSQL SQLSTATE (`ECONNREFUSED`, `28P01`). A stub in a test, or any other throw, has no code and gets
+ * `undefined` rather than an invented one.
+ *
+ * @param error - What the attempt threw.
+ * @returns The code, or `undefined` when there is none.
+ */
+export function driverCode(error: unknown): string | undefined {
+  const cause = error instanceof Error && error.cause !== undefined ? error.cause : error;
+  const code = (cause as NodeJS.ErrnoException | null | undefined)?.code;
+  return typeof code === 'string' && code.length > 0 ? code : undefined;
+}
+
+/**
  * Turns whatever went wrong into one short line.
  *
  * `check` throws an `AppError` whose message is written for an HTTP client ("The database is not reachable.") and
@@ -114,10 +151,8 @@ export function parseArgs(argv: readonly string[]): WaitArgs {
  */
 export function reasonFor(error: unknown): string {
   const cause = error instanceof Error && error.cause !== undefined ? error.cause : error;
-  const code = (cause as NodeJS.ErrnoException | null | undefined)?.code;
   const message = (cause as Error | null | undefined)?.message;
-  const reason =
-    typeof code === 'string' && code.length > 0 ? code : (message ?? 'no reason given');
+  const reason = driverCode(error) ?? message ?? 'no reason given';
 
   return reason
     .replace(/postgres(?:ql)?:\/\/\S+/giu, 'postgres://[redacted]')
@@ -196,6 +231,15 @@ export async function main(
         out(`database: ready after ${attempt} attempt(s), ${now() - startedAt} ms`);
         return 0;
       } catch (error) {
+        // A refusal that cannot change is reported once, at once. Waiting here is what makes a wrong password look
+        // like a slow database (§`PERMANENT_FAILURES`).
+        const permanent = PERMANENT_FAILURES.get(driverCode(error) ?? '');
+        if (permanent !== undefined) {
+          err(
+            `error: the database refused the connection and will keep refusing it — ${permanent} (${reasonFor(error)}); check DATABASE_URL and POSTGRES_PASSWORD`,
+          );
+          return 1;
+        }
         const elapsed = now() - startedAt;
         const remaining = deadline - now();
         if (remaining <= 0) {

@@ -13,7 +13,8 @@ mapirror/
 ├─ .prettierignore / .editorconfig # Formatting scope + editor defaults
 ├─ vitest.config.ts                # One config, four projects (shared, api, web, scripts)
 ├─ vitest.projects.ts              # The project table — read by the config and by check:hygiene
-├─ compose.yaml                    # db + api + web (+ backup profile)
+├─ compose.yaml                    # exists (P1-DOCK-05): db + api + web, two volumes, healthchecks,
+│                                  # one published port (8080), and a DSN that carries no password
 ├─ compose.override.yaml           # Dev-only: hot reload, exposed DB port
 ├─ .env.example                    # Every env var, documented, no real secrets
 ├─ Makefile                        # up, down, logs, migrate, test, reset-admin, backup

@@ -56,8 +56,9 @@ same rules.
 different case), `--bootstrap` on a second boot with no password, `--bootstrap` on a fresh database with no password →
 exit 1 and **no** row, a deactivated account reported and left deactivated, weak password rejected with every rule
 listed, missing source + non-interactive → one line and exit 1, the secret absent from both streams;
-`scripts/tests/wait-for-db.spec.ts` — the deadline, the progress line every ten attempts, the masked DSN, and an
-unusable environment refused before it connects; `scripts/tests/entrypoint.spec.ts` — the four steps in order, `exec`
+`scripts/tests/wait-for-db.spec.ts` — the deadline, the progress line every ten attempts, the masked DSN, an
+unusable environment refused before it connects, and the four refusals it does **not** wait for (`3D000`, `28P01`,
+`28000`, `42501`) against the three it does (`57P03`, `ECONNREFUSED`); `scripts/tests/entrypoint.spec.ts` — the four steps in order, `exec`
 for the last one, the exit code of a failing step, the installed path and the `ENTRYPOINT` that names it, and the guide
 documenting the same four commands in the same order; `scripts/tests/secret-prompt.spec.ts` — raw mode before reading, restored
 afterwards, backspace/Ctrl-C/Ctrl-D/escape sequences; `apps/api/tests/integration/admin-accounts.spec.ts` — the

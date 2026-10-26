@@ -3,9 +3,68 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 42 passes · 175 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4).
+**Totals:** 43 passes · 179 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 43 — 2026-10-26 (a password that cannot live in a URL, and a secret file nothing read)
+
+`P1-DOCK-05` asks for one thing above all: *changing `POSTGRES_PASSWORD` alone must still connect, with no second copy of
+the DSN*. The obvious implementation — `DATABASE_URL: postgres://mapirror:${POSTGRES_PASSWORD}@db:5432/mapirror` — was
+written first and then measured against a PostgreSQL that actually demands a password (a SCRAM role, `pg_hba.conf`
+rewritten for the probe). It does not survive an operator's password manager.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **A password with `@`, `:`, `/`, `?`, `#` or `%` could not be used at all.** Measured, one character at a time, with the derived DSN: `p@ss` made `pg` connect with the password **truncated to `p`** (`password authentication failed for user "mm_pw"` — the driver splits the userinfo at the first `@`, so the rest became part of the host); `pa#ss`, `pa?ss` and `pa/ss` made `DATABASE_URL` an invalid URL, so `parseEnv` refused the boot and named **`DATABASE_URL`** — a variable the operator never edited, because compose writes it; `pa%ss` reached the driver's `decodeURIComponent` and threw `URI malformed`. Only a password that is already URL-safe worked, and nothing said so. `openssl rand -base64 32` — the command most people reach for — contains `/` about a third of the time | The password no longer goes into the URL. `compose.yaml` derives `postgres://mapirror@db:5432/mapirror` (user, service, database) and passes `POSTGRES_PASSWORD` beside it; `databaseUrlFor` in `db/client.ts` completes the DSN at boot, percent-encoding what it inserts. `%` is escaped by hand first, because `URL`'s own password setter leaves a bare `%` alone (it is not in the userinfo encode set) — without that, `a%41b` would authenticate as `aAb`. Re-probed against the same SCRAM role: all nine awkward passwords connect, `databaseUrlFor` decodes back to exactly what was set, and the control (the same password typed into the DSN by hand) still fails — which is the point |
+| 2 | **`POSTGRES_PASSWORD_FILE` was accepted, validated, redacted — and never read.** `parseEnv` knew the variable (the schema declares it, the cross-field rule refuses it beside `POSTGRES_PASSWORD`, `toJSON` masks it) and no code opened the file, so the docker-secret deployment `.env.example` *recommends* could never authenticate: the API would connect with no password at all and the reason would be an authentication failure three layers away from the cause | `parseEnv` reads it, strips only trailing line breaks (`docker secret` content ends with one), and reports an unreadable or empty file as a configuration problem naming the variable — the same one-line shape as every other boot failure, rather than a stack trace from inside a pool constructor that four call sites would each have to wrap. It is read only when the pair rule accepted it, so setting both halves reports one problem, not two. Probed: the value from the file connects; a missing path prints `POSTGRES_PASSWORD_FILE: cannot be read: ENOENT …` and exits 1 |
+| 4 | **A rejected password looked exactly like a slow database.** `wait-for-db.ts` retried every failure to the deadline, so a server that had already answered `28P01` (password rejected) or `3D000` (no such database) produced a minute of silence and then `the database did not answer within 60s (60 attempt(s); 28P01)`. Measured on a SCRAM role with `POSTGRES_PASSWORD=wrong-one`: `--timeout 5` took 5.08 s and the last line named a timeout, not the refusal. In compose that is a minute per restart spent looking at a database that is working, while the answer is a `POSTGRES_PASSWORD` that disagrees with the volume — the fourth defect this task's own subject matter produced | `PERMANENT_FAILURES` names the four SQLSTATEs that waiting cannot fix (`3D000`, `28P01`, `28000`, `42501` — PostgreSQL raises the last two instead of `28P01` depending on the `pg_hba.conf` method); step 1 prints one line, `error: the database refused the connection and will keep refusing it — the server rejected the password (28P01); check DATABASE_URL and POSTGRES_PASSWORD`, and exits `1` on the first attempt. Everything that is genuinely a timing problem still waits: `57P03` while recovering, `ECONNREFUSED` while starting, `ENOTFOUND` while DNS catches up. The pool is closed on the new path too. Re-probed: `28P01` and `3D000` exit `1` in 0.09 s, a closed port still spends its whole deadline |
+| 3 | **`.env.example` described a compose file that did not exist, in terms that were not true.** Its header said compose "derives `DATABASE_URL` from `POSTGRES_PASSWORD`", and line 23 showed the derived value as `postgres://mapirror:<POSTGRES_PASSWORD>@db:5432/mapirror` — the form defect 1 proves is unsafe. The same file told operators to "prefer the `*_FILE` variants below (mounted as Docker secrets)", which defect 2 proves was inert | The header now says what happens: compose replaces the DSN with one that carries **no password**, and the API completes it. The derived form no longer shows a password in a URL anywhere in the docs, `09-development.md` §5 states the rule in the `DATABASE_URL` and `POSTGRES_PASSWORD` rows, and `12-deployment.md` §2 explains why (with the three measured failure modes) and shows how to rotate the password on an existing volume — `ALTER ROLE`, because the verifier lives inside the volume and a changed `.env` alone does not change it |
+
+What was probed and found sound, so that "no bug here" is a measurement rather than an impression:
+
+- **The connection string the pool is given.** `databaseUrlFor` returns the DSN untouched when no password is configured
+  (native development) and when the DSN already has one (a deliberate value must not be silently replaced), keeps
+  `?sslmode=require` and the port, and round-trips nine awkward passwords — `p@ss/word#1`, `a:b;c=d`, `with space`,
+  `ünïcode-"quoted"`, `a%41b`, `100%`, `trailing&` — through `new URL(…).password`.
+- **The file path end to end.** A SCRAM role whose password is `p@ss/word#1`: `POSTGRES_PASSWORD` connects, a
+  `POSTGRES_PASSWORD_FILE` containing it plus a newline connects, a missing file is a config error naming the variable, and
+  the same password written into the DSN by hand fails — so the test is measuring the completion, not the server's
+  permissiveness.
+- **The compose file, read the way compose reads it.** `scripts/tests/compose.spec.ts` parses the YAML, resolves every
+  `${…}` with compose's `:?`/`:-` semantics against `.env.example`, and compares the result with the images it starts: the
+  DSN's host is the `db` *service* name, its user and database are the container's `POSTGRES_USER`/`POSTGRES_DB`, its port
+  is what `nginx.conf` proxies to, the two volume targets are the paths the images write to, and every healthcheck is a
+  command that exists in that image (`pg_isready`; `bun` — no `curl`; busybox `wget`). It also holds the four decisions
+  that are not obvious: `environment:` overriding `env_file:` for the six values that are wrong inside a container, the
+  `readyz`-means-healthy probe, `web` waiting only for the API *container* so a long migration still shows a page, and
+  exactly one published port.
+- **A health probe that cannot lie.** `wget` on `/index.html` rather than on `/healthz`: asking the API would mark the web
+  container unhealthy during a database outage, i.e. remove the page that explains the outage.
+
+Mutations, one at a time, reverted between runs — **22 tested, 22 killed**: the password put back into the DSN, the DSN
+pointing at `localhost`, the user disagreeing with the DSN, `MIGRATE_ON_BOOT` dropped, `CACHE_DIR` outside the volume,
+`TRUST_PROXY=loopback` alone, `curl` in the API's healthcheck, the web probe asking `/healthz`, the API port published,
+`depends_on` weakened to `service_started`, the database volume dropped, a 5 s start period, `restart: always`, a literal
+password in the file, `%` not escaped, the completion removed, the secret's trailing newline kept, an unreadable
+secret ignored, the permanent-refusal check removed, `28P01` dropped from `PERMANENT_FAILURES`, `57P03` wrongly
+classified as permanent, and `driverCode` reading the message instead of the code.
+
+Two things stated rather than assumed: there is **no Docker daemon in this sandbox**, so `docker compose up` itself was not
+run — the file is checked by parsing it and against every image it starts, and the drill on a real host belongs to
+`P1-DOCK-06`. What *was* run is the layer just below it: the real `docker/entrypoint.api.sh` with exactly the environment
+compose gives the API — a `DATABASE_URL` that carries no password, `POSTGRES_PASSWORD=p@ss/word#1`, `MIGRATE_ON_BOOT=false`,
+`CACHE_DIR`/`TMP_DIR` on the mounted path — against a real PostgreSQL whose role demands a password: four step lines,
+`admin 'admin' created`, `/healthz` `ok`, `/readyz` `{"database":"ok","cache":"ok"}`, `POST /_auth/api/login` `200`, one
+`admins` row, a second boot that changes nothing, and `SIGTERM` → exit `0`. That drill is what defect 4 came out of. And the first version of the volume knob was an `MAPIRROR_DATA_DIR` environment variable, which
+`env.spec.ts` correctly refused: the project's rule is that every variable in `.env.example` is read by the application,
+and a compose-only variable is an exception to it. It became a one-line edit to `compose.yaml` that the guide shows
+instead.
+
+**Totals after this pass: 43 passes · 179 defects · 0 open.** Gate: `bun run check` green — 1 185 tests in 81 files,
+coverage 98.25 % statements / 96.73 % branches / 98.64 % functions / 98.62 % lines.
 
 ---
 

@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -280,6 +282,50 @@ describe('parseEnv cross-field rules', () => {
   it('requires a bootstrap password long enough to be worth hashing', () => {
     expect(errorFrom({ ADMIN_PASSWORD: 'short' }).message).toMatch(
       /ADMIN_PASSWORD: must be at least 12/,
+    );
+  });
+});
+
+describe('parseEnv reads POSTGRES_PASSWORD_FILE', () => {
+  /** Writes a secret to a throwaway file and returns its path. */
+  function secretFile(contents: string): string {
+    const directory = mkdtempSync(join(tmpdir(), 'mapirror-secret-'));
+    const path = join(directory, 'postgres_password');
+    writeFileSync(path, contents);
+    return path;
+  }
+
+  it('resolves the secret, stripping only the trailing line breaks', () => {
+    // `docker secret` content ends with a newline. A password that really ends in one is not a password anyone typed, and
+    // an unstripped one authenticates as nothing that works (`P1-DOCK-05`, `compose.yaml`).
+    const path = secretFile('p@ss/word#1\n');
+    expect(parseEnv({ POSTGRES_PASSWORD_FILE: path }).postgresPassword).toBe('p@ss/word#1');
+    expect(parseEnv({ POSTGRES_PASSWORD_FILE: secretFile('crlf\r\n') }).postgresPassword).toBe(
+      'crlf',
+    );
+  });
+
+  it('keeps the path in the configuration and the value out of every message', () => {
+    const path = secretFile('do-not-print-me-4f2c\n');
+    const config = parseEnv({ POSTGRES_PASSWORD_FILE: path });
+
+    expect(config.postgresPasswordFile).toBe(path);
+    expect(JSON.stringify(config)).not.toContain('do-not-print-me-4f2c');
+  });
+
+  it('reports an unreadable file as a configuration problem naming the variable', () => {
+    // Not a stack trace from inside the pool constructor: this is the boot path, and every other failure there is one
+    // line that names a variable.
+    const error = errorFrom({ POSTGRES_PASSWORD_FILE: '/nonexistent/postgres_password' });
+
+    expect(keysOf(error)).toEqual(['POSTGRES_PASSWORD_FILE']);
+    expect(error.message).toMatch(/cannot be read/);
+    expect(error.message).toMatch(/ENOENT/);
+  });
+
+  it('refuses an empty file instead of authenticating with nothing', () => {
+    expect(errorFrom({ POSTGRES_PASSWORD_FILE: secretFile('\n') }).message).toMatch(
+      /the file is empty/,
     );
   });
 });

@@ -1,0 +1,167 @@
+# compose.yaml — the whole deployment (task `P1-DOCK-05`; requirements DOCK-1/2, `12-deployment.md` §2).
+#
+# Three services, two volumes, one `.env`:
+#
+#   db    postgres:16-alpine     the database — no host port, the API is its only client
+#   api   docker/api.Dockerfile  `entrypoint.api.sh` (`P1-DOCK-04`): wait → migrate → bootstrap → serve
+#   web   docker/web.Dockerfile  nginx: the SPA, and the proxy to the API — the only published port
+#
+# `docker compose up -d --build` on a clean Ubuntu 24.04 box reaches a login page with nothing typed by hand, and
+# everything an operator has to choose lives in `.env` (`.env.example` is the list). Five decisions in this file are not
+# the obvious ones:
+#
+# 1. **The derived DSN carries no password.** `DATABASE_URL` names the user, the service and the database; the password
+#    comes from `POSTGRES_PASSWORD`, which the postgres container receives *and* the API reads for itself
+#    (`db/client.ts`). One password in one place — and nothing in it can break a URL, which is not cosmetic: a `@` inside
+#    a DSN makes the driver connect to a host called `ss`, and a `#`, `?` or `/` makes the string an invalid URL
+#    (measured, pass 43).
+# 2. **`environment:` overrides `env_file:`.** `.env` reaches the container whole, and the six keys below are then
+#    replaced with the container's own values: the DSN above, `NODE_ENV=production` (the `.env` copy is for native
+#    development), `MIGRATE_ON_BOOT=false` (the entrypoint has migrated already, in the open), the two cache paths (the
+#    mounted volume, not `./data`), and `TRUST_PROXY` (the API's peer is the `web` container, so a loopback-only default
+#    would make every client one address — `14-security.md` §7).
+# 3. **`depends_on` waits for health, not for order.** `api` starts once the database answers `pg_isready`. `web` only
+#    waits for the API container to exist: nginx resolves `api` when it starts, and holding the UI back until the API is
+#    *healthy* would mean a long first migration shows the operator an empty port instead of nginx's 502, which at least
+#    names the upstream it could not reach.
+# 4. **"Healthy" means ready.** The API's probe asks `/readyz`, so `docker compose ps` says `healthy` only when the
+#    database and the cache directory both answer. `/healthz` stays what it is — liveness, for the kernel and for
+#    Docker's restart decision — and a container whose database is gone is not restarted on that basis.
+# 5. **No secret is written in this file.** Every credential is `${…}` from `.env`, which is gitignored and `chmod 600`
+#    by `12-deployment.md` §2. `docker compose config` prints the interpolated result, so an operator can check what
+#    will be passed without editing anything.
+
+name: mapirror
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      # The three names the derived DSN below has to agree with; a test parses both and fails if they drift.
+      POSTGRES_USER: mapirror
+      POSTGRES_DB: mapirror
+      # `:?` rather than `:-`: a blank password would create a database nobody can authenticate against, and the
+      # default in the image is `postgres` — a published-as-example credential. Compose stops before starting anything.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env — see .env.example}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    # PostgreSQL uses shared memory for parallel queries and maintenance; Docker's default of 64 MB is the size at which
+    # a large import eventually fails with `could not resize shared memory segment`. 256 MB is cheap for a mirror.
+    shm_size: 256mb
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -q -U mapirror -d mapirror']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      # initdb on an empty volume: a few seconds on a laptop, longer on a NAS.
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    security_opt:
+      - no-new-privileges:true
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      # Pinned, because `docker/nginx.conf` proxies to `api:3000`: a `.env` that moved the port would leave the two
+      # halves disagreeing, and the failure (nginx's 502) would not mention the port.
+      HOST: 0.0.0.0
+      PORT: '3000'
+      # No password: the API completes it from `POSTGRES_PASSWORD` (`db/client.ts`, decision 1 above). Changing the
+      # password alone is then enough, and there is no second copy of the DSN to keep in step.
+      DATABASE_URL: postgres://mapirror@db:5432/mapirror
+      # …and the password that DSN leaves out. Interpolated here as well as inherited from `env_file`, so the value is
+      # the same wherever it came from — `.env`, or the shell of whoever ran `docker compose up`.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env — see .env.example}
+      # The entrypoint migrated before this process started; this flag keeps the boot-time check from migrating a second
+      # time (`09-development.md` §4). The *version check* still runs, so a schema that is behind or ahead still stops
+      # the boot.
+      MIGRATE_ON_BOOT: 'false'
+      CACHE_DIR: /data/cache
+      TMP_DIR: /data/tmp
+      # The container's peer is always the `web` service, on the compose bridge: `loopback` alone would record nginx's
+      # address as every client's, and `uniquelocal` alone would not trust the loopback hop of a host-side proxy. Both,
+      # then. See `12-deployment.md` §3 for an outer proxy.
+      TRUST_PROXY: loopback,uniquelocal
+    volumes:
+      # One volume for both cache paths: artifacts, and the `.part` files of an upload in flight. A named volume, because
+      # a fresh clone has no `./data` directory owned by uid 10001 and a bind mount would make the first boot fail on
+      # permissions instead of working untouched. For a cache on another disk, replace this line with
+      # `- /srv/mapirror/data:/data` and `chown -R 10001:10001` that directory once (`12-deployment.md` §2).
+      - data:/data
+    # Above the API's own 8 s shutdown bound (`SHUTDOWN_TIMEOUT_MS`), so a drain that takes its time still finishes
+    # before Docker escalates to SIGKILL.
+    stop_grace_period: 30s
+    healthcheck:
+      # No `curl` and no `wget` in this image by design (`dockerfile.spec.ts` keeps OS packages out), so the probe is the
+      # runtime it already runs. `/readyz`, not `/healthz`: see decision 4.
+      test:
+        - CMD
+        - bun
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3000/readyz')
+          .then((response) => process.exit(response.ok ? 0 : 1))
+          .catch(() => process.exit(1))
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      # The first boot migrates, hashes the bootstrap password with Argon2id (tens of milliseconds by design, not
+      # microseconds) and only then listens. Anything shorter marks a working container unhealthy while it starts.
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      # The one published port. `8080` because the container runs as uid 101 and cannot bind 80; the guide's firewall
+      # rule and `PUBLIC_BASE_URL` default both name it.
+      - '8080:8080'
+    healthcheck:
+      # A static file, deliberately: if this asked the API, a database outage would mark the web container unhealthy and
+      # the page that explains the outage would be the thing being taken away. `wget` is busybox's, which is what
+      # `nginx:alpine` has.
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8080/index.html']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  # PostgreSQL's data directory. `docker compose down` keeps it; `down -v` does not, and that is the difference between
+  # a restart and an install.
+  pg-data:
+  # The API's `/data`. Compose owns it: `down` keeps it, `down -v` removes it.
+  data:

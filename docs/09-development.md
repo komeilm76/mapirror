@@ -134,14 +134,14 @@ sibling are mutually exclusive, and the hygiene check counts commented declarati
 | `NODE_ENV` | `development` | ✅ | `development` / `production` / `test` |
 | `PORT` | `3000` | — | API port, 1–65535. Absent → 3000; **present and unusable → the boot stops** naming it (`0x10`, `30e3`, `3000.5`), because binding a port the operator did not ask for looks healthy and is unreachable |
 | `HOST` | `0.0.0.0` | — | Bind address |
-| `DATABASE_URL` | `postgres://mapirror:mapirror@localhost:5432/mapirror` | ✅ in production | DSN the API boots with; **compose derives its own** from `POSTGRES_PASSWORD` + `db`, so `.env`'s copy serves native dev/tests. The default covers native dev and tests; `NODE_ENV=production` requires the variable — a production container must not guess a database |
+| `DATABASE_URL` | `postgres://mapirror:mapirror@localhost:5432/mapirror` | ✅ in production | DSN the API boots with. **compose replaces it with one that has no password** (`postgres://mapirror@db:5432/mapirror`), and the API completes it from `POSTGRES_PASSWORD` (`db/client.ts`) — so the password is never inside a URL. `.env`'s copy therefore serves native dev and tests. The default covers native dev and tests; `NODE_ENV=production` requires the variable — a production container must not guess a database |
 | `DATABASE_URL_TEST` | `postgres://mapirror:mapirror@localhost:5432/mapirror_test` | — | Test DB (integration tests create/truncate) |
 | `DB_POOL_MAX` | `10` | — | Pool size |
 | `MIGRATE_ON_BOOT` | `true` | — | Apply pending migrations before serving; the schema version check runs regardless (`P1-DB-04`) |
 | `CORS_ORIGINS` | *(empty = same-origin)* | — | Comma-separated allow-list; never `*` |
 | `IP_HASH_SALT` | *(generated on first boot, stored in `settings`)* | — | Salt for hashed download IPs |
 | `TRUST_PROXY` | `loopback` | — | Which peers may assert a client address in `X-Forwarded-For`: an address, CIDR block or comma-separated list (`loopback`/`linklocal`/`uniquelocal`), or `none`. A named preset **replaces** the default rather than extending it — `uniquelocal` does not include loopback, so a proxy reached over `http://127.0.0.1` needs `loopback,uniquelocal`. Every per-IP behaviour (rate limits, hashed download IPs) depends on it — without it every client behind the proxy shares the proxy's address. A **hop count is refused** (Fastify silently trusts nothing for a number) and so is `true` (trusts every peer) |
-| `POSTGRES_PASSWORD` | `mapirror` | ✅ (compose) | Password for the `db` container — the one place it is written |
+| `POSTGRES_PASSWORD` | `mapirror` | ✅ (compose) | Password for the `db` container — the one place it is written — and the value the API completes its password-less DSN from. Any character works: it is percent-encoded, never concatenated into a URL by hand |
 | `POSTGRES_PASSWORD_FILE` | — | — | Docker-secret alternative to `POSTGRES_PASSWORD` |
 | `CACHE_DIR` | `./data/cache` | ✅ | Artifact storage root (compose: `/data/cache` volume) |
 | `TMP_DIR` | `./data/tmp` | ✅ | Uploads + `.part` files (compose: `/data/tmp` volume) |
