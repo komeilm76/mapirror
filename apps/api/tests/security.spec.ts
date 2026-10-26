@@ -158,6 +158,20 @@ describe('CORS', () => {
     await instance.close();
   });
 
+  it('canonicalizes a configured origin before matching the browser Origin header', async () => {
+    const config = parseEnv({ CORS_ORIGINS: 'https://maps.example.org/' });
+    const instance = await buildTestApp({ config });
+
+    const response = await instance.inject({
+      method: 'GET',
+      url: '/_public/api/countries',
+      headers: { origin: 'https://maps.example.org' },
+    });
+
+    expect(response.headers['access-control-allow-origin']).toBe('https://maps.example.org');
+    await instance.close();
+  });
+
   it('allows a configured origin and varies on it', async () => {
     const instance = await buildTestApp({
       config: configWithOrigins(['https://maps.example.org']),

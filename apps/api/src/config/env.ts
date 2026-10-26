@@ -201,6 +201,35 @@ function httpUrl(fallback: string) {
 }
 
 /**
+ * Converts a CORS entry to its serialized browser origin, refusing URL components that are not part of an origin.
+ *
+ * Browsers send only scheme, host and port in the `Origin` header. Keeping a path, query or credentials in the
+ * configured value makes an otherwise-valid URL silently fail exact matching; normalize an optional trailing slash
+ * and default port, but reject anything that cannot be an origin.
+ *
+ * @param value - One configured CORS entry.
+ * @returns The canonical origin, or `null` when the URL is not origin-only.
+ */
+function canonicalHttpOrigin(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (
+      (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+      url.username !== '' ||
+      url.password !== '' ||
+      url.pathname !== '/' ||
+      url.search !== '' ||
+      url.hash !== ''
+    ) {
+      return null;
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Values Fastify understands as a proxy preset, in the spelling it uses.
  *
  * `loopback` covers the documented deployment (`12-deployment.md`: a Caddy/Nginx on the same host proxying to
@@ -321,10 +350,18 @@ const ENV_SCHEMA = z.object({
         z
           .string()
           .refine((origin) => origin !== '*', CORS_WILDCARD_MESSAGE)
-          .refine(
-            (origin) => z.url({ protocol: /^https?$/ }).safeParse(origin).success,
-            'must be an http(s) origin such as https://maps.example.org',
-          ),
+          .transform((origin, ctx) => {
+            const canonical = canonicalHttpOrigin(origin);
+            if (canonical === null) {
+              ctx.addIssue({
+                code: 'custom',
+                message:
+                  'must be an http(s) origin such as https://maps.example.org, without path, query, fragment or credentials',
+              });
+              return z.NEVER;
+            }
+            return canonical;
+          }),
       ),
     )
     // The default belongs on the whole variable, not inside the pipe: an absent key must skip the split too.

@@ -228,6 +228,21 @@ describe('parseEnv CORS allow-list', () => {
       'http://localhost:5173',
     ]);
   });
+
+  it('rejects URLs that are not origins and canonicalizes a trailing slash', () => {
+    for (const value of [
+      'https://maps.example.org/admin',
+      'https://maps.example.org?tenant=one',
+      'https://maps.example.org/#section',
+      'https://user:secret@maps.example.org',
+    ]) {
+      expect(errorFrom({ CORS_ORIGINS: value }).message, value).toContain('without path');
+    }
+
+    expect(parseEnv({ CORS_ORIGINS: 'https://maps.example.org/' }).corsOrigins).toEqual([
+      'https://maps.example.org',
+    ]);
+  });
 });
 
 describe('parseEnv cross-field rules', () => {
