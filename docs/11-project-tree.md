@@ -61,7 +61,8 @@ mapirror/
 │  │  │  │  │  ├─ source.ts        # MapSource interface (thin, 4 methods)
 │  │  │  │  │  ├─ index-client.ts  # Zod-validated index-v1-nogeom catalog fetch + mapping
 │  │  │  │  │  ├─ region-page.ts   # HTML5 parser: dated PBF snapshots, sizes, and “data up to”
-│  │  │  │  │  └─ fixtures/        # europe.html, finland.html (no subregions), monaco.html
+│  │  │  │  │  ├─ file-metadata.ts # Bounded HEAD metadata and .md5 requests
+│  │  │  │  └─ fixtures/          # Saved upstream-shaped samples for offline tests
 │  │  │  │  ├─ jobs/               # Queue + worker
 │  │  │  │  │  ├─ queue.ts         # claim/complete/fail with FOR UPDATE SKIP LOCKED
 │  │  │  │  │  ├─ worker.ts        # Loop, concurrency, graceful stop
@@ -87,8 +88,9 @@ mapirror/
 │  │  │     ├─ time.ts             # UTC helpers, schedule math (tested)
 │  │  │     ├─ errors.ts           # AppError subclasses + codes
 │  │  │     └─ logger.ts           # Pino config with redaction
-│  │  └─ tests/                    # law-routes, auth, cache, public, scheduler, source
-│  │     └─ geofabrik-region-page.spec.ts # Three offline HTML fixtures + size/date edge cases
+│  │  └─ tests/                    # API, integration, and source-adapter tests
+│  │     ├─ geofabrik-region-page.spec.ts   # Three offline HTML fixtures + size/date edge cases
+│  │     └─ geofabrik-file-metadata.spec.ts # Bounded HEAD and MD5 request cases
 │  │
 │  └─ web/                         # Vue 3 + Vuetify 3 SPA (served by nginx)
 │     ├─ package.json              # vue, vue-router, vuetify, pinia, @vueuse/core

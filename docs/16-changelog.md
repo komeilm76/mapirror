@@ -3,9 +3,22 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 49 passes · 193 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2).
+**Totals:** 50 passes · 195 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 50 — 2026-10-26 (an impossible HTTP date became March, and a checksum sidecar had no size limit)
+
+A boundary-focused review of P2-SRC-04 exercised invalid source headers and a sidecar response larger than the format requires.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **An impossible `Last-Modified` date was accepted as a real instant.** `new Date("Mon, 30 Feb 2026 21:00:00 GMT")` normalizes to March 2, and the old header parser returned that fabricated date. A regression first failed with the normalized instant | The parser now accepts only canonical HTTP-date strings whose representation round-trips exactly; malformed or impossible values become `null` |
+| 2 | **The `.md5` reader buffered an arbitrary upstream body and accepted it as a checksum line.** A valid digest followed by thousands of characters passed the permissive filename suffix, so a sidecar could consume unbounded memory. The oversized-body regression failed before the fix | The reader now checks declared length and streams at most 4 KiB regardless of missing or false `Content-Length`; an oversized body is canceled and rejected without a retry. Timeout cancellation also cancels an in-progress body reader |
+
+The offline suite covers HEAD headers, `.md5` parsing, transient/permanent statuses, network exhaustion, timeouts (including an injected fetch that ignores abort), invalid options/URLs, oversized bodies, and redacted errors. The malformed-date and oversized-sidecar probes failed before their fixes. Focused Geofabrik tests pass (32 tests); `bun run check` passes with **1,058 tests passed and 182 skipped** across 74 passing and 12 skipped files. Docker-specific operator tests were not run. **Totals after this pass: 50 passes · 195 defects · 0 open.**
 
 ---
 

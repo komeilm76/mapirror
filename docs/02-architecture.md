@@ -42,7 +42,7 @@ operator ever wants a dedicated container.
 | `auth` | Admin credentials, token issue/verify/revoke, login throttling | Touch cache/files |
 | `admin` | Admin JSON APIs (`/_admin/api/*`), orchestration of jobs | Stream files without going through `storage` |
 | `public` | Published read model, public downloads, stats counters | Return unpublished data, mutate anything |
-| `geofabrik` (MapSource) | Catalog fetch, region page parse, version discovery, HEAD/metadata | Write to DB or disk (returns facts only) |
+| `geofabrik` (MapSource) | Catalog fetch, region page parse, version discovery, bounded HEAD/metadata + `.md5` | Write to DB or disk (returns facts only) |
 | `jobs` | Queue, worker loop, job handlers, progress, cancellation | Contain HTTP concerns |
 | `system` | CPU/RAM/disk sampling, disk preflight | Decide when to prune |
 | `db` | SQL, repositories, transactions | Contain business rules that belong in modules |
@@ -209,6 +209,9 @@ Key guarantees:
   `DISK_RESERVE_BYTES` (default 2 GiB) and reports the shortfall in the error message.
 - **Upstream deletion:** if a dated snapshot returns `404`, the job fails with
   `SOURCE_VERSION_GONE` and the UI suggests `latest` — we never silently substitute a different file.
+- **Source metadata requests:** `HEAD` and `.md5` reads have a 10-second default deadline and three total attempts;
+  request-level overrides are capped at 30 seconds and five attempts. Network failures and transient HTTP statuses
+  retry with bounded backoff; permanent 4xx responses fail immediately. Sidecar bodies are capped at 4 KiB.
 
 ## 7. Update detection
 

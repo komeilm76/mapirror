@@ -113,7 +113,7 @@ prove L1–L3.
 | P2-SRC-01 | `MapSource` interface (4 methods, JSDoc) | D-1 | P1-API-01 | ✅ | No speculative abstraction |
 | P2-SRC-02 | Geofabrik index client (`index-v1-nogeom.json`) | GEO-1 | P2-SRC-01 | ✅ | Parses id/parent/name/iso/pbf; Zod-validated |
 | P2-SRC-03 | Region page parser (dated snapshots, sizes, "data up to") | GEO-4, UPD-1 | P2-SRC-02 | ✅ | Offline fixtures: 3 regions, incl. region with no sub-regions; dated snapshots and nullable metadata tested |
-| P2-SRC-04 | `HEAD` metadata (size, etag, last-modified) + `.md5` fetch | CACHE-1 | P2-SRC-02 | ⬜ | Timeouts + retries bounded |
+| P2-SRC-04 | `HEAD` metadata (size, etag, last-modified) + `.md5` fetch | CACHE-1 | P2-SRC-02 | ✅ | Offline HTTP tests; deadlines/retries capped; sidecar validated and ≤4 KiB |
 | P2-SRC-05 | Slug derivation + collision resolution | ENG-6, L6 | P2-SRC-02 | ⬜ | `europe/finland`→`finland`; collisions tested |
 | P2-SRC-06 | Catalog sync job (upsert countries, TTL, audit) | GEO-1 | P2-SRC-02, P2-JOB-01 | ⬜ | Re-sync is idempotent; removals don't delete cache |
 
