@@ -186,7 +186,8 @@ mapirror/
 ├─ docker/
 │  ├─ api.Dockerfile               # exists (P1-DOCK-01): deps → runtime, uid 10001, bun 1.4.4
 │  ├─ web.Dockerfile               # exists (P1-DOCK-02): Vite build → nginx runtime, uid 101
-│  ├─ nginx.conf                   # exists (P1-DOCK-02): unprivileged server; SPA fallback + proxy are DOCK-03
+│  ├─ nginx.conf                   # exists (P1-DOCK-02/03): unprivileged server, APIs before pages,
+│  │                               # SPA fallback, shell headers, gzip, streaming, cache policy
 │  ├─ entrypoint.api.sh            # migrate → init-admin → start API+worker
 │  └─ caddy.example                # TLS termination example (D-15)
 │

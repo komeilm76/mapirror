@@ -132,8 +132,9 @@ server {
   client_max_body_size 9g;         # imports (MAX_UPLOAD_BYTES + headroom)
   proxy_read_timeout 3600s;        # large downloads
   proxy_send_timeout 3600s;
-  proxy_buffering off;             # stream downloads, don't buffer gigabytes on disk
   proxy_request_buffering off;     # stream uploads straight through
+  proxy_max_temp_file_size 0;      # stream downloads without spooling them to disk
+  proxy_buffering on;              # …and without giving up gzip (see below)
 
   location / {
     proxy_pass http://127.0.0.1:8080;
@@ -149,21 +150,46 @@ bound to localhost or firewalled when a proxy fronts it.
 
 ### How the internal Nginx container routes (order matters)
 
+`docker/nginx.conf` is that container's whole configuration, and this is its map — the same order, for the same reasons:
+
 ```nginx
-# in docker/nginx.conf — most specific first
-location ^~ /_auth/api/   { proxy_pass http://api:3000; }   # auth JSON  ─┐ must come before
-location ^~ /_admin/api/  { proxy_pass http://api:3000; }   # admin JSON   │ the SPA fallback,
-location ^~ /_public/api/ { proxy_pass http://api:3000; }   # public JSON  │ otherwise the login
-location =  /healthz      { proxy_pass http://api:3000; }   # probes      ─┘ page rule swallows it
-location =  /readyz       { proxy_pass http://api:3000; }
-location =  /_auth/login  { try_files /index.html =404; }   # the one page outside /_site
-location ^~ /_site/       { try_files $uri /index.html; }   # SPA deep links
+# in docker/nginx.conf — APIs first, then pages
+location ^~ /_auth/api/   { proxy_pass http://api:3000; }            # auth JSON  ─┐ must come before
+location ^~ /_admin/api/  { proxy_pass http://api:3000; }            # admin JSON  │ the page rules,
+location ^~ /_public/api/ { proxy_pass http://api:3000; }            # public JSON │ otherwise the SPA
+location =  /healthz      { access_log off; proxy_pass …; }          # probes      ┘ fallback swallows them
+location =  /readyz       { access_log off; proxy_pass …; }
 location =  /             { return 302 /_site/; }
-location /                { try_files $uri =404; }          # assets; unknown paths 404
+location =  /_site        { return 301 /_site/; }
+location =  /_auth/login  { try_files $uri /index.html; }            # the one page outside /_site
+location ^~ /_site/       { try_files $uri /index.html; }            # SPA deep links
+location =  /index.html   { expires -1; add_header …; }              # the shell: never cached, six headers
+location ^~ /assets/      { expires 1y; add_header …; }              # content-hashed: cached for a year
+location /                { try_files $uri =404; }                   # anything else: a real 404
 ```
 
-`proxy_request_buffering off` matters: without it Nginx spools a multi-gigabyte import to its own disk
-before forwarding it, doubling disk usage and delaying progress.
+Four things in there are worth knowing before editing it:
+
+- **A fallback must be a URI.** `try_files $uri /index.html` sends the request through location matching again, so the
+  deep link lands on the `/index.html` rule and picks up its `Cache-Control` and CSP. `try_files /index.html =404` — the
+  obvious way to write the login page — serves the file *inside* that location instead, with neither header.
+- **`proxy_buffering off` is not the streaming switch.** With buffering off nginx cannot compress what it forwards, so every
+  JSON answer leaves uncompressed. `proxy_max_temp_file_size 0` is what actually keeps a 773 MB download off the disk: the
+  response is held in memory for 32 kB and then passed through with backpressure.
+- **`expires -1` on the shell, `1y` on `/assets/`.** The bundle's file names contain their hash, so a year is honest; the
+  shell's name never changes, so caching it is a deploy nobody sees.
+- **The CSP's `upgrade-insecure-requests` is conditional** on `X-Forwarded-Proto: https` (the outer proxy's header). On a
+  plain-HTTP first run the directive would upgrade the bundle's own requests to a port with no TLS, and the page would stay
+  blank.
+
+`proxy_request_buffering off` matters in the other direction: without it nginx spools a multi-gigabyte import to its own
+disk before forwarding it, doubling disk usage and delaying progress.
+
+**One setting outside this file.** The API decides who to believe about a client's address (`TRUST_PROXY`, `09-development.md`
+§5), and it defaults to `loopback`. Behind this container the peer is not loopback but the compose network — so left at the
+default, every visitor looks like the web container and the API's rate limiter has a single key for the whole internet. Set
+`TRUST_PROXY=uniquelocal` in `.env` (it covers `10/8`, `172.16/12` and `192.168/16`, i.e. the compose network) when the
+stack runs in Docker. `docker compose` is wired for this in `P1-DOCK-05`.
 
 ## 4. Configuration
 

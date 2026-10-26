@@ -3,11 +3,54 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 39 passes · 165 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2).
+**Totals:** 40 passes · 168 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
 ---
+
+## Pass 40 — 2026-10-26 (a page with no headers, and advice that costs compression)
+
+All three were found by *running* the config, and two of them are the kind of thing that only shows up in a response: a
+header that is missing, and a header that is missing because a directive elsewhere switched it off.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The login page would have been served with no security headers and no cache policy.** `docker/nginx.conf` wrote `try_files /index.html =404` for `/_auth/login` — the natural way to say "serve the shell". `try_files` serves a **file** when an argument matches a path, and only its **last** argument is a URI to re-resolve; so the file was served inside that location, which carries no `add_header` and no `expires`. Measured against a real nginx: `GET /_auth/login` returned `200 text/html` with no `Content-Security-Policy` and no `Cache-Control`, while `/_site/` (whose rule ends in a URI) returned both. The one page a signed-out visitor sees was the one page without a CSP | `try_files $uri /index.html;` — there is no file at `/_auth/login`, so the first argument never matches and the request re-enters location matching, landing on the `/index.html` rule that carries the six headers and `expires -1`. Re-measured: both present. The case that catches it asserts the login location's fallback is the URI form, and says why |
+| 2 | **`proxy_buffering off` — the standard streaming advice — silently disables compression.** The first draft turned buffering off in both directions, as `12-deployment.md` §3 instructed. With buffering off nginx cannot compress what it forwards, so every JSON answer from the API went out uncompressed: measured, a 10,290-byte list arrived with no `Content-Encoding`, and with `Content-Encoding: gzip` the moment `proxy_buffering on` came back. What made buffering dangerous in the first place is its **temp file**, not the buffering: a 773 MB `.osm.pbf` spooled to `/tmp/proxy_temp` at full speed whether or not the client was reading | `proxy_buffering on` + `proxy_max_temp_file_size 0`: in-memory buffering (which is what makes gzip possible) and no temp file ever (which is what made buffering dangerous) — responses are held for the 32 kB of buffers and then passed through with backpressure. Measured: 200 MB through the proxy, worker RSS unchanged at 2.7 MB, zero files in the temp path, and a 10 kB JSON gzipped. `12-deployment.md` §3 now gives the same pair for the outer proxy, with the reason |
+| 3 | **`12-deployment.md` §3 documented the bug from item 1.** The routing table an operator reads said `location = /_auth/login { try_files /index.html =404; }` — so the guide was, precisely, an instruction to serve the login page without headers. A reader copying it into the outer proxy would have reproduced it | The snippet is the file's map, with the URI form, the shell and asset locations the file actually has, and four notes: what a fallback URI is for, why buffering is on with no temp file, why `expires -1` and `1y` are split, and why the CSP's upgrade directive is conditional |
+
+The new cases were mutation-checked the way the code is: **33 mutations, all 33 killed** — the modifiers, each of the five
+proxy targets, every timeout and limit, the two redirects, each cache policy, each of the six headers, the CSP's conditional,
+`X-Forwarded-Proto` collapsing to `$scheme`, a pbf creeping into `gzip_types`, a header escaping to `server` level, a regex
+location appearing, and four edits to the guide. The last four survived the first batch: the guide case only checked that the
+values *appeared* somewhere in the document, and they appear more than once. It now compares the documented locations as a
+**set** against the file's own — documentation drift is a test failure, not a review note.
+
+Probed and found sound rather than assumed — a real nginx 1.29.0 (built here from source with PCRE2 and zlib, since the
+sandbox has no package manager) running **this file, unmodified**, over the real API container:
+
+- **The API is proxied, and not rewritten.** `POST /_auth/api/login` returned the API's own `401 INVALID_CREDENTIALS`
+  envelope with its `cache-control: no-store`, a real login returned a token, `GET /_auth/api/me` with that token returned the
+  profile, `/_admin/api/catalog` answered `503 NOT_READY` (the guard let it through), `/healthz` and `/readyz` answered their
+  bodies, a query string arrived byte-identical (`?q=fin&page=2&sort=name%20asc`), and `/_admin/%61pi/catalog` was proxied
+  rather than rendered — the percent-decoded path matched the `^~` prefix, as `10-laws.md` requires.
+- **Headers arrive, both ways.** The API saw `X-Forwarded-For: 203.0.113.7, 127.0.0.1` (appended, not replaced),
+  `X-Forwarded-Proto: https` (passed through), `X-Forwarded-Host`, `X-Real-IP`, and an application header the SPA might one
+  day send. On the way back, `/_auth/api/me` carried exactly **one** `content-security-policy` — the API's — because the six
+  headers are in the shell location and not at `server` level, where they would have been added a second time.
+- **The CSP conditional works in both directions.** Without `X-Forwarded-Proto` the policy ends at `manifest-src 'self'`; with
+  `X-Forwarded-Proto: https` it ends `manifest-src 'self'; upgrade-insecure-requests`. The reason it matters: on the
+  documented first run the page is plain HTTP on 8080, and that directive would upgrade the bundle's own requests to a port
+  with no TLS.
+- **Streaming, measured from both ends.** A 3 MB chunked upload reached the API with all 3,000,000 bytes and no `413`; a 200 MB
+  response passed through in 0.13 s with flat memory and no temp file; `Range: bytes=2-5` came back `206` with
+  `Content-Range: bytes 2-5/10` intact.
+- **A stopped API is a `502`, and pages keep working.** With the API process killed, `/_auth/api/me` answered nginx's own `502`
+  (HTML, `Server: nginx` with no version) while `/_site/` still returned `200`. The body is deliberately not the API's error
+  envelope — the same decision `dev-proxy.ts` records (pass 37).
+- **The access log is for the requests an operator reads.** `/healthz` and `/readyz` never appear in it, nor does an asset
+  request; a missing asset still appears in the *error* log, which is where it belongs.
 
 ## Pass 39 — 2026-10-26 (a config that a non-root process cannot open, and a comment that named a removed mechanism)
 
