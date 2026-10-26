@@ -100,7 +100,7 @@ Scripts marked ✅ exist today; ⬜ are created by the task named in `08-tasks.m
 | `bun run start:api` | API only, no watch (what the container runs) | ✅ P1-API-01 |
 | `bun run dev:web` | Web only, Vite with HMR on `:5173` | ✅ P1-WEB-01 |
 | `bun run build:web` | Production bundle into `apps/web/dist` (`vite build`) | ✅ P1-WEB-01 |
-| `bun run build` | Build everything the image needs | ⬜ P1-DOCK-02 |
+| `bun run build` | Build everything an image needs — the web bundle (`vite build` into `apps/web/dist`). The API image ships sources, so there is nothing else to build | ✅ P1-DOCK-02 |
 | `bun run check` | **The gate**: workspaces → hygiene → typecheck → lint → format:check → test, fail-fast | ✅ P1-REPO-05/06 |
 | `bun run check:full` | `check` + coverage with thresholds (slower; used before a phase gate) | ✅ P1-REPO-05 |
 | `bun run lint` | ESLint over the whole repo (`--max-warnings=0`) | ✅ P1-REPO-03 |

@@ -29,6 +29,7 @@
     "dev": "bun run --filter './apps/*' dev",
     "dev:web": "bun run --filter @mapirror/web dev",
     "build:web": "bun run --filter @mapirror/web build",
+    "build": "bun run --filter @mapirror/web build",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:api": "vitest run --project api",

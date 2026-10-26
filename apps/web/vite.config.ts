@@ -56,8 +56,9 @@ export default defineConfig({
     // bookmark all say 5173.
     strictPort: true,
     allowedHosts: true,
-    // One entry per API prefix plus the two probes; everything else is a page this server renders. Built from
-    // `@mapirror/shared`, so the list cannot drift from the route law, and `PORT` is the API's own variable.
+    // One entry per API prefix plus the two probes; everything else is a page this server renders. The list is a literal
+    // in `dev-proxy.ts` — a Vite config cannot import the workspace package — and a test pins it to the route law. `PORT`
+    // is the API's own variable, so one setting moves both halves.
     proxy: createDevProxy(),
   },
   preview: {

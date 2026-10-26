@@ -5,6 +5,15 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { isExcludedFromBuild, parseDockerIgnore } from '../lib/dockerignore';
+import {
+  contextSources,
+  copiesOf,
+  instructionsOf,
+  parseDockerfile,
+  stageNamed,
+  type Dockerfile,
+  type Instruction,
+} from '../lib/dockerfile';
 
 /**
  * The API image's Dockerfile, read as a document (task `P1-DOCK-01`).
@@ -37,146 +46,8 @@ function read(path: string): string {
   return readFileSync(join(ROOT, path), 'utf8');
 }
 
-/** One parsed instruction. */
-interface Instruction {
-  readonly keyword: string;
-  /** Everything after the keyword, whitespace-normalised. */
-  readonly args: string;
-  /** The whole logical line, for matching. */
-  readonly raw: string;
-}
-
-/** One `FROM … AS …` and everything under it. */
-interface Stage {
-  readonly name: string;
-  readonly image: string;
-  readonly instructions: readonly Instruction[];
-}
-
-/**
- * Splits a Dockerfile into logical lines: continuations joined, comments and blanks dropped.
- *
- * @param text - The Dockerfile's contents.
- * @returns One string per instruction.
- */
-function logicalLines(text: string): string[] {
-  const lines: string[] = [];
-  let buffer = '';
-  for (const raw of text.split('\n')) {
-    const line = raw.trimEnd();
-    if (buffer === '' && (line.trim() === '' || line.trimStart().startsWith('#'))) continue;
-    if (line.endsWith('\\')) {
-      buffer += `${line.slice(0, -1)} `;
-      continue;
-    }
-    buffer += line;
-    lines.push(buffer.replace(/\s+/gu, ' ').trim());
-    buffer = '';
-  }
-  return lines;
-}
-
-/**
- * Parses the Dockerfile into its global instructions and its stages.
- *
- * An `ARG` before the first `FROM` is not stray text: it is the only way to parameterise a `FROM` line, and this
- * Dockerfile uses it for the base image. So prelude instructions are kept, not rejected.
- *
- * @returns `preamble` (instructions above the first `FROM`) and `stages`, in file order.
- */
-function parseFile(): { readonly preamble: Instruction[]; readonly stages: Stage[] } {
-  const preamble: Instruction[] = [];
-  const stages: Stage[] = [];
-  for (const raw of logicalLines(read(DOCKERFILE))) {
-    const keyword = (raw.split(' ')[0] ?? '').toUpperCase();
-    if (keyword === 'FROM') {
-      const tokens = raw.split(' ');
-      stages.push({
-        name: tokens[3] ?? 'default',
-        image: tokens[1] ?? '',
-        instructions: [],
-      });
-      continue;
-    }
-    const parsed: Instruction = { keyword, args: raw.slice(keyword.length).trim(), raw };
-    const current = stages.at(-1);
-    if (current === undefined) {
-      preamble.push(parsed);
-      continue;
-    }
-    (current.instructions as Instruction[]).push(parsed);
-  }
-  return { preamble, stages };
-}
-
-/**
- * Every stage, in file order.
- *
- * @returns The parsed stages.
- */
-function parseStages(): Stage[] {
-  return parseFile().stages;
-}
-
-/**
- * The instructions above the first `FROM`.
- *
- * @returns Those instructions, in file order.
- */
-function preambleInstructions(): Instruction[] {
-  return parseFile().preamble;
-}
-
-/**
- * The instructions of a stage, by keyword.
- *
- * @param stage - The stage to search.
- * @param keyword - Instruction keyword, case-insensitive.
- * @returns Matching instructions, in order.
- */
-function instructionsOf(stage: Stage, keyword: string): Instruction[] {
-  return stage.instructions.filter((instruction) => instruction.keyword === keyword.toUpperCase());
-}
-
-/**
- * The operands of every `COPY` in a stage, with the source/destination split.
- *
- * @param stage - The stage to read.
- * @returns One entry per `COPY`, in order.
- */
-function copiesOf(stage: Stage): {
-  readonly sources: string[];
-  readonly dest: string;
-  readonly from?: string;
-  readonly raw: string;
-}[] {
-  return instructionsOf(stage, 'COPY').map((instruction) => {
-    const tokens = instruction.args.split(' ').filter((token) => token.length > 0);
-    const flags = tokens.filter((token) => token.startsWith('--'));
-    const operands = tokens.filter((token) => !token.startsWith('--'));
-    const from = flags.find((flag) => flag.startsWith('--from='))?.slice('--from='.length);
-    return {
-      sources: operands.slice(0, -1),
-      dest: operands.at(-1) ?? '',
-      ...(from === undefined ? {} : { from }),
-      raw: instruction.raw,
-    };
-  });
-}
-
-/** Every context path the Dockerfile copies, normalised (no `./`, no trailing `/`). */
-function contextSources(): string[] {
-  const runtime = parseStages().find((stage) => stage.name === 'runtime');
-  const deps = parseStages().find((stage) => stage.name === 'deps');
-  const copies = [
-    ...(deps === undefined ? [] : copiesOf(deps)),
-    ...(runtime === undefined ? [] : copiesOf(runtime)),
-  ];
-  return copies
-    .filter((copy) => copy.from === undefined)
-    .flatMap((copy) => copy.sources)
-    .map((source) => source.replace(/^\.\//u, '').replace(/\/$/u, ''));
-}
+/** The parsed Dockerfile, read once per module load: it is a fixture, not a mutation target. */
+const FILE: Dockerfile = parseDockerfile(read(DOCKERFILE));
 
 /** `.dockerignore`, through the matcher the hygiene check uses. */
 const dockerIgnore = parseDockerIgnore(read('.dockerignore'));
@@ -190,13 +61,13 @@ describe('the Dockerfile', () => {
   });
 
   it('builds in two stages, dependencies then runtime', () => {
-    const stages = parseStages();
+    const stages = FILE.stages;
 
     expect(stages.map((stage) => stage.name)).toEqual(['deps', 'runtime']);
     // A stage without a name cannot be copied from, and `--from=0` is a number to keep in step by hand.
     expect(stages.every((stage) => stage.name !== 'default')).toBe(true);
     // The runtime stage must copy the modules the deps stage installed — otherwise it installed them for nothing.
-    expect(copiesOf(stages[1] as Stage).some((copy) => copy.from === 'deps')).toBe(true);
+    expect(copiesOf(stageNamed(FILE, 'runtime')).some((copy) => copy.from === 'deps')).toBe(true);
   });
 
   it('pins the base image to the bun version the repository declares', () => {
@@ -208,12 +79,12 @@ describe('the Dockerfile', () => {
     expect(text).toContain(`ARG BUN_IMAGE=oven/bun:${version}`);
     // Every stage uses the one argument: a second, hard-coded `FROM` is how two halves of an image end up on two
     // versions of the runtime.
-    for (const stage of parseStages()) expect(stage.image).toBe('${BUN_IMAGE}');
+    for (const stage of FILE.stages) expect(stage.image).toBe('${BUN_IMAGE}');
     expect(text).not.toMatch(/FROM\s+\S+:latest/u);
   });
 
   it('installs the lockfile, without dev dependencies', () => {
-    const deps = parseStages()[0] as Stage;
+    const deps = stageNamed(FILE, 'deps');
     const install = instructionsOf(deps, 'RUN')
       .map((instruction) => instruction.args)
       .find((args) => args.includes('bun install'));
@@ -227,7 +98,7 @@ describe('the Dockerfile', () => {
   });
 
   it('gives the install every workspace manifest the API needs, and no other', () => {
-    const deps = parseStages()[0] as Stage;
+    const deps = stageNamed(FILE, 'deps');
     const copied = copiesOf(deps).flatMap((copy) => copy.sources);
     const workspaces =
       (JSON.parse(read('package.json')) as { workspaces?: string[] }).workspaces ?? [];
@@ -261,7 +132,7 @@ describe('the Dockerfile', () => {
     // Measured with a production install (pass 38): the store lands in `/app/node_modules/.bun`, and each workspace's
     // symlinks land in that workspace's own `node_modules`. Copying only the first produces an image that boots and
     // then fails on `Cannot find module 'fastify'` — the exact failure this assertion exists to prevent.
-    const runtime = parseStages()[1] as Stage;
+    const runtime = stageNamed(FILE, 'runtime');
     const fromDeps = copiesOf(runtime)
       .filter((copy) => copy.from === 'deps')
       .flatMap((copy) => copy.sources);
@@ -272,7 +143,7 @@ describe('the Dockerfile', () => {
   });
 
   it('ships the sources and the operator scripts the container has to run', () => {
-    const sources = contextSources();
+    const sources = contextSources(FILE);
 
     for (const required of [
       'apps/api/src',
@@ -291,7 +162,7 @@ describe('the Dockerfile', () => {
   it('only copies paths that exist, and that the build context keeps', () => {
     // Two failures, one cause: the path is not where the Dockerfile says it is. The first is caught on the building
     // machine, the second only when someone else builds the image.
-    for (const source of contextSources()) {
+    for (const source of contextSources(FILE)) {
       expect(existsSync(join(ROOT, source)), `${source} must exist in the repository`).toBe(true);
       expect(
         isExcludedFromBuild(source, dockerIgnore),
@@ -301,7 +172,7 @@ describe('the Dockerfile', () => {
   });
 
   it('runs as a non-root user, and owns the volume it writes to', () => {
-    const runtime = parseStages()[1] as Stage;
+    const runtime = stageNamed(FILE, 'runtime');
     const user = instructionsOf(runtime, 'USER').at(-1);
 
     expect(user, 'the runtime stage must switch user').toBeDefined();
@@ -324,10 +195,7 @@ describe('the Dockerfile', () => {
     // `ARG` and `ENV` survive in the image's metadata, and a `COPY` of a `.env` survives in a layer — either way the
     // value is committed to the registry. The check is on **names and paths**, not on the text: a file called
     // `reset-admin-password.ts` is a script that asks for a password, not a password.
-    const all = [
-      ...preambleInstructions(),
-      ...parseStages().flatMap((stage) => stage.instructions),
-    ];
+    const all = [...FILE.preamble, ...FILE.stages.flatMap((stage) => stage.instructions)];
     const assignments = all
       .filter((instruction) => instruction.keyword === 'ARG' || instruction.keyword === 'ENV')
       .flatMap((instruction) => instruction.args.split(/\s+/u))
@@ -345,7 +213,7 @@ describe('the Dockerfile', () => {
     expect(credentialNames, 'no credential may be baked into ARG or ENV').toEqual([]);
     expect(credentialValues, 'no DSN with a password may be baked into ARG or ENV').toEqual([]);
 
-    const credentialPaths = contextSources().filter((source) =>
+    const credentialPaths = contextSources(FILE).filter((source) =>
       /(^|\/)(\.env|secrets?)(\.|\/|$)|(\.pem|\.key|\.p12)$/u.test(source),
     );
     expect(credentialPaths, 'no secret file may be copied into a layer').toEqual([]);
@@ -356,7 +224,7 @@ describe('the Dockerfile', () => {
   });
 
   it('states where it listens, what stops it, and what it is', () => {
-    const runtime = parseStages()[1] as Stage;
+    const runtime = stageNamed(FILE, 'runtime');
     const env = instructionsOf(runtime, 'ENV').map((instruction) => instruction.args);
 
     expect(env.join(' ')).toContain('NODE_ENV=production');

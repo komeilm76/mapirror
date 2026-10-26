@@ -54,10 +54,10 @@ docker compose logs -f api
 | Image | Dockerfile | Contents | Status |
 |---|---|---|---|
 | `api` | `docker/api.Dockerfile` | Fastify + worker + scheduler, one Bun process, sources shipped as written | exists (`P1-DOCK-01`) |
-| `web` | `docker/web.Dockerfile` | the Vite bundle, served by nginx, which also proxies the API prefixes | `P1-DOCK-02` |
+| `web` | `docker/web.Dockerfile` | the Vite bundle, served by nginx — the proxy to the API prefixes lands in `P1-DOCK-03` | exists (`P1-DOCK-02`) |
 
-Both are multi-stage and both run as a **non-root** user. The API image is worth knowing three things about, because they
-are the difference between an image that starts and one that does not:
+Both are multi-stage and both run as a **non-root** user — uid `10001` for the API, `101` for nginx. The API image is worth
+knowing three things about, because they are the difference between an image that starts and one that does not:
 
 - **`oven/bun:1.4.4`**, the same version the repository pins in `packageManager`. `scripts/tests/dockerfile.spec.ts` fails
   if the two drift.
@@ -69,6 +69,10 @@ are the difference between an image that starts and one that does not:
 ```bash
 sudo chown -R 10001:10001 /srv/mapirror/data
 ```
+
+The web image needs none of that: nginx reads the bundle and writes only to `/tmp` inside its own container. It listens on
+`8080` (an unprivileged process cannot bind `80`), which is why compose publishes the host's `8080` onto it — the address
+the rest of this guide uses.
 
 **Do not edit `DATABASE_URL`.** Inside the containers it is derived — `postgres://mapirror:<POSTGRES_PASSWORD>@db:5432/mapirror` — so changing `POSTGRES_PASSWORD` is enough and the two can never disagree. The copy in `.env` is for running the API outside Docker (native dev, tests). The same rule applies to `CACHE_DIR` / `TMP_DIR`, which compose points at the mounted volumes (`/data/cache`, `/data/tmp`).
 

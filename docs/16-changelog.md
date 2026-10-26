@@ -3,11 +3,42 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 38 passes · 163 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3).
+**Totals:** 39 passes · 165 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
 ---
+
+## Pass 39 — 2026-10-26 (a config that a non-root process cannot open, and a comment that named a removed mechanism)
+
+Both were found by *running* the thing rather than reading it: one by starting nginx as an unprivileged user, one by opening
+a file to edit it and finding its own explanation out of date.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **`error_log /dev/stderr` would have failed in the container.** The first draft of `docker/nginx.conf` logged errors to `/dev/stderr` — the pattern every container guide shows. Measured on a locally built nginx 1.29.0 started as a non-root user: `nginx: [emerg] open() "/dev/stderr" failed (13: Permission denied)`, because `/dev/stderr` is a symlink to `/proc/self/fd/2` and opening an fd that the process did not create is refused. In Docker the failure depends on how the log pipe was made, which is exactly the sort of thing that works on one host and not the next | `error_log stderr warn;` — nginx's own token for file descriptor 2, which opens nothing and cannot be refused. `access_log /dev/stdout;` stays, because there is no such token for stdout and the entry is required for request logs; the config comment records the asymmetry and why. The case that would have caught it is the probe, so the config's own test asserts `error_log` is the `stderr` token and not a path |
+| 2 | **`vite.config.ts` still explained itself with a mechanism `P1-WEB-08` had removed.** The proxy comment read *"Built from `@mapirror/shared`, so the list cannot drift from the route law"* — true of the first draft, dead since the list became a literal because a Vite config cannot import the workspace package (`ERR_MODULE_NOT_FOUND`, pass 37). A reader editing the proxy list next would believe it regenerates from the shared prefixes | The comment now says what is true: the list is a literal in `dev-proxy.ts`, and a test — not an import — pins it to the route law. Found while opening the file for this task, which is the cheapest way to find a stale comment |
+
+Probed and found sound rather than assumed:
+
+- **The official image's defaults cannot run as uid 101.** Reproduced deliberately: a config with nginx's stock paths fails as
+  a non-root user with `mkdir() "/var/cache/nginx/client_temp" failed (13: Permission denied)` (and, with the directories
+  pre-created but root-owned, the same refusal). That is the whole reason `docker/nginx.conf` sets the pid, five temp paths
+  and the logs itself, and why `nginx-conf.spec.ts` fails if any `/var/` path appears in the file.
+- **The config was run, not just linted.** A real nginx 1.29.0, built from source in this environment (no daemon, no apt), was
+  given the file and the rehearsed runtime tree: `nginx -t` accepted it, it started as uid 1001, `/` answered `200
+  text/html`, `index.js` `application/javascript`, `index.css` `text/css`, the font `font/woff2`, a missing asset and a deep
+  link both `404`, and the header read `Server: nginx` with no version — `server_tokens off` visible in a response rather
+  than only in a file.
+- **Both Dockerfiles were executed stage by stage again**, and the rehearsal caught a bug in the rehearsal: a directory
+  `COPY` contributes its **contents** to the destination, so `COPY apps/web ./apps/web` merges rather than nesting — the
+  first version of the tool nested it one level too deep and the build failed on `Cannot resolve entry module index.html`.
+  Worth recording because the same misunderstanding in a real Dockerfile produces exactly that error.
+- **A build needs a dev-dependency install.** Measured: 261 packages with dev dependencies, 65 without; the web stage cannot
+  use `--production` at all (no vite), the API stage must (no test runner). Two images, two answers, and each test asserts
+  its own.
+- **The bundle is 588 kB, 145 kB gzipped** — `index.html` 0.73 kB, the JS 435.64 kB, the CSS 113.29 kB, the font 22.28 kB —
+  unchanged from `P1-WEB-08`: this task builds what was already there and adds no code to the browser.
 
 ## Pass 38 — 2026-10-26 (a test that failed once in four runs, and two tests that proved nothing)
 
