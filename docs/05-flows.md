@@ -192,15 +192,29 @@ sequenceDiagram
   end
   W->>G: HEAD pbf → content-length, last-modified
   W->>FS: write <job>.part with Range resume
-  W->>G: GET .md5
-  W->>FS: verify → rename to finland/261023/…
-  W->>Q: mark succeeded + result {versionId}
+  alt administrator cancels while running
+    A->>API: POST /jobs/:jobId/cancel
+    API->>Q: set cancel_requested (durable)
+    API-->>A: 202 accepted
+    loop every 250 ms
+      W->>Q: poll cancel_requested on owned job
+    end
+    W-->>W: abort handler signal; wait for cooperative cleanup
+    W->>FS: remove <job>.part
+    W->>Q: mark canceled after cleanup
+  else transfer completes
+    W->>G: GET .md5
+    W->>FS: verify → rename to finland/261023/…
+    W->>Q: mark succeeded + result {versionId}
+  end
 ```
 
 **Invariants:** no `ready` row before checksum + rename; no duplicate active job; disk preflight
-before enqueue; cancel removes `.part`.
+before enqueue; queued cancellation is immediate; a running cancel leaves no `.part` before its terminal state.
+Cancellation targets ≤2 s for a cooperative handler; arbitrary blocking code is not forcibly interrupted.
 **Tests:** happy path with a fixture HTTP server, resume after mid-stream abort, checksum mismatch
-fails cleanly, disk-full refuses with `503`, cancel leaves no files, duplicate request → `409`.
+fails cleanly, disk-full refuses with `503`, cancellation is observed within 2 s and cleanup precedes `canceled`,
+duplicate request → `409`.
 
 ---
 

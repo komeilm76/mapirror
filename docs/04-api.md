@@ -404,7 +404,11 @@ The UI switches to a job progress view after `202`; the upload itself shows a br
 |---|---|---|
 | `GET` | `/_admin/api/jobs?status=&type=&page=&limit=` | Newest first |
 | `GET` | `/_admin/api/jobs/:jobId` | Includes `phase`, `progressBytes`, `totalBytes`, `speedBps`, `etaSeconds`, `error` |
-| `POST` | `/_admin/api/jobs/:jobId/cancel` | `202`; cooperative cancellation |
+| `POST` | `/_admin/api/jobs/:jobId/cancel` | `202`; queued jobs cancel immediately; running jobs cooperate with the owner worker |
+
+A running cancellation sets a durable request flag; the worker aborts the handler signal, waits for `.part` cleanup,
+then marks the row canceled. The `202` acknowledges the request, not completed cleanup. Progress bytes are monotonic,
+updates are throttled to one write per second, and ETA is derived safely rather than stored.
 
 ```json
 200 {

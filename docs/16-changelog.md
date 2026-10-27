@@ -3,9 +3,27 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 59 passes · 212 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2).
+**Totals:** 60 passes · 217 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 60 — 2026-10-27 (job progress and cancellation needed edge-case and timing review)
+
+P2-JOB-03 wires cancellation and progress into the P2-JOB-01 worker. Review focused on first-write arithmetic, PostgreSQL bigint limits, races around an already-canceled handler, monotonic SQL persistence, and whether cleanup completes before the terminal state.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The first progress write could throw before reaching PostgreSQL.** `lastWriteAt = -Infinity` made elapsed time infinite, and converting it to `BigInt` raised `RangeError` | Give the first report a finite one-interval baseline. A real-PostgreSQL probe with the original `-Infinity` mutation failed with `BigInt(Infinity)`; the restored code passes |
+| 2 | **Progress speed used a wall clock.** `Date.now()` can jump when system time changes, yielding a bogus speed or near-zero elapsed interval | Use monotonic `performance.now()`, floor elapsed milliseconds, and reject non-finite injected clock values |
+| 3 | **The progress monotonicity test asserted only the final value.** A later larger report could mask a stale lower write, so a direct-assignment SQL mutation initially survived | Assert the row immediately after a lower stale report and prove throttled updates remain buffered. Mutation to direct assignment fails (`60` observed instead of `100`); production SQL retains `greatest(progress_bytes, candidate)` |
+| 4 | **Progress values outside PostgreSQL `bigint` could cause a database write failure.** JavaScript `bigint` itself has no signed-64-bit limit | Reject byte totals beyond PostgreSQL's signed range before SQL and clamp derived speed to the column range; cover the rejected boundary in a unit test |
+| 5 | **A worker skipped its registered handler when cancellation was already set at entry.** A retry with an existing `.part` could therefore become canceled without giving its handler a cleanup opportunity | Always invoke the registered handler with an already-aborted signal; the handler contract requires checking on entry and cleaning before return. A pre-aborted `.part` test fails under the old skip behavior |
+
+Running cancellation persists a durable request, polls every 250 ms, aborts the owner handler, and leaves the row `running` until the handler has removed its temporary file and returned. PostgreSQL integration tests cover queued cancellation, a running cancellation held at a cleanup gate, already-aborted cleanup, progress monotonicity/throttling, and the ETA bounds. Mutating the cancellation poll to ignore the durable flag fails the ≤2 s regression. ETA is computed with integer arithmetic and is unknown when inputs are unsafe or the estimate exceeds 30 days.
+
+Full `bun run check`: 22 workspace checks, 54 hygiene checks, all typechecks, lint and formatting; **1,294 passed across 94 files** against PostgreSQL 16.2. Docker runtime/operator testing was not run, per operator direction. The real Geofabrik download handler remains P2-JOB-05; this pass proves the generic cooperative contract with a test handler. **Totals after this pass: 60 passes · 217 defects · 0 open.**
 
 ---
 

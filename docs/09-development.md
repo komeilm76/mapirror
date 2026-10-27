@@ -216,11 +216,14 @@ bun run db:reset                                              # dev only
 - `modules/jobs/worker.ts` owns the queue claim and in-process worker pool. `claimNextJob` claims in one SQL statement
   with `FOR UPDATE SKIP LOCKED`; each configured slot runs an independent loop, pins a PostgreSQL session-level
   advisory lock for its active job, and heartbeats `locked_at` every 15 seconds. Types without a registered handler stay
-  queued. Handlers receive the pinned session in their context and should use it for database operations instead of
-  checking out another pool connection. Handler failures retry with bounded exponential backoff;
-  `modules/jobs/reaper.ts` recovers stale rows only when it can acquire the same advisory lock (4:30 stale threshold +
-  15-second scans). `WORKER_ENABLED` controls whether `server.ts` starts both services, and shutdown drains them before
-  the database pool closes. Job-specific tasks add validated handlers; the generic worker never interprets `payload`.
+  queued. Handlers receive the pinned session, an `AbortSignal`, and a throttled `reportProgress` callback; use the
+  session for DB work rather than checking out another pool connection. Running cancellation is durably polled every
+  250 ms and handlers must check the signal on entry and between chunks/retries, removing temporary `.part` files
+  before returning even when already canceled at entry; the worker marks `canceled` only after cleanup. Progress-byte writes are monotonic and capped at one per second; ETA is
+  derived from bytes and speed. Handler failures retry with bounded exponential backoff; `modules/jobs/reaper.ts`
+  recovers stale rows only when it can acquire the same advisory lock (4:30 stale threshold + 15-second scans).
+  `WORKER_ENABLED` controls whether `server.ts` starts both services, and shutdown drains them before the database pool
+  closes. Job-specific tasks add validated handlers; the generic worker never interprets `payload`.
 - Use `withTransaction(db, work, options)` (`db/transaction.ts`) rather than `db.transaction()` directly: it bounds the
   session (idle-in-transaction timeout, optional statement timeout), can enforce `read only` and `serializable`, and
   retries `40001`/`40P01` once. **`work` may therefore run twice** — anything outside the database (unlinking a file,

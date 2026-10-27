@@ -150,11 +150,15 @@ stateDiagram-v2
 - **Retry policy:** handler failures and recovered worker losses retry up to `max_attempts` total claims, with
   exponential delays of 1 s, 2 s, 4 s, … capped at 5 min. Persisted error text is generic and safe for the admin UI;
   detailed handler errors remain in the application log.
-- **Cancellation:** sets `cancel_requested = true`; the download loop checks it between chunks and
-  between retries, deletes the `.part` file, and marks the job `canceled`.
-- **Progress:** `progress_bytes`, `total_bytes`, `speed_bps`, `eta_seconds`, `phase`
-  (`fetching_index | downloading | verifying | installing`). Polled by the UI (2 s) — no websockets
-  needed for v1.
+- **Cancellation:** a queued job is marked `canceled` immediately. For a running job the API only sets the durable
+  `cancel_requested` bit; its owner polls every 250 ms, aborts the handler's `AbortSignal`, waits for the cooperative
+  handler to stop and remove its `.part`, then writes `canceled`. Handlers must check cancellation on entry and between
+  chunks/retries and finish cleanup before returning, including when cancellation was already set before they began. This targets ≤2 s for a responsive handler; it cannot forcibly interrupt
+  arbitrary non-cooperative code.
+- **Progress:** handlers report `progress_bytes`, optional `total_bytes`, `speed_bps`, and
+  `phase` (`fetching_index | downloading | verifying | installing`). Writes are monotonic and throttled to at most
+  once per second; `eta_seconds` is derived safely from bytes and speed (not persisted). Polled by the UI (2 s) — no
+  websockets needed for v1.
 - **One active download per version.** A partial unique index on
   `((payload->>'countryId'), (payload->>'version'))` where `type='download'` and
   `status IN ('queued','running')` prevents duplicate transfers. `version` is the **requested** value

@@ -12,15 +12,19 @@ import { sql, type Kysely } from 'kysely';
 
 import { MAX_WORKER_CONCURRENCY } from '../../config/limits';
 import type { Database, Job, JobType, JsonValue } from '../../db/schema';
+import { JobOwnershipLostError, monitorJobCancellation } from './cancellation';
 import { releaseJobLock, tryAcquireJobLock } from './lock';
+import { createJobProgressReporter, type JobProgressUpdate } from './progress';
 import { jobRetryDelayMs } from './retry';
 
 /** Optional cancellation signal for handlers that can stop promptly after ownership/heartbeat is lost. */
 export interface JobHandlerContext {
   /** The worker's pinned session; reuse it for database work instead of checking out another pool connection. */
   readonly database: Kysely<Database>;
-  /** Aborted when the ownership heartbeat fails; cooperative handlers should stop external side effects promptly. */
+  /** Aborted when cancellation is requested or worker ownership is lost. */
   readonly signal: AbortSignal;
+  /** Reports monotonic byte progress, phase and total-size metadata (writes are throttled). */
+  readonly reportProgress: (update: JobProgressUpdate) => Promise<void>;
 }
 
 /** A handler receives a claimed row and may return JSON to store as its result. */
@@ -44,6 +48,8 @@ export interface JobWorkerOptions {
   readonly pollIntervalMs?: number;
   /** Heartbeat cadence. Defaults to 15 seconds. */
   readonly heartbeatIntervalMs?: number;
+  /** Cancellation flag poll cadence. Defaults to 250 ms. */
+  readonly cancellationPollIntervalMs?: number;
   /** Initial delay before a retry. Defaults to one second. */
   readonly retryBaseDelayMs?: number;
   /** Maximum retry delay. Defaults to five minutes. */
@@ -61,6 +67,7 @@ export interface JobWorker {
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
+const DEFAULT_CANCELLATION_POLL_INTERVAL_MS = 250;
 const FAILED_ERROR_CODE = 'JOB_HANDLER_FAILED';
 const FAILED_ERROR_MESSAGE = 'The job handler failed.';
 
@@ -136,10 +143,13 @@ export function startJobWorker(
 
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+  const cancellationPollIntervalMs =
+    options.cancellationPollIntervalMs ?? DEFAULT_CANCELLATION_POLL_INTERVAL_MS;
   const retryBaseDelayMs = options.retryBaseDelayMs;
   const retryMaxDelayMs = options.retryMaxDelayMs;
   validateInterval(pollIntervalMs, 'worker poll interval');
   validateInterval(heartbeatIntervalMs, 'worker heartbeat interval');
+  validateInterval(cancellationPollIntervalMs, 'job cancellation poll interval');
   if (retryBaseDelayMs !== undefined || retryMaxDelayMs !== undefined) {
     // Validate the full override pair before starting any asynchronous loop.
     jobRetryDelayMs(1, retryBaseDelayMs, retryMaxDelayMs);
@@ -159,6 +169,7 @@ export function startJobWorker(
             workerId: `${makeWorkerId()}-${index + 1}`,
             pollIntervalMs,
             heartbeatIntervalMs,
+            cancellationPollIntervalMs,
             retryBaseDelayMs,
             retryMaxDelayMs,
             log: options.log,
@@ -180,6 +191,7 @@ interface WorkerSlotOptions {
   readonly workerId: string;
   readonly pollIntervalMs: number;
   readonly heartbeatIntervalMs: number;
+  readonly cancellationPollIntervalMs: number;
   readonly retryBaseDelayMs?: number;
   readonly retryMaxDelayMs?: number;
   readonly log: WorkerLog;
@@ -211,7 +223,7 @@ async function runWorkerSlot(
   }
 }
 
-/** Processes a claimed row while retaining the session lock, heartbeating and applying bounded retry policy. */
+/** Processes one claimed row while retaining its lock, heartbeating, reporting progress and honoring cancellation. */
 async function processClaimedJob(
   session: Kysely<Database>,
   job: Job,
@@ -230,62 +242,65 @@ async function processClaimedJob(
   const heartbeat = startHeartbeat(session, job, options, ownership, (error) => {
     heartbeatError = error;
   });
+  const cancellation = monitorJobCancellation(session, job, options.workerId, ownership, {
+    intervalMs: options.cancellationPollIntervalMs,
+    log: options.log,
+  });
+  const progress = createJobProgressReporter(session, job, options.workerId);
 
   try {
-    let result: JsonValue | void;
+    let result: JsonValue | void = undefined;
+    let handlerFailed = false;
+    let handlerError: unknown;
     try {
       if (handler === undefined) throw new Error('claimed job has no registered handler');
-      result = await handler(job, { database: session, signal: ownership.signal });
+      result = await handler(job, {
+        database: session,
+        signal: ownership.signal,
+        reportProgress: progress.report,
+      });
     } catch (error) {
-      await heartbeat.stop();
-      if (heartbeatError !== undefined) {
-        options.log.warn(
-          { err: heartbeatError, jobId: job.id, type: job.type },
-          'job ownership heartbeat failed; leaving job for reaper recovery',
-        );
-        return;
-      }
-
-      options.log.error({ err: error, jobId: job.id, type: job.type }, 'job handler failed');
-      try {
-        await markFailed(
-          session,
-          job,
-          options.workerId,
-          options.retryBaseDelayMs,
-          options.retryMaxDelayMs,
-        );
-      } catch (persistError) {
-        options.log.error(
-          { err: persistError, jobId: job.id, type: job.type },
-          'could not persist job retry or failure',
-        );
-      }
-      return;
+      handlerFailed = true;
+      handlerError = error;
     }
 
-    await heartbeat.stop();
-    if (heartbeatError !== undefined) {
+    await Promise.all([heartbeat.stop(), cancellation.stop()]);
+    await progress.flush();
+
+    if (cancellation.requested()) {
+      await markCanceled(session, job, options.workerId);
+      return;
+    }
+    if (heartbeatError !== undefined || cancellation.ownershipLost()) {
       options.log.warn(
         { err: heartbeatError, jobId: job.id, type: job.type },
-        'job ownership heartbeat failed; leaving job for reaper recovery',
+        'job ownership was lost; leaving job for reaper recovery',
       );
       return;
     }
 
-    try {
-      await markSucceeded(session, job, options.workerId, result ?? null);
-    } catch (error) {
-      // A completed handler is not misreported as a handler failure when only the terminal DB write failed. Releasing
-      // the session lock lets the reaper retry the row instead of stranding it behind a live pooled connection.
-      options.log.error(
-        { err: error, jobId: job.id, type: job.type },
-        'could not persist job success; leaving job for reaper recovery',
+    if (handlerFailed) {
+      options.log.error({ err: handlerError, jobId: job.id, type: job.type }, 'job handler failed');
+      const persisted = await markFailed(
+        session,
+        job,
+        options.workerId,
+        options.retryBaseDelayMs,
+        options.retryMaxDelayMs,
       );
+      if (!persisted)
+        await finishConcurrentCancellation(session, job, options.workerId, options.log);
+      return;
     }
+
+    const persisted = await markSucceeded(session, job, options.workerId, result ?? null);
+    if (!persisted) await finishConcurrentCancellation(session, job, options.workerId, options.log);
   } finally {
-    await heartbeat.stop();
-    await releaseJobLock(session, job.id);
+    try {
+      await Promise.all([heartbeat.stop(), cancellation.stop(), progress.stop()]);
+    } finally {
+      await releaseJobLock(session, job.id);
+    }
   }
 }
 
@@ -309,7 +324,7 @@ function startHeartbeat(
           if (!owned) throw new Error('job row is no longer owned by this worker');
         } catch (error) {
           onFailure(error);
-          ownership.abort();
+          if (!ownership.signal.aborted) ownership.abort(new JobOwnershipLostError(job.id));
           options.log.warn({ err: error, jobId: job.id }, 'job heartbeat failed');
         }
       })().finally(() => {
@@ -347,14 +362,14 @@ async function refreshHeartbeat(
   return row !== undefined;
 }
 
-/** Marks success only while this worker still owns the running row. */
+/** Marks success only while this worker owns the row and no cancellation request won the race. */
 async function markSucceeded(
   session: Kysely<Database>,
   job: Job,
   workerId: string,
   result: JsonValue | null,
-): Promise<void> {
-  await session
+): Promise<boolean> {
+  const row = await session
     .updateTable('jobs')
     .set({
       status: 'succeeded',
@@ -368,7 +383,10 @@ async function markSucceeded(
     .where('id', '=', job.id)
     .where('status', '=', 'running')
     .where('locked_by', '=', workerId)
-    .execute();
+    .where('cancel_requested', '=', false)
+    .returning('id')
+    .executeTakeFirst();
+  return row !== undefined;
 }
 
 /** Retries a failed attempt after bounded exponential backoff, or marks it terminal after max_attempts. */
@@ -378,10 +396,10 @@ async function markFailed(
   workerId: string,
   retryBaseDelayMs?: number,
   retryMaxDelayMs?: number,
-): Promise<void> {
+): Promise<boolean> {
   const retry = job.attempts < job.max_attempts;
   const delayMs = retry ? jobRetryDelayMs(job.attempts, retryBaseDelayMs, retryMaxDelayMs) : 0;
-  await session
+  const row = await session
     .updateTable('jobs')
     .set({
       status: retry ? 'queued' : 'failed',
@@ -395,7 +413,52 @@ async function markFailed(
     .where('id', '=', job.id)
     .where('status', '=', 'running')
     .where('locked_by', '=', workerId)
+    .where('cancel_requested', '=', false)
+    .returning('id')
+    .executeTakeFirst();
+  return row !== undefined;
+}
+
+/** Marks the active job canceled only after its handler has observed cancellation and returned from cleanup. */
+async function markCanceled(session: Kysely<Database>, job: Job, workerId: string): Promise<void> {
+  await session
+    .updateTable('jobs')
+    .set({
+      status: 'canceled',
+      result: null,
+      error_code: null,
+      error_message: null,
+      cancel_requested: true,
+      finished_at: sql`now()`,
+      locked_by: null,
+      locked_at: null,
+    })
+    .where('id', '=', job.id)
+    .where('status', '=', 'running')
+    .where('locked_by', '=', workerId)
     .execute();
+}
+
+/** Closes a cancellation request that committed while a worker was persisting success/failure. */
+async function finishConcurrentCancellation(
+  session: Kysely<Database>,
+  job: Job,
+  workerId: string,
+  log: WorkerLog,
+): Promise<void> {
+  const current = await session
+    .selectFrom('jobs')
+    .select(['status', 'cancel_requested', 'locked_by'])
+    .where('id', '=', job.id)
+    .executeTakeFirst();
+  if (current?.status === 'running' && current.cancel_requested && current.locked_by === workerId) {
+    await markCanceled(session, job, workerId);
+    return;
+  }
+  log.warn(
+    { jobId: job.id, status: current?.status },
+    'job terminal update lost its ownership condition',
+  );
 }
 
 /** Returns an unstarted claim to the queue without consuming an attempt. */
