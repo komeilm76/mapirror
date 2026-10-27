@@ -3,9 +3,22 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 56 passes · 207 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1).
+**Totals:** 57 passes · 209 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 57 — 2026-10-27 (job claiming and shutdown needed concurrency safeguards)
+
+The P2-JOB-01 review challenged two independent PostgreSQL-backed workers, a higher-priority candidate locked by another transaction, and the order in which active workers drain relative to pool closure.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **A claim query without `SKIP LOCKED` can hand the same row to two workers.** Mutation-checking removed the clause against real PostgreSQL: the overlapping workers re-ran some handlers and incremented those jobs' attempts twice. It also blocked a worker behind a locked highest-priority row instead of moving to the next eligible job | Claim each candidate with `FOR UPDATE SKIP LOCKED` inside the same `UPDATE … RETURNING` statement. Real-Postgres regressions prove a locked row is skipped and two independent workers process 24 queued jobs exactly once; removing the clause makes the suite fail |
+| 2 | **The graceful shutdown path had no worker-drain stage before closing the API and its database pool.** The reversed-order mutation closed the app first, then ran the worker-stop callback; the new shutdown regression fails on that order | `createShutdown` now awaits `beforeClose` before `app.close()`, and the server uses it to stop claiming and drain active handlers before the database closes. The shutdown-order regression fails when the two calls are reversed |
+
+The queue suite passes four PostgreSQL tests, including safe failure persistence, and the shutdown suite proves active worker draining precedes closing the pool. Both invariants are mutation-checked. **Totals after this pass: 57 passes · 209 defects · 0 open.**
 
 ---
 

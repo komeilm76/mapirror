@@ -127,12 +127,14 @@ stateDiagram-v2
   WHERE id = (
     SELECT id FROM jobs
     WHERE status='queued' AND run_after <= now()
-    ORDER BY priority DESC, run_after ASC, created_at ASC
-    FOR UPDATE SKIP LOCKED LIMIT 1
+    ORDER BY priority DESC, run_after ASC, created_at ASC, id ASC
+    LIMIT 1 FOR UPDATE SKIP LOCKED
   ) RETURNING *;
   ```
-- **Single worker loop** with `WORKER_CONCURRENCY` (default 2) — downloads are I/O-bound; two parallel
-  transfers keep the UI responsive without saturating the NIC.
+- **In-process worker pool** with `WORKER_CONCURRENCY` (default 2) — each slot atomically claims one row and runs its
+  registered handler without holding a database transaction during work. Only types with registered handlers are
+  eligible; other queued types remain untouched until their task installs a handler. Handler failures are logged and
+  persisted with a client-safe error. Shutdown stops new claims and drains active handlers before closing the pool.
 - **Ownership is a lock, not a timestamp.** Before working a job the worker takes
   `pg_try_advisory_lock(hashtext(job_id))` on its own connection and holds it until the job finishes.
   A timestamp cannot distinguish *crashed* from *slow*: a stalled network read can block a heartbeat

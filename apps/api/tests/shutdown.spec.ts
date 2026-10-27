@@ -51,6 +51,28 @@ describe('createShutdown', () => {
     expect(logs).toContain('info:shutting down');
   });
 
+  it('drains background work before closing the app and its database pool', async () => {
+    const order: string[] = [];
+    const instance: ShutdownTarget = {
+      close: () => {
+        order.push('close');
+        return Promise.resolve();
+      },
+      log: { info: () => undefined, error: () => undefined },
+    };
+
+    await createShutdown(instance, {
+      exit,
+      beforeClose: () => {
+        order.push('worker');
+        return Promise.resolve();
+      },
+    })('SIGTERM');
+
+    expect(order).toEqual(['worker', 'close']);
+    expect(exited).toEqual([0]);
+  });
+
   it('exits 1 when close fails, and says why', async () => {
     await createShutdown(target('reject'), { exit })('SIGTERM');
 

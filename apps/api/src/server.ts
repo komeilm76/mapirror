@@ -21,6 +21,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from './app';
 import { ConfigError, parseEnv, type AppConfig, type EnvSource } from './config/env';
 import { runHousekeeping } from './lib/housekeeping';
+import { startJobWorker, type JobHandlers } from './modules/jobs/worker';
 
 /** Signals that must shut the process down instead of killing it mid-request. */
 const SHUTDOWN_SIGNALS = ['SIGTERM', 'SIGINT'] as const;
@@ -59,12 +60,16 @@ export type ExitFn = (code: number) => void;
  * that did not finish must not look like one that did, so it exits non-zero and says why.
  *
  * @param app - Instance to drain (or a fake, in tests).
- * @param options - Timeout and exit function; defaults suit the real process.
+ * @param options - Optional background-work drain, timeout and exit function; defaults suit the real process.
  * @returns A handler safe to call more than once: a second signal is ignored rather than closing twice.
  */
 export function createShutdown(
   app: ShutdownTarget,
-  options: { timeoutMs?: number; exit?: ExitFn } = {},
+  options: {
+    timeoutMs?: number;
+    exit?: ExitFn;
+    beforeClose?: () => Promise<void>;
+  } = {},
 ): (signal: string) => Promise<void> {
   const timeoutMs = options.timeoutMs ?? SHUTDOWN_TIMEOUT_MS;
   const exit: ExitFn = options.exit ?? ((code) => process.exit(code));
@@ -84,6 +89,7 @@ export function createShutdown(
     forced.unref();
 
     try {
+      await options.beforeClose?.();
       await app.close();
       clearTimeout(forced);
       exit(0);
@@ -113,17 +119,40 @@ export async function start(
 
   const app = await buildApp({ logger: { level: config.logLevel }, config });
 
-  // Registered before `listen` so a signal during startup still drains rather than orphaning a socket.
-  const shutdown = createShutdown(app);
+  // A shutdown drains background work before `app.close()` destroys its database pool.
+  let stopWorker: (() => Promise<void>) | undefined;
+  const shutdown = createShutdown(app, {
+    beforeClose: async () => {
+      await stopWorker?.();
+    },
+  });
   for (const signal of SHUTDOWN_SIGNALS) {
     process.once(signal, () => {
       void shutdown(signal);
     });
   }
 
-  await app.listen({ port: config.port, host: config.host });
+  let worker: ReturnType<typeof startJobWorker> | undefined;
+  if (config.workerEnabled) {
+    // Concrete handlers are registered by the job-specific tasks. Until one exists, its job type is not claimed.
+    const handlers: JobHandlers = {};
+    const startedWorker = startJobWorker(app.db.db, handlers, {
+      concurrency: config.workerConcurrency,
+      log: app.log,
+    });
+    worker = startedWorker;
+    stopWorker = () => startedWorker.stop();
+  }
 
-  // Housekeeping after the socket is open, never before (`03-data-model.md` §2.2: rows expired more than 30 days ago
+  try {
+    await app.listen({ port: config.port, host: config.host });
+  } catch (error) {
+    await worker?.stop();
+    await app.close().catch(() => undefined);
+    throw error;
+  }
+
+  // Housekeeping after the socket is open, never before (`03-data-model.md` §2.2: rows expired more than 30 days
   // are deleted). Not awaited, and bounded inside `runHousekeeping` — measured: with a row lock held on an expired
   // token, running this *before* `listen` left the process booted, holding its port, and answering nothing until the
   // lock went away. Housekeeping is optional work, so nothing a client asks for may wait for it.
