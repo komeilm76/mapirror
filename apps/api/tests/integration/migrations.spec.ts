@@ -202,8 +202,8 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
       await migrateToLatest(database.db);
       const db = database.db;
       const country = await sql<{ id: string }>`
-        insert into countries (source_id, slug, name)
-        values ('europe/finland', 'finland', 'Finland')
+        insert into countries (id, source_id, slug, name)
+        values ('abcdefab-cdef-4abc-8def-abcdefabcdef'::uuid, 'europe/finland', 'finland', 'Finland')
         returning id
       `.execute(db);
       const countryId = country.rows[0]!.id;
@@ -288,6 +288,13 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
       await expect(
         sql`insert into jobs (type, payload)
             values ('download', ${JSON.stringify(activePayload)}::jsonb)`.execute(db),
+      ).rejects.toMatchObject({ code: '23505', constraint: 'jobs_one_active_download' });
+      await expect(
+        sql`insert into jobs (type, payload)
+            values ('download', ${JSON.stringify({
+              ...activePayload,
+              countryId: countryId.toUpperCase(),
+            })}::jsonb)`.execute(db),
       ).rejects.toMatchObject({ code: '23505', constraint: 'jobs_one_active_download' });
       await sql`update jobs set status = 'failed' where type = 'download'`.execute(db);
       await sql`insert into jobs (type, payload)

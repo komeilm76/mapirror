@@ -113,5 +113,5 @@ CREATE TABLE jobs (
 CREATE INDEX jobs_claim_idx ON jobs (priority DESC, run_after) WHERE status = 'queued';
 CREATE INDEX jobs_running_idx ON jobs (locked_at) WHERE status = 'running';
 CREATE INDEX jobs_recent_idx ON jobs (created_at DESC);
-CREATE UNIQUE INDEX jobs_one_active_download ON jobs ((payload->>'countryId'), (payload->>'version'))
+CREATE UNIQUE INDEX jobs_one_active_download ON jobs (((payload->>'countryId')::uuid), (payload->>'version'))
   WHERE type = 'download' AND status IN ('queued','running');

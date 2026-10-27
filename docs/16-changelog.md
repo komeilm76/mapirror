@@ -3,9 +3,21 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 53 passes · 203 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4).
+**Totals:** 54 passes · 204 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 54 — 2026-10-27 (UUID casing bypassed the active-download uniqueness guard)
+
+A focused P2 database review challenged the JSONB-backed uniqueness index with two valid string representations of the same UUID. Zod accepts both lowercase and uppercase UUID text.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The active-download unique index treated uppercase and lowercase spellings of one UUID as different countries.** Against the pre-fix PostgreSQL migration, inserting `abcdefab-cdef-4abc-8def-abcdefabcdef` and `ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF` for the same version created two queued jobs. The regression failed on the uncast index | The index now casts `payload->>'countryId'` to PostgreSQL `uuid` before uniqueness comparison, so canonical UUID equality closes the case-variant bypass. The normative DDL was updated in `03-data-model.md` |
+
+The real-Postgres migration suite and offline migration-parity suite pass (26 targeted tests). The full `bun run check` passes: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint, Prettier, and 1,258 tests across 87 files. Docker runtime/operator tests remain excluded as requested. **Totals after this pass: 54 passes · 204 defects · 0 open.**
 
 ---
 
