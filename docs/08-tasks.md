@@ -17,7 +17,7 @@ Legend: `Req` maps back to `PROMPT.md` §6–§16 requirement IDs. `Dep` = must 
 | P0-02 | Overview + architecture docs | — | P0-01 | ✅ | `01`, `02` written and cross-linked |
 | P0-03 | Data model + ERD + DDL draft | ENG-2 | P0-02 | ✅ | `03` covers every table and invariant |
 | P0-04 | API contract for all three namespaces | AUTH, CACHE, PUB, INT, UPD | P0-03 | ✅ | `04` lists every endpoint with errors |
-| P0-05 | Flows + diagrams | — | P0-03 | ✅ | `05`, `06` cover F1–F12 and 11 diagrams |
+| P0-05 | Flows + diagrams | — | P0-03 | ✅ | `05`, `06` cover F1–F13 and 11 diagrams |
 | P0-06 | Roadmap + tasks | — | P0-02 | ✅ | `07`, `08` complete |
 | P0-07 | Dev guide, laws, project tree | ENG-1…8 | P0-02 | ✅ | `09`, `10`, `11` complete |
 | P0-08 | Deployment, UI/UX, security, ADRs | DOCK, UX, SEC | P0-04 | ✅ | `12`–`15` complete |
@@ -115,7 +115,7 @@ prove L1–L3.
 | P2-SRC-03 | Region page parser (dated snapshots, sizes, "data up to") | GEO-4, UPD-1 | P2-SRC-02 | ✅ | Offline fixtures: 3 regions, incl. region with no sub-regions; dated snapshots and nullable metadata tested |
 | P2-SRC-04 | `HEAD` metadata (size, etag, last-modified) + `.md5` fetch | CACHE-1 | P2-SRC-02 | ✅ | Offline HTTP tests; deadlines/retries capped; sidecar validated and ≤4 KiB |
 | P2-SRC-05 | Slug derivation + collision resolution | ENG-6, L6 | P2-SRC-02 | ✅ | `europe/finland`→`finland`; parent prefixes, deterministic fallback, and persisted slug stability tested |
-| P2-SRC-06 | Catalog sync job (upsert countries, TTL, audit) | GEO-1 | P2-SRC-02, P2-SRC-05, P2-JOB-01 | ⬜ | Re-sync is idempotent; removals don't delete cache |
+| P2-SRC-06 | Catalog sync job (upsert countries, TTL, audit) | GEO-1 | P2-SRC-02, P2-SRC-05, P2-JOB-01 | ✅ | `modules/jobs/catalog-sync-handler.ts` validates/fetches the full index before writes, then serializes overlapping syncs and atomically upserts current rows + `catalog.sync` audit; prior slugs persist, collision assignments are recorded, and omitted source countries/cache/versions are never deleted. `isCatalogSyncDue` uses a system-owned `source.catalogSyncedAt` marker committed with data/audit (including empty indexes; survives job pruning); rolled-back attempts do not refresh it, and explicit jobs still run when fresh. Index request deadline 10 s (30 s cap), worker signal reaches fetch/body; cancellation before commit rolls back. PostgreSQL tests cover repeated/updating sync, slug stability/collision audit, retained cache/version, concurrent sync, audit rollback, empty index and TTL boundaries; offline tests pin bounded cancellation |
 
 ### DB & jobs
 
@@ -140,7 +140,7 @@ prove L1–L3.
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
 | P2-API-01 | `GET /_admin/api/catalog` (search/filters/pagination) | GEO-1/2 | P2-DB-02 | ⬜ | <300 ms at 400 rows; ISO + name search |
-| P2-API-02 | `POST /_admin/api/catalog/sync` | GEO-1 | P2-SRC-06 | ⬜ | Idempotent job creation |
+| P2-API-02 | `POST /_admin/api/catalog/sync` | GEO-1 | P2-SRC-06 | ⬜ | Idempotent queued/running job creation, register the catalog handler with the configured index source, and add `bun run sync:catalog` as the same queue-backed manual trigger |
 | P2-API-03 | `GET /catalog/regions/:slug` + `/snapshots` | GEO-4 | P2-SRC-03 | ⬜ | Unreachable source → `sourceReachable:false` |
 | P2-API-04 | `POST /_admin/api/cache/downloads` (latest or explicit) | GEO-3/4 | P2-JOB-04, P2-JOB-05, P2-JOB-07 | ⬜ | 202 + jobId; 409 duplicates; 410 gone; disk preflight before enqueue |
 | P2-API-05 | `GET /_admin/api/cache` + `/:countryId` | CACHE-2 | P2-DB-02 | ⬜ | Includes active jobs + update state |

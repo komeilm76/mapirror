@@ -32,8 +32,15 @@ function normalizedPart(value: string): string {
   return ascii;
 }
 
-/** Uses the source-id leaf when a display name contains no ASCII letters or digits. */
-function nameSlug(region: SourceRegion): string {
+/**
+ * The normalized name-derived slug before collision resolution.
+ *
+ * Exposed so the catalog audit can record which persisted assignments differ from their current name-derived form.
+ *
+ * @param region - Parsed source region.
+ * @returns The path-safe base slug.
+ */
+export function baseGeofabrikSlug(region: SourceRegion): string {
   const fromName = normalizedPart(region.name);
   const sourceLeaf = region.id.split('/').at(-1) ?? region.id;
   return fitSlug(fromName || normalizedPart(sourceLeaf) || normalizedPart(region.id) || 'region');
@@ -140,7 +147,7 @@ export function deriveGeofabrikSlugs(
   }
 
   const byId = new Map(regions.map((region) => [region.id, region]));
-  const baseSlug = new Map(regions.map((region) => [region.id, nameSlug(region)]));
+  const baseSlug = new Map(regions.map((region) => [region.id, baseGeofabrikSlug(region)]));
   const baseGroups = groupBySlug(regions, (region) => baseSlug.get(region.id) ?? 'region');
   const parentPrefixed = new Map<string, string>();
 

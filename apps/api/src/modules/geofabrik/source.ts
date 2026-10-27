@@ -81,9 +81,10 @@ export interface MapSource {
   /**
    * Lists the regions in the upstream catalog index.
    *
+   * @param signal - Optional cancellation signal for the bounded upstream request.
    * @returns The parsed catalog records; performs no database or filesystem writes.
    */
-  listRegions(): Promise<SourceRegion[]>;
+  listRegions(signal?: AbortSignal): Promise<SourceRegion[]>;
 
   /**
    * Reads the current detail page and source identity for one region.

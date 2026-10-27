@@ -115,8 +115,12 @@ CREATE INDEX countries_iso_idx ON countries USING gin (iso_alpha2);
   region name (`europe/finland` → `finland`). Collisions (e.g. two `georgia`s across continents) are resolved by
   prefixing the parent slug (`asia/georgia` → `asia-georgia`); remaining collisions add a normalized source-id suffix,
   then a stable numeric suffix if needed. Catalog sync preserves already-assigned source-id/slug pairs when a new
-  collision appears, so URLs and cache paths do not change; new slugs resolve around all reserved assignments. Sync
-  records collision resolution in the audit log.
+  collision appears, so URLs and cache paths do not change; new slugs resolve around all reserved assignments. A
+  `catalog.sync` audit row records the source, region count, and source-id/slug pairs whose assignments differ from the
+  current name-derived base. Sync is upsert-only: a source omission does not delete the country, its cache row, or its
+  versions. Freshness is measured from the system-owned `settings.source.catalogSyncedAt` marker, committed with the
+  catalog transaction, not from a country-row maximum or prunable job history; an empty but valid source catalog can
+  still be fresh.
 - Trigram index powers type-ahead search; ISO arrays power the flag/code display and filtering.
 
 ### 2.4 `country_cache` (1:1 cache + publication state)
@@ -421,7 +425,9 @@ CREATE INDEX audit_logs_action_idx ON audit_logs (action, created_at DESC);
 
 `settings` keys (initial): `branding.displayName`, `cache.keepVersions`, `cache.diskReserveBytes`,
 `public.downloadsPerMinute`, `source.catalogTtlMinutes`, `source.baseUrl`, `privacy.ipHashSalt`
-(generated on first boot; used only for hashed download IPs — never exposed by any endpoint).
+(generated on first boot; used only for hashed download IPs — never exposed by any endpoint). The system-owned
+`source.catalogSyncedAt` key is written transactionally with catalog rows/audit, is not editable, and keeps freshness
+available after job-history pruning.
 
 ## 3. Invariants (enforced in DB where possible, otherwise in service + tests)
 

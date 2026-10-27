@@ -81,34 +81,90 @@ export function parseGeofabrikIndex(input: unknown): SourceRegion[] {
   }));
 }
 
+/** Optional transport controls for one index request. */
+export interface GeofabrikIndexOptions {
+  /** Fetch implementation; injectable for offline tests. */
+  readonly fetchImpl?: (input: URL, init?: RequestInit) => Promise<Response>;
+  /** Optional caller cancellation; aborts the active request and body read promptly. */
+  readonly signal?: AbortSignal;
+  /** Deadline in milliseconds; defaults to 10 seconds and is capped at 30 seconds. */
+  readonly timeoutMs?: number;
+}
+
+/** Internal marker used to provide a safe timeout diagnostic. */
+class IndexTimeoutError extends Error {}
+
 /**
- * Loads and parses the configured Geofabrik index.
- *
- * This method fetches the JSON only; caching, catalog writes and retries belong to their job/source tasks. It does not
- * include the full URL in HTTP-status errors, keeping custom mirror credentials or query data out of logs.
+ * Loads and parses the configured Geofabrik index under a bounded deadline.
  *
  * @param baseUrl - Configured source base URL, such as `https://download.geofabrik.de`.
- * @param fetchImpl - Fetch implementation; injectable for offline tests.
+ * @param options - Optional fetch seam, cancellation signal and bounded deadline.
  * @returns The validated source regions.
- * @throws When the request fails, returns a non-2xx status, or the response JSON does not satisfy the index schema.
+ * @throws When the request fails, times out, returns a non-2xx status, is canceled, or the response JSON is invalid.
  */
 export async function fetchGeofabrikRegions(
   baseUrl: string,
-  fetchImpl: (input: URL, init?: RequestInit) => Promise<Response> = globalThis.fetch,
+  options: GeofabrikIndexOptions = {},
 ): Promise<SourceRegion[]> {
+  const timeoutMs = options.timeoutMs ?? 10_000;
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) {
+    throw new RangeError('Geofabrik index timeoutMs must be an integer from 1 to 30000');
+  }
   const endpoint = new URL(baseUrl);
   const basePath = endpoint.pathname.replace(/\/+$/u, '');
   endpoint.pathname = `${basePath}/${GEOFABRIK_INDEX_FILENAME}`;
   endpoint.search = '';
   endpoint.hash = '';
 
-  const response = await fetchImpl(endpoint, {
-    headers: { accept: 'application/json' },
+  const controller = new AbortController();
+  let rejectCaller: ((reason: unknown) => void) | undefined;
+  const callerAbort = new Promise<never>((_resolve, reject) => {
+    rejectCaller = reject;
   });
-  if (!response.ok) {
-    throw new Error(`Geofabrik index request failed with HTTP ${String(response.status)}`);
-  }
+  const abortFromCaller = (): void => {
+    controller.abort(options.signal?.reason);
+    rejectCaller?.(options.signal?.reason ?? new Error('Geofabrik index request was canceled'));
+  };
+  if (options.signal?.aborted === true) abortFromCaller();
+  else options.signal?.addEventListener('abort', abortFromCaller, { once: true });
 
-  const payload: unknown = await response.json();
-  return parseGeofabrikIndex(payload);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new IndexTimeoutError());
+      controller.abort();
+    }, timeoutMs);
+  });
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  const request = Promise.resolve().then(async () => {
+    const response = await fetchImpl(endpoint, {
+      headers: { accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error(`Geofabrik index request failed with HTTP ${String(response.status)}`);
+    }
+    const payload: unknown = await response.json();
+    return parseGeofabrikIndex(payload);
+  });
+
+  try {
+    const result = await Promise.race(
+      options.signal === undefined ? [request, timeout] : [request, timeout, callerAbort],
+    );
+    if (options.signal?.aborted === true) {
+      throw options.signal.reason ?? new Error('Geofabrik index request was canceled');
+    }
+    return result;
+  } catch (error) {
+    if (options.signal?.aborted === true) throw options.signal.reason ?? error;
+    if (error instanceof IndexTimeoutError) {
+      throw new Error('Geofabrik index request timed out');
+    }
+    throw error;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    options.signal?.removeEventListener('abort', abortFromCaller);
+  }
 }

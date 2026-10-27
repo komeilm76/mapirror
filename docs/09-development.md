@@ -115,7 +115,7 @@ Scripts marked ✅ exist today; ⬜ are created by the task named in `08-tasks.m
 | `bun run admin:init` | Create the admin account: `ADMIN_PASSWORD`, `ADMIN_PASSWORD_FILE`, or a hidden prompt; `--username`; idempotent, never overwrites | ✅ P1-AUTH-06 |
 | `bun run admin:reset` | Reset an admin password and end its sessions: hidden prompt, `--generate` (printed once), or `--password-stdin` for automation | ✅ P1-AUTH-07 |
 | `bun run seed:dev` | Dev fixtures (needs the phase-2 catalog tables, so it lands with them) | ⬜ P2-DB-01 |
-| `bun run sync:catalog` | Manual Geofabrik catalog sync | ⬜ P2-SRC-06 |
+| `bun run sync:catalog` | Enqueue and run a manual Geofabrik catalog sync | ⬜ P2-API-02 |
 
 ## 5. Environment variables
 
@@ -157,7 +157,7 @@ sibling are mutually exclusive, and the hygiene check counts commented declarati
 | `DISK_RESERVE_BYTES` | `2147483648` (2 GiB) | — | Preflight reserve |
 | `PUBLIC_DOWNLOADS_PER_MINUTE` | `10` | — | Per-IP limit |
 | `GEOFABRIK_BASE_URL` | `https://download.geofabrik.de` | — | Source base (test override) |
-| `CATALOG_TTL_MINUTES` | `360` | — | Catalog cache freshness |
+| `CATALOG_TTL_MINUTES` | `360` | — | Fallback freshness window since the `source.catalogSyncedAt` transaction marker |
 | `METRICS_INTERVAL_SECONDS` | `10` | — | Sampler period |
 | `METRICS_RETENTION_DAYS` | `7` | — | Sample retention |
 | `JOB_RETENTION_DAYS` | `30` | — | Finished job retention |

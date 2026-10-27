@@ -45,7 +45,7 @@ operator ever wants a dedicated container.
 | `geofabrik` (MapSource) | Catalog fetch, region page parse, local slug derivation, version discovery, bounded HEAD/metadata + `.md5` | Write to DB or disk (returns facts only) |
 | `storage` | Validated cache paths, `.partial` lifecycle, no-follow file access, atomic installation, safe leaf/link unlink, readiness-probe writes | Accept arbitrary relative paths, traverse symlinks, or recursively delete directories |
 | `lib/download` | Generic PBF byte streaming, Range/If-Range, and streaming MD5/length verification through a storage-owned file handle | Decide source identity, build cache paths, or mutate job/version rows |
-| `jobs` | Queue, worker loop, job handlers, progress, cancellation; orchestrates source resolution + storage + the shared streaming utility | Parse source pages or implement low-level byte-stream protocol (delegated to `geofabrik` / `lib/download`) |
+| `jobs` | Queue, worker loop, job handlers, progress, cancellation; catalog sync upserts/audit and download orchestration | Parse source pages or implement low-level byte-stream protocol (delegated to `geofabrik` / `lib/download`) |
 | `system` | CPU/RAM/disk sampling, disk preflight | Decide when to prune |
 | `db` | SQL, repositories, transactions | Contain business rules that belong in modules |
 
@@ -277,7 +277,7 @@ class implementing the interface + one line where it is constructed.
 | Checksum mismatch | `.part` is deleted and the version remains `failed` (never served); the worker persists the safe generic `JOB_HANDLER_FAILED` retry/terminal contract, not upstream checksum values |
 | Disk full | Preflight blocks new jobs; a running `ENOSPC`/`EDQUOT` fails safely with `.partial/<job>.part` removed; the operator-facing disk signal remains `DISK_LOW` |
 | DB down | API returns `503` with `DB_UNAVAILABLE`; worker pauses; Nginx keeps serving nothing else |
-| Process crash mid-download | Reaper requeues once the job's advisory lock is free; resume continues from `.partial/<job>.part` (details: `05-flows.md` F12) |
+| Process crash mid-download | Reaper requeues once the job's advisory lock is free; resume continues from `.partial/<job>.part` (details: `05-flows.md` F13) |
 | File missing for a `ready` version | Download returns `410 VERSION_FILE_MISSING` + audit entry; admin row shows "file missing" |
 | Public toggle off mid-download | New requests get `404`; in-flight transfers finish (no broken pipes) |
 

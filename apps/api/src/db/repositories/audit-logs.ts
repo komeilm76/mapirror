@@ -35,6 +35,7 @@ export const AUDIT_ACTIONS = {
   logout: 'auth.logout',
   adminCreated: 'auth.admin_created',
   passwordReset: 'auth.password_reset',
+  catalogSync: 'catalog.sync',
 } as const;
 
 /** One documented audit action. */

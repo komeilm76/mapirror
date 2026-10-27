@@ -101,7 +101,9 @@ describe('fetchGeofabrikRegions', () => {
       );
     };
 
-    const regions = await fetchGeofabrikRegions('https://mirror.example.org/geofabrik/', fetchImpl);
+    const regions = await fetchGeofabrikRegions('https://mirror.example.org/geofabrik/', {
+      fetchImpl,
+    });
 
     expect(calls).toEqual([
       {
@@ -118,7 +120,7 @@ describe('fetchGeofabrikRegions', () => {
 
     let error: unknown;
     try {
-      await fetchGeofabrikRegions('https://user:secret@mirror.example.org', fetchImpl);
+      await fetchGeofabrikRegions('https://user:secret@mirror.example.org', { fetchImpl });
     } catch (caught) {
       error = caught;
     }
@@ -127,4 +129,77 @@ describe('fetchGeofabrikRegions', () => {
     expect((error as Error).message).toBe('Geofabrik index request failed with HTTP 503');
     expect((error as Error).message).not.toContain('secret');
   });
+
+  it('passes cancellation to the fetch and promptly rejects when the caller aborts', async () => {
+    const controller = new AbortController();
+    let requestSignal: AbortSignal | undefined;
+    const fetchImpl = (_input: URL, init?: RequestInit): Promise<Response> => {
+      requestSignal = init?.signal as AbortSignal | undefined;
+      return new Promise<Response>(() => undefined);
+    };
+    const pending = fetchGeofabrikRegions('https://mirror.example.org', {
+      fetchImpl,
+      signal: controller.signal,
+      timeoutMs: 5_000,
+    });
+
+    await Promise.resolve();
+    controller.abort(new Error('job canceled'));
+
+    await expect(pending).rejects.toThrow('job canceled');
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
+  it('aborts the response-body read when the caller cancels after headers arrive', async () => {
+    const controller = new AbortController();
+    let bodyReadStarted = false;
+    const response = {
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: null,
+      json: () => {
+        bodyReadStarted = true;
+        return new Promise<unknown>(() => undefined);
+      },
+    } as Response;
+    const fetchImpl = (): Promise<Response> => Promise.resolve(response);
+    const pending = fetchGeofabrikRegions('https://mirror.example.org', {
+      fetchImpl,
+      signal: controller.signal,
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(bodyReadStarted).toBe(true);
+    controller.abort(new Error('body canceled'));
+
+    await expect(pending).rejects.toThrow('body canceled');
+  });
+
+  it('enforces the deadline and aborts a fetch that ignores AbortSignal', async () => {
+    let requestSignal: AbortSignal | undefined;
+    const fetchImpl = (_input: URL, init?: RequestInit): Promise<Response> => {
+      requestSignal = init?.signal as AbortSignal | undefined;
+      return new Promise<Response>(() => undefined);
+    };
+
+    await expect(
+      fetchGeofabrikRegions('https://mirror.example.org', { fetchImpl, timeoutMs: 5 }),
+    ).rejects.toThrow('Geofabrik index request timed out');
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
+  it.each([0, 30_001, 1.5, Number.NaN])(
+    'rejects invalid timeout %s before making a request',
+    async (timeoutMs) => {
+      const fetchImpl = (): Promise<Response> => {
+        throw new Error('must not fetch');
+      };
+
+      await expect(
+        fetchGeofabrikRegions('https://mirror.example.org', { fetchImpl, timeoutMs }),
+      ).rejects.toThrow(RangeError);
+    },
+  );
 });

@@ -210,9 +210,14 @@ contains **no sizes, dates, or dated snapshots**. Those only exist in each regio
    table (`<id>-YYMMDD.osm.pbf` + size + date) and the "contains all OSM data up to" timestamp.
 
 **Consequences.** Search is fast and offline-capable; snapshot lists are inherently point-in-time and
-may age. The parser is isolated with saved HTML fixtures, and a parse failure degrades to
-`sourceReachable: false` / "only latest available" instead of wrong data. HTML changes at Geofabrik are
-an operational risk, mitigated by fixtures + typed parse results + a visible warning.
+may age. Catalog sync is an upsert-only transaction: source omissions do not delete local countries or their cache,
+existing slugs stay stable, and `catalog.sync` (including any non-name-derived slug assignments) commits with the rows.
+Freshness is measured from the system-owned `source.catalogSyncedAt` setting, written with the country rows and audit in
+one transaction; it covers an empty catalog and survives job-history pruning. A rolled-back attempt does not refresh it,
+and an explicit manual job is never skipped because the cache is still fresh. The index request has a
+10-second deadline (30-second hard cap) and honors worker cancellation. The parser is isolated with saved HTML fixtures,
+and a parse failure degrades to `sourceReachable: false` / "only latest available" instead of wrong data. HTML changes
+at Geofabrik are an operational risk, mitigated by fixtures + typed parse results + a visible warning.
 
 ---
 

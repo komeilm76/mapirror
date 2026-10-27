@@ -1,6 +1,6 @@
 # 05 — Flows
 
-**TL;DR** — 12 end-to-end sequences (bootstrap, login, reset, cache, delete, publish, public download, interval, update check, import, metrics, recovery), each with its invariants and the tests that pin them.
+**TL;DR** — 13 end-to-end sequences (bootstrap, login, reset, catalog sync, cache, delete, publish, public download, interval, update check, import, metrics, recovery), each with its invariants and the tests that pin them.
 
 Sequence diagrams for every journey that matters. Each flow lists its **invariants** and the
 **tests** that will pin it down.
@@ -134,7 +134,49 @@ not a 64 MiB Argon2 verify.
 
 ---
 
-## F3 — Reset admin password (AUTH-4)
+## F3 — Catalog sync (GEO-1, P2-SRC-06)
+
+```mermaid
+sequenceDiagram
+  participant T as TTL/manual trigger
+  participant W as Job worker
+  participant G as Geofabrik
+  participant DB as PostgreSQL
+  T->>DB: read system-owned source.catalogSyncedAt marker
+  alt no valid marker or age >= CATALOG_TTL_MINUTES
+    T->>DB: enqueue catalog_sync (manual requests always enqueue)
+  else within TTL
+    T-->>T: keep the cached catalog
+  end
+  W->>G: GET index-v1-nogeom.json (10 s deadline, job AbortSignal)
+  G-->>W: JSON index
+  W->>W: Zod-validate entire index before writes
+  W->>DB: BEGIN; transaction advisory lock; load prior slugs
+  loop every current region, source-id order
+    W->>DB: UPSERT countries facts; preserve assigned slug
+  end
+  Note over W,DB: Do not delete records absent from this index
+  W->>DB: INSERT catalog.sync audit row
+  W->>DB: COMMIT all country rows and audit together
+  W-->>T: succeeded + syncedCount
+```
+
+**Rules:** TTL is measured from `source.catalogSyncedAt`, written in the catalog transaction even for an empty index;
+failed/canceled attempts that roll back do not refresh it, and job-history pruning does not erase it. The exact TTL
+boundary is due; an already queued/running catalog job suppresses a second automatic trigger. A manually requested job always fetches the index,
+even if it is fresh. The source request is bounded and receives the worker's cancellation signal; cancellation during
+writes rolls the transaction back. Every current region is upserted with one shared `catalog_synced_at`; existing slugs
+are never rewritten, and records omitted upstream (including their cache rows and map versions) are retained. The
+`catalog.sync` audit entry commits in the same transaction, so an audit failure cannot leave an unaudited catalog update.
+
+**Tests:** `apps/api/tests/integration/catalog-sync.spec.ts` — repeat sync updates facts without duplicate rows or slug
+changes, removed cached country/version retained, audit action and metadata, audit failure rolls upserts back, TTL
+success/failure/other-job and boundary behavior, and empty-catalog freshness; `apps/api/tests/geofabrik-index.spec.ts` —
+index URL, validation, status safety, request deadline and prompt cancellation.
+
+---
+
+## F4 — Reset admin password (AUTH-4)
 
 ```mermaid
 sequenceDiagram
@@ -168,7 +210,7 @@ rejected with every reason listed, unknown username rejected before the password
 
 ---
 
-## F4 — Cache a country from the catalog (GEO-1…4, CACHE-1)
+## F5 — Cache a country from the catalog (GEO-1…4, CACHE-1)
 
 ```mermaid
 sequenceDiagram
@@ -223,7 +265,7 @@ duplicate detection and conflict translation by P2-JOB-07, and the route-level `
 
 ---
 
-## F5 — Delete a country or a specific version (CACHE-3, CACHE-4)
+## F6 — Delete a country or a specific version (CACHE-3, CACHE-4)
 
 ```mermaid
 sequenceDiagram
@@ -252,7 +294,7 @@ without 500-ing the API, in-flight job blocks deletion.
 
 ---
 
-## F6 — Publish / unpublish a country (PUB-1…4, D-9)
+## F7 — Publish / unpublish a country (PUB-1…4, D-9)
 
 ```mermaid
 sequenceDiagram
@@ -274,7 +316,7 @@ sequenceDiagram
 
 ---
 
-## F7 — Public download (WEB-3, D-9)
+## F8 — Public download (WEB-3, D-9)
 
 ```mermaid
 sequenceDiagram
@@ -300,7 +342,7 @@ file was removed manually, rate limit `429`, `HEAD` returns no body.
 
 ---
 
-## F8 — Auto-download interval (INT-1…5)
+## F9 — Auto-download interval (INT-1…5)
 
 ```mermaid
 sequenceDiagram
@@ -324,7 +366,7 @@ ticks, `only_if_changed` skips unchanged, partial failure reporting, prune keeps
 
 ---
 
-## F9 — Update detection (UPD-1…4, L11)
+## F10 — Update detection (UPD-1…4, L11)
 
 ```mermaid
 sequenceDiagram
@@ -349,7 +391,7 @@ bulk job result aggregation, badge persists after reload.
 
 ---
 
-## F10 — Import a map file (Section 12, D-10)
+## F11 — Import a map file (Section 12, D-10)
 
 ```mermaid
 sequenceDiagram
@@ -376,7 +418,7 @@ oversized `413`, temp cleanup on failure.
 
 ---
 
-## F11 — Dashboard monitoring (MON-1…3)
+## F12 — Dashboard monitoring (MON-1…3)
 
 ```mermaid
 sequenceDiagram
@@ -396,7 +438,7 @@ the API; retention 7 days.
 
 ---
 
-## F12 — Recovery & housekeeping
+## F13 — Recovery & housekeeping
 
 | Trigger | Action |
 |---|---|

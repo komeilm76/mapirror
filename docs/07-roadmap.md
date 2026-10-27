@@ -53,7 +53,7 @@ diagrams, roadmap, tasks, dev guide, laws, tree, deployment, UI/UX, security, AD
 
 | Area | Work |
 |---|---|
-| Source | `MapSource` interface, Geofabrik index sync (`index-v1-nogeom.json`), region-page parser (dated snapshots + "data up to"), fixture-based tests |
+| Source | `MapSource` interface, Geofabrik index sync (`index-v1-nogeom.json`) with TTL, stable slugs and audit, region-page parser (dated snapshots + "data up to"), fixture-based tests |
 | DB | countries, country_cache, map_versions, jobs, `0002_*` migration |
 | Jobs | queue (SKIP LOCKED), worker loop, heartbeat + reaper, cancel, progress, disk preflight, streamed download with Range resume + md5 verification |
 | Admin API | catalog list/detail/snapshots, cache list/detail, download latest/specific, delete version, delete country, admin file download, jobs endpoints |

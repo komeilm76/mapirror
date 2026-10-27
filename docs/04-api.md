@@ -227,7 +227,12 @@ version/public actions instead.
 #### `POST /_admin/api/catalog/sync`
 
 Triggers a `catalog_sync` job. `202 { "jobId": "…" }`. Idempotent: a second call while one is queued
-returns the existing job.
+returns the existing job. The handler always performs an explicitly queued sync; freshness is a separate trigger
+policy based on the transactionally written `source.catalogSyncedAt` marker. `source.catalogTtlMinutes` (initially from
+`CATALOG_TTL_MINUTES`, default 360 minutes) sets the window; a missing/invalid marker or an age at/over the TTL is
+stale. The marker commits with the country upserts and audit, so empty catalogs and job-history pruning are handled. An existing queued/running catalog job suppresses a duplicate
+TTL-triggered enqueue. A successful sync audits `catalog.sync` in the same transaction as country upserts; source removals do not delete local catalog or
+cache rows.
 
 #### `GET /_admin/api/catalog/regions/:slug`
 
@@ -510,7 +515,7 @@ credentials, token settings) come from env or are write-only: they are **never**
 response — the settings serializer projects an explicit allow-list of keys.
 
 #### `GET /_admin/api/audit?action=&page=`
-Paginated audit log (`auth.*`, `cache.*`, `version.*`, `interval.*`, `settings.*`).
+Paginated audit log (`auth.*`, `cache.*`, `catalog.*`, `version.*`, `interval.*`, `settings.*`), including `catalog.sync` after each successful catalog transaction.
 
 ---
 

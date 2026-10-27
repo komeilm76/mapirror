@@ -59,13 +59,14 @@ mapirror/
 │  │  │  │  ├─ public/             # /_public/api: countries, versions, download, stats
 │  │  │  │  ├─ geofabrik/          # MapSource contract, catalog client, region parsing, later source operations
 │  │  │  │  │  ├─ source.ts        # MapSource interface (thin, 4 methods)
-│  │  │  │  │  ├─ index-client.ts  # Zod-validated index-v1-nogeom catalog fetch + mapping
+│  │  │  │  │  ├─ index-client.ts  # Zod-validated, bounded/cancelable index-v1-nogeom fetch + mapping
 │  │  │  │  │  ├─ region-page.ts   # HTML5 parser: dated PBF snapshots, sizes, and “data up to”
 │  │  │  │  │  ├─ file-metadata.ts # Bounded HEAD metadata and .md5 requests
 │  │  │  │  ├─ slug.ts           # Name-based local slugs and deterministic collision resolution
 │  │  │  │  └─ fixtures/          # Saved upstream-shaped samples for offline tests
 │  │  │  │  ├─ jobs/               # Queue, download enqueue guard, worker and cancellation
 │  │  │  │  │  ├─ enqueue-download.ts # Partial unique-index conflict → JOB_ALREADY_RUNNING / 409
+│  │  │  │  │  ├─ catalog-sync-handler.ts # TTL decision, slug-preserving upsert, transactional audit
 │  │  │  │  │  ├─ download-handler.ts # Resumable transfer, verify, atomically install
 │  │  │  │  │  ├─ worker.ts        # FOR UPDATE SKIP LOCKED, loop, concurrency, graceful stop
 │  │  │  │  ├─ cancellation.ts    # Cooperative cancellation + ownership-loss abort

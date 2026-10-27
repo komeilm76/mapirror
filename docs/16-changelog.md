@@ -3,11 +3,27 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 64 passes · 231 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1).
+**Totals:** 65 passes · 236 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
 ---
+
+## Pass 65 — 2026-10-27 (catalog synchronization needed TTL, audit, and cooperative cancellation)
+
+P2-SRC-06 implements the catalog job as an upsert-only transaction: fetch and validate before writes, preserve source-id/slug assignments, retain source removals and their cache, and commit `catalog.sync` with the rows. Freshness uses a system-owned `source.catalogSyncedAt` setting committed with the rows/audit (including empty catalogs); explicit jobs are never skipped just because the catalog is fresh.
+
+| # | Bug found in contract review | Fix |
+|---|---|---|
+| 1 | The TTL decision could request another refresh while a catalog job was already queued or running, duplicating automatic work | `isCatalogSyncDue` suppresses a trigger while an active catalog job exists; a database integration test pins queued/running behavior and the exact TTL boundary |
+| 2 | `MapSource.listRegions` and the index fetch had no cancellation/deadline path, so worker cancellation could wait indefinitely on the upstream request or JSON body | Pass the worker `AbortSignal` through the source contract; the index client has a 10 s deadline (30 s cap), aborts transport/body reads, and returns only sanitized status/timeout errors |
+| 3 | A blocking transaction advisory-lock call could leave a canceled sync waiting behind another worker | Use `pg_try_advisory_xact_lock` with 25 ms abortable polling; the handler rolls back before the worker can mark cancellation terminal |
+| 4 | The model promised collision resolutions in the audit record, but an action/count-only audit could not show which stable slugs differed from current names | Include the deterministic source-id/slug assignments in `catalog.sync` metadata and document that contract |
+| 5 | The first TTL clock design read `jobs.finished_at`, but job retention can prune that history before a long configured TTL expires | Persist `source.catalogSyncedAt` in the same transaction as country rows and audit; malformed/missing marker means due, and TTL remains correct after job cleanup |
+
+Eight targeted mutations were killed by tests: remove active-job suppression; overwrite the repository's assigned slug; omit the index request signal; fail to abort the timed-out request; delete source-omitted countries; omit the audit insert; replace the cancelable lock loop with a blocking advisory lock; or rely on prunable job history instead of the sync marker. A slug-overwrite mutation was rejected by the repository contract test (the sync-level caller correctly supplies the preserved slug, so that narrower probe alone was equivalent).
+
+Full non-Docker `bun run check`: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint and formatting; **1,348 passed across 99 files, 7 skipped**. Docker runtime/operator tests remain excluded per operator direction. The development guide's `bun run sync:catalog` was moved from P2-SRC-06 to P2-API-02: the CLI should share that task's idempotent enqueue/worker wiring rather than bypass the durable job contract. The command remains planned. **Totals after this pass: 65 passes · 236 defects fixed · 0 open.**
 
 ## Pass 64 — 2026-10-27 (active download uniqueness needed a conflict boundary)
 
