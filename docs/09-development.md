@@ -224,6 +224,9 @@ bun run db:reset                                              # dev only
   recovers stale rows only when it can acquire the same advisory lock (4:30 stale threshold + 15-second scans).
   `WORKER_ENABLED` controls whether `server.ts` starts both services, and shutdown drains them before the database pool
   closes. Job-specific tasks add validated handlers; the generic worker never interprets `payload`.
+- `modules/system/disk.ts` measures `statfs` capacity using `bavail` (space available to the API user). Download preflight
+  uses `ceil(content-length × 1.1)` and proceeds only if that padded estimate plus `DISK_RESERVE_BYTES` fits; `DISK_FULL`
+  details include required/free/reserve/shortfall bytes, encoded as decimal strings if they exceed safe JSON integers.
 - Use `withTransaction(db, work, options)` (`db/transaction.ts`) rather than `db.transaction()` directly: it bounds the
   session (idle-in-transaction timeout, optional statement timeout), can enforce `read only` and `serializable`, and
   retries `40001`/`40P01` once. **`work` may therefore run twice** — anything outside the database (unlinking a file,
@@ -534,7 +537,7 @@ The rules that make it a single path, each with a test:
 |---|---|---|
 | API exits at boot with `INVALID_ENV` | Missing/invalid env var | Read the message; check `.env` |
 | `401` on every admin call | Token expired (`AUTH_TOKEN_TTL_HOURS`) | Log in again |
-| `503 DISK_FULL` | Free space < reserve | Free space or lower `DISK_RESERVE_BYTES` |
+| `503 DISK_FULL` | Padded download estimate + reserve exceeds available `bavail` | Free space or lower `DISK_RESERVE_BYTES` |
 | Download stalls at 0 bytes | Source unreachable / proxy blocks egress | `curl -I` the Geofabrik URL from the container |
 | Catalog empty | Never synced | `POST /_admin/api/catalog/sync` or `bun run sync:catalog` |
 | Public page shows nothing | No country published | Publish a cached country |

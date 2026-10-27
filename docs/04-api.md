@@ -265,9 +265,10 @@ Lists what the source offers **right now** (GEO-4):
 `202 { "jobId": "…", "resolvedVersion": "261024" | null }`
 
 Errors: `409 VERSION_ALREADY_CACHED` (that exact version is already `ready`), `409 JOB_ALREADY_RUNNING`,
-`503 DISK_FULL` (`details.requiredBytes`, `details.freeBytes`), `410 SOURCE_VERSION_GONE` (the dated
-snapshot was deleted upstream — offer `latest` instead), `502 SOURCE_UNAVAILABLE` (network failure, safe
-to retry).
+`503 DISK_FULL` (`details.requiredBytes` is the padded download estimate, `freeBytes` is filesystem space
+available to the API process, and `reserveBytes` / `shortfallBytes` explain the configured floor). Values are JSON
+integers when safe, otherwise decimal strings; `410 SOURCE_VERSION_GONE` (the dated snapshot was deleted upstream —
+offer `latest` instead), `502 SOURCE_UNAVAILABLE` (network failure, safe to retry).
 
 ---
 

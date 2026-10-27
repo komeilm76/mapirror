@@ -183,7 +183,7 @@ sequenceDiagram
   A->>API: GET /catalog/regions/finland/snapshots
   API-->>A: versions + sizes (or sourceReachable=false)
   A->>API: POST /cache/downloads {countryId, version}
-  API->>API: validate + disk preflight
+  API->>API: validate + statfs preflight (ceil(size × 1.1) + reserve)
   API->>Q: INSERT job (queued)
   API-->>A: 202 {jobId}
   loop every 2s
@@ -210,10 +210,11 @@ sequenceDiagram
 ```
 
 **Invariants:** no `ready` row before checksum + rename; no duplicate active job; disk preflight
-before enqueue; queued cancellation is immediate; a running cancel leaves no `.part` before its terminal state.
-Cancellation targets ≤2 s for a cooperative handler; arbitrary blocking code is not forcibly interrupted.
+before enqueue; the preflight requires `ceil(content-length × 1.1)` plus the configured reserve; queued cancellation is
+immediate; a running cancel leaves no `.part` before its terminal state. Cancellation targets ≤2 s for a cooperative
+handler; arbitrary blocking code is not forcibly interrupted.
 **Tests:** happy path with a fixture HTTP server, resume after mid-stream abort, checksum mismatch
-fails cleanly, disk-full refuses with `503`, cancellation is observed within 2 s and cleanup precedes `canceled`,
+fails cleanly, disk-full refuses with `503` plus required/free details, cancellation is observed within 2 s and cleanup precedes `canceled`,
 duplicate request → `409`.
 
 ---

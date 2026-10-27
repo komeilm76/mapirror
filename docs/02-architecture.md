@@ -216,8 +216,11 @@ Key guarantees:
   the checksum matches and the rename succeeds.
 - **Resume:** `.part` file kept on transient failures; retries send `Range: bytes=<size>-` and append.
   If the server ignores Range (`200`), the file is truncated and restarted — correct either way.
-- **Disk preflight:** required = `content-length * 1.1`; refuses to start below
-  `DISK_RESERVE_BYTES` (default 2 GiB) and reports the shortfall in the error message.
+- **Disk preflight:** estimates `ceil(content-length * 1.1)` bytes and reads `statfs` available bytes (`bavail`) for
+  `CACHE_DIR`. A download proceeds only when `available >= estimate + DISK_RESERVE_BYTES` (default 2 GiB); an exact fit
+  is allowed. Unknown source length contributes zero known transfer bytes, but the reserve is still enforced and the
+  stream handler must fail safely if actual bytes exceed the estimate. `DISK_FULL` reports required, free, reserve,
+  and shortfall bytes.
 - **Upstream deletion:** if a dated snapshot returns `404`, the job fails with
   `SOURCE_VERSION_GONE` and the UI suggests `latest` — we never silently substitute a different file.
 - **Source metadata requests:** `HEAD` and `.md5` reads have a 10-second default deadline and three total attempts;

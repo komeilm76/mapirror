@@ -3,9 +3,26 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 60 passes · 217 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5).
+**Totals:** 61 passes · 221 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 61 — 2026-10-27 (disk preflight needed capacity, boundary and dependency review)
+
+P2-JOB-04 adds a cache-filesystem preflight using the configured reserve and source length. Review checked which `statfs` counter applies to the API process, the exact-fit boundary, large byte values crossing JSON's safe-integer limit, and whether the consuming download tasks actually depend on the helper.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **Using `bfree` would count root-reserved blocks as usable by the API.** That can approve a download that an unprivileged service cannot fit | Read `bavail` in bigint mode and test different `bavail`/`bfree` values; changing the implementation to `bfree` fails with `69,632` instead of `28,672` available bytes |
+| 2 | **An off-by-one reserve comparison could reject a safe exact fit.** `available === padded download + reserve` is sufficient and must not return `DISK_FULL` | Define the comparison as `shortfall > 0`; the exact-fit PostgreSQL-independent test fails when mutated to `>= 0` |
+| 3 | **Large bigint byte details cannot safely be emitted as JSON numbers.** `Number()` silently rounds required/free byte values above `Number.MAX_SAFE_INTEGER` | Preserve ordinary values as numbers and serialize larger values as decimal strings; a mutation to unconditional `Number()` fails the high-range test |
+| 4 | **The task graph let download creation proceed without depending on disk preflight.** `P2-API-04` and the download handler could be scheduled without `P2-JOB-04` | Add `P2-JOB-04` to the dependencies for both `P2-JOB-05` and `P2-API-04`; architecture, flow, and development docs specify the same inequality |
+
+The preflight requires `ceil(content-length × 1.1) + DISK_RESERVE_BYTES`, reports `requiredBytes`, `freeBytes`, `reserveBytes`, and `shortfallBytes`, and preserves the reserve when content length is unknown. Eight disk-specific unit tests cover the 10% rounding, exact fit, `503 DISK_FULL` envelope, unknown-size reserve, invalid inputs, unsafe JSON integers, root-reserved blocks, and a real temporary filesystem's bigint `statfs` result. The helper does not create or modify files.
+
+Full `bun run check`: 22 workspace checks, 54 hygiene checks, all typechecks, lint and formatting; **1,302 passed across 95 files** with the PostgreSQL-backed suite online (PostgreSQL 16.2). Docker runtime/operator testing was not run, per operator direction. **Totals after this pass: 61 passes · 221 defects · 0 open.**
 
 ---
 

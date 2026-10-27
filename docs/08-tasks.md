@@ -126,8 +126,8 @@ prove L1–L3.
 | P2-JOB-01 | Queue (`FOR UPDATE SKIP LOCKED`) + worker loop | D-11 | P2-DB-01 | ✅ | Typed atomic claim + bounded (1–32) in-process worker pool; four real-Postgres tests prove priority/due-time selection, locked-row skipping, safe failure persistence, and two independent workers process 24 jobs exactly once; shutdown drains active handlers before closing the DB pool |
 | P2-JOB-02 | Heartbeat + advisory-lock reaper + retry/backoff | D-11 | P2-JOB-01 | ✅ | Killed worker → job requeued within 5 min; a slow job holding its lock is never stolen |
 | P2-JOB-03 | Progress reporting + cancellation | CACHE-1 | P2-JOB-01 | ✅ | Monotonic progress, one DB write/s, bounded ETA; queued cancel is immediate; cooperative running cancel aborts within ≤2 s and `.part` cleanup completes before `canceled` |
-| P2-JOB-04 | Disk preflight + reserve | CACHE-1 | P2-JOB-01 | ⬜ | `503 DISK_FULL` with required/free |
-| P2-JOB-05 | Download handler (stream, Range resume, md5 verify, atomic rename) | CACHE-1 | P2-SRC-04, P2-JOB-03 | ⬜ | Byte-identical file; mismatch aborts cleanly |
+| P2-JOB-04 | Disk preflight + reserve | CACHE-1 | P2-JOB-01 | ✅ | `statfs` available bytes; `ceil(size × 1.1)` + reserve threshold; `503 DISK_FULL` with required/free details and safe byte encoding |
+| P2-JOB-05 | Download handler (stream, Range resume, md5 verify, atomic rename) | CACHE-1 | P2-SRC-04, P2-JOB-03, P2-JOB-04 | ⬜ | Byte-identical file; mismatch aborts cleanly |
 | P2-JOB-06 | Storage module (paths, `.part`, unlink safety) | L6 | P2-DB-01 | ⬜ | Path traversal attempts impossible (test) |
 | P2-JOB-07 | Uniqueness guard: one active download per (country, version) | CACHE-1 | P2-JOB-01 | ⬜ | Second request → 409 |
 
@@ -138,7 +138,7 @@ prove L1–L3.
 | P2-API-01 | `GET /_admin/api/catalog` (search/filters/pagination) | GEO-1/2 | P2-DB-02 | ⬜ | <300 ms at 400 rows; ISO + name search |
 | P2-API-02 | `POST /_admin/api/catalog/sync` | GEO-1 | P2-SRC-06 | ⬜ | Idempotent job creation |
 | P2-API-03 | `GET /catalog/regions/:slug` + `/snapshots` | GEO-4 | P2-SRC-03 | ⬜ | Unreachable source → `sourceReachable:false` |
-| P2-API-04 | `POST /_admin/api/cache/downloads` (latest or explicit) | GEO-3/4 | P2-JOB-05 | ⬜ | 202 + jobId; 409 duplicates; 410 gone |
+| P2-API-04 | `POST /_admin/api/cache/downloads` (latest or explicit) | GEO-3/4 | P2-JOB-04, P2-JOB-05 | ⬜ | 202 + jobId; 409 duplicates; 410 gone; disk preflight before enqueue |
 | P2-API-05 | `GET /_admin/api/cache` + `/:countryId` | CACHE-2 | P2-DB-02 | ⬜ | Includes active jobs + update state |
 | P2-API-06 | `DELETE /_admin/api/cache/:countryId` (typed confirm) | CACHE-3 | P2-JOB-06 | ⬜ | 409 if job active; files removed; audited |
 | P2-API-07 | Version list + `POST .../versions` (specific version) | CACHE-1/4 | P2-JOB-05 | ⬜ | Rejects `latest`, accepts only offered snapshots |
