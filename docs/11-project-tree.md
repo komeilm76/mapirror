@@ -77,8 +77,12 @@ mapirror/
 │  │  │  │  ├─ transaction.ts      # withTransaction: idle/statement bounds, read-only, retry 40001/40P01
 │  │  │  │  ├─ schema.ts           # Kysely table types, phases 1–2 (measured JS types, no `any`)
 │  │  │  │  ├─ version-check.ts    # Boot gate: disk vs EXPECTED_MIGRATIONS vs kysely_migration (SCHEMA_SKEW)
-│  │  │  │  └─ repositories/       # Typed queries per aggregate
-│  │  │  │     └─ admin-tokens.ts  # Token rows: insert, find-with-admin, touch, revoke, prune
+│  │  │  │  └─ repositories/       # Typed queries accept the process DB or a caller-owned transaction
+│  │  │  │     ├─ executor.ts      # Shared Kysely/Transaction executor type
+│  │  │  │     ├─ admin-tokens.ts  # Token rows: insert, find-with-admin, touch, revoke, prune
+│  │  │  │     ├─ catalog.ts       # Catalog upsert, lookup, SQL search/filter/sort/count/pagination
+│  │  │  │     ├─ cache.ts         # Cached-only lists and cache summaries
+│  │  │  │     └─ map-versions.ts  # Country versions: ready-first list and lookups
 │  │  │  └─ lib/
 │  │  │     ├─ client-ip.ts        # Untrusted forwarded address → a value `inet` accepts, or null
 │  │  │     ├─ rate-limit.ts       # Sliding-window limiter: bounded, injectable clock, refusal is free
@@ -90,6 +94,7 @@ mapirror/
 │  │  │     ├─ errors.ts           # AppError subclasses + codes
 │  │  │     └─ logger.ts           # Pino config with redaction
 │  │  └─ tests/                    # API, integration, and source-adapter tests
+│  │     ├─ integration/catalog-repositories.spec.ts # Real-Postgres search, filters, cache, paging and versions
 │  │     ├─ geofabrik-region-page.spec.ts   # Three offline HTML fixtures + size/date edge cases
 │  │     ├─ geofabrik-file-metadata.spec.ts # Bounded HEAD and MD5 request cases
 │  │     └─ geofabrik-slug.spec.ts          # Normalization, collisions, stability, path constraints

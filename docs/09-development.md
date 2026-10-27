@@ -212,7 +212,7 @@ bun run db:reset                                              # dev only
   (`P1-DOCK-04`) and compose runs the API with `MIGRATE_ON_BOOT=false` (`P1-DOCK-05`), so a container cannot repair the
   schema behind the orchestrator's back; left at its default the boot check still runs and finds nothing pending — the
   flag removes a second pass, not the check.
-- Transactions in services, not repositories; repositories accept a `Kysely` instance / `tx`.
+- Transactions in services, not repositories; repositories accept a `Kysely` instance / `tx`. Phase-2 catalog, cache and version reads live in `db/repositories/catalog.ts`, `cache.ts` and `map-versions.ts`; catalog/cache search, filters, count, sorting and page slicing are pushed into PostgreSQL. Search escapes SQL `LIKE` metacharacters, folds accents when optional `unaccent` is installed (and falls back cleanly when it is not), and sort fields are a fixed whitelist, not request-provided identifiers. `upsertCatalogCountry` refreshes source facts but preserves a previously assigned slug.
 - Use `withTransaction(db, work, options)` (`db/transaction.ts`) rather than `db.transaction()` directly: it bounds the
   session (idle-in-transaction timeout, optional statement timeout), can enforce `read only` and `serializable`, and
   retries `40001`/`40P01` once. **`work` may therefore run twice** — anything outside the database (unlinking a file,

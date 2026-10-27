@@ -3,9 +3,22 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 54 passes · 204 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1).
+**Totals:** 55 passes · 206 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 55 — 2026-10-27 (cache sorting and accent search exposed two database-query gaps)
+
+P2-DB-02 adds typed catalog, cache and version repositories. Catalog search, cache/update/continent filters, counts, pagination and whitelisted ordering execute in PostgreSQL; source upserts preserve the slug already assigned to an identity. Real-database probes caught a null-ordering defect and an unused optional accent-folding extension before completion.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **Descending cached-size sort ranked uncached countries above every cached country.** PostgreSQL sorts `NULL` first for descending order; the probe returned Norway (no cache row) ahead of countries with positive cached sizes | Nullable size sorts now state `NULLS LAST` explicitly. The PostgreSQL regression expects cached countries first, and passes after the fix |
+| 2 | **Name search ignored the optional `unaccent` extension even when it was installed.** A PostgreSQL probe showed `Åland Islands ILIKE '%aland%'` was false while the same comparison through `unaccent()` was true, contradicting the migration's documented accent-folding behavior | Search now uses the extension when available. If the server lacks it, only the specific undefined-`unaccent` error triggers a retry with ordinary case-insensitive search; other database errors still propagate. Integration tests pass both with and without the extension |
+
+The repository tests also cover partial name and ISO search, optional accent folding, escaped `%` input, filter/count consistency, pagination, cached-only results, stable-slug upsert, and ready-first version ordering. The full `bun run check` passes: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint, Prettier, and 1,262 tests across 88 files. Docker runtime/operator tests remain excluded as requested. **Totals after this pass: 55 passes · 206 defects · 0 open.**
 
 ---
 
