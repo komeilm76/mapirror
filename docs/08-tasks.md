@@ -122,7 +122,7 @@ prove L1–L3.
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
 | P2-DB-01 | `0002_catalog.sql` + Kysely types: countries, country_cache, map_versions, jobs | ENG-2 | P1-DB-01 | ✅ | §§2.3–2.6 parity; real-Postgres indexes/constraints and bigint round-trips; full check green |
-| P2-DB-02 | Repositories for catalog/cache/versions | ENG-2 | P2-DB-01 | ✅ | Typed catalog/cache/version repositories; name/ISO search (accent-folded when optional `unaccent` is installed), cache/update/continent filters, sorting, count and page slicing run in SQL; source upserts preserve assigned slugs. Four real-Postgres integration tests cover filtering/search, literal LIKE input, pagination/count, null-safe sorting, cache reads, stable upsert and version order |
+| P2-DB-02 | Repositories for catalog/cache/versions | ENG-2 | P2-DB-01 | ✅ | Typed catalog/cache/version repositories; name/ISO search (accent-folded when optional `unaccent` is installed), cache/update/continent filters, sorting, count and page slicing run in SQL; source upserts preserve assigned slugs. Five real-Postgres integration tests cover filtering/search, optional accent fallback inside transactions, literal LIKE input, pagination/count, null-safe sorting, cache reads, stable upsert and version order |
 | P2-JOB-01 | Queue (`FOR UPDATE SKIP LOCKED`) + worker loop | D-11 | P2-DB-01 | ⬜ | Two workers never claim the same job |
 | P2-JOB-02 | Heartbeat + advisory-lock reaper + retry/backoff | D-11 | P2-JOB-01 | ⬜ | Killed worker → job requeued within 5 min; a slow job holding its lock is never stolen |
 | P2-JOB-03 | Progress reporting + cancellation | CACHE-1 | P2-JOB-01 | ⬜ | Cancel ≤ 2 s, `.part` removed |

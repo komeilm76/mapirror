@@ -16,6 +16,7 @@ import {
   findMapVersionByLabel,
   listMapVersions,
 } from '../../src/db/repositories/map-versions';
+import { withTransaction } from '../../src/db/transaction';
 import { freshDatabaseSkipReason, withFreshDatabase } from '../helpers/fresh-db';
 
 /** These repositories are measured against PostgreSQL so joins, ILIKE/array search, COUNT and UUIDs use real semantics. */
@@ -91,6 +92,23 @@ describe.skipIf(skipReason !== null)('catalog, cache and version repositories', 
         );
       },
       { migrate: true, prefix: 'catalogrepo' },
+    );
+  });
+
+  it('keeps an enclosing transaction usable when optional accent folding is unavailable', async () => {
+    await withFreshDatabase(
+      async ({ db }) => {
+        await sql`drop extension if exists unaccent`.execute(db);
+
+        const page = await withTransaction(db, async (trx) => {
+          await seedCatalog(trx);
+          return listCatalogCountries(trx, { search: 'fin', limit: 10 });
+        });
+
+        expect(page.rows.map(({ slug }) => slug)).toEqual(['finland']);
+        expect(page.total).toBe('1');
+      },
+      { migrate: true, prefix: 'accenttx' },
     );
   });
 

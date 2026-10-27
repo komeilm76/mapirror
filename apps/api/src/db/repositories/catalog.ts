@@ -3,7 +3,7 @@
  *
  * Filtering, search, sort, count and page slicing all happen in PostgreSQL. Name search is an `ILIKE '%…%'` pattern
  * backed by `countries_name_trgm`; when the optional `unaccent` extension is installed, an additional predicate makes
- * it accent-insensitive. If that contrib extension is absent, the query retries with case-insensitive search. ISO codes
+ * it accent-insensitive. If that contrib extension is absent, the query uses ordinary case-insensitive search. ISO codes
  * are searched in the stored array. The caller gets only one page plus a count, never the whole catalog in memory.
  *
  * @module db/repositories/catalog
@@ -190,16 +190,16 @@ export async function listCatalogCountries(
   executor: RepositoryExecutor,
   options: CatalogListOptions = {},
 ): Promise<CatalogPage> {
-  if (!options.search?.trim()) return listCatalogCountriesWithSearchMode(executor, options, false);
+  const accentInsensitive = options.search?.trim() ? await supportsUnaccent(executor) : false;
+  return listCatalogCountriesWithSearchMode(executor, options, accentInsensitive);
+}
 
-  try {
-    return await listCatalogCountriesWithSearchMode(executor, options, true);
-  } catch (error) {
-    // `unaccent` is optional at migration time. PostgreSQL reports SQLSTATE 42883 only when that function is absent;
-    // keep name/ISO search useful on minimal servers without hiding any other database error.
-    if (!isUndefinedFunction(error)) throw error;
-    return listCatalogCountriesWithSearchMode(executor, options, false);
-  }
+/** Checks optional-function availability without raising an error that would abort a caller-owned transaction. */
+async function supportsUnaccent(executor: RepositoryExecutor): Promise<boolean> {
+  const result = await sql<{ available: boolean }>`
+    select to_regprocedure('unaccent(text)') is not null as available
+  `.execute(executor);
+  return result.rows[0]?.available === true;
 }
 
 /** Runs the count and page query with the same optional accent-folding predicate. */
@@ -333,19 +333,6 @@ const catalogColumns = [
   'country_cache.created_at as cache_created_at',
   'country_cache.updated_at as cache_updated_at',
 ] as const;
-
-/** Recognises only PostgreSQL's missing-`unaccent` error; unrelated undefined-function failures still surface. */
-function isUndefinedFunction(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    error.code === '42883' &&
-    'message' in error &&
-    typeof error.message === 'string' &&
-    error.message.includes('unaccent')
-  );
-}
 
 /** Enforce the shared page, limit and safe-offset rules even when a caller bypasses request parsing. */
 function parsePage(
