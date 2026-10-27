@@ -152,7 +152,7 @@ sibling are mutually exclusive, and the hygiene check counts commented declarati
 | `AUTH_MAX_LOGIN_ATTEMPTS` | `10` | — | Before lockout |
 | `AUTH_LOCKOUT_MINUTES` | `15` | — | Lockout window |
 | `WORKER_ENABLED` | `true` | — | Run queue worker + scheduler |
-| `WORKER_CONCURRENCY` | `2` | — | Parallel jobs |
+| `WORKER_CONCURRENCY` | `2` | — | Parallel jobs; must be 1–32 to bound per-process polling and memory use |
 | `MAX_UPLOAD_BYTES` | `8589934592` (8 GiB) | — | Import limit |
 | `DISK_RESERVE_BYTES` | `2147483648` (2 GiB) | — | Preflight reserve |
 | `PUBLIC_DOWNLOADS_PER_MINUTE` | `10` | — | Per-IP limit |

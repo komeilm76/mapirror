@@ -16,6 +16,7 @@
 import { randomUUID } from 'node:crypto';
 import { sql, type Kysely } from 'kysely';
 
+import { MAX_WORKER_CONCURRENCY } from '../../config/limits';
 import type { Database, Job, JobType, JsonValue } from '../../db/schema';
 
 /** A handler receives a claimed row and may return JSON to store as its result. */
@@ -114,8 +115,12 @@ export function startJobWorker(
   handlers: JobHandlers,
   options: JobWorkerOptions,
 ): JobWorker {
-  if (!Number.isSafeInteger(options.concurrency) || options.concurrency < 1) {
-    throw new RangeError('worker concurrency must be a positive safe integer');
+  if (
+    !Number.isSafeInteger(options.concurrency) ||
+    options.concurrency < 1 ||
+    options.concurrency > MAX_WORKER_CONCURRENCY
+  ) {
+    throw new RangeError(`worker concurrency must be between 1 and ${MAX_WORKER_CONCURRENCY}`);
   }
 
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;

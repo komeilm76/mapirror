@@ -25,6 +25,8 @@ import { isIP } from 'node:net';
 
 import { z } from 'zod';
 
+import { MAX_WORKER_CONCURRENCY } from './limits';
+
 /** Values allowed for `NODE_ENV`. */
 export const NODE_ENVS = ['development', 'production', 'test'] as const;
 
@@ -387,7 +389,11 @@ const ENV_SCHEMA = z.object({
   // to its entrypoint (`docker/entrypoint.api.sh`, `P1-DOCK-04`). Either way the *check* runs at boot.
   MIGRATE_ON_BOOT: flag(true),
   WORKER_ENABLED: flag(true),
-  WORKER_CONCURRENCY: wholeNumber(2, { min: 1, message: 'must be at least 1 worker' }),
+  WORKER_CONCURRENCY: wholeNumber(2, {
+    min: 1,
+    max: MAX_WORKER_CONCURRENCY,
+    message: `must be between 1 and ${MAX_WORKER_CONCURRENCY} workers`,
+  }),
   JOB_RETENTION_DAYS: wholeNumber(30, { min: 1, message: 'must be at least 1 day' }),
 
   MAX_UPLOAD_BYTES: wholeNumber(8_589_934_592, { min: 1, message: 'must be at least 1 byte' }),

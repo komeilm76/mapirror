@@ -131,7 +131,7 @@ stateDiagram-v2
     LIMIT 1 FOR UPDATE SKIP LOCKED
   ) RETURNING *;
   ```
-- **In-process worker pool** with `WORKER_CONCURRENCY` (default 2) — each slot atomically claims one row and runs its
+- **In-process worker pool** with `WORKER_CONCURRENCY` (default 2; bounded to 1–32) — each slot atomically claims one row and runs its
   registered handler without holding a database transaction during work. Only types with registered handlers are
   eligible; other queued types remain untouched until their task installs a handler. Handler failures are logged and
   persisted with a client-safe error. Shutdown stops new claims and drains active handlers before closing the pool.

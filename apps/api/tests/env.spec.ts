@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { MAX_WORKER_CONCURRENCY } from '../src/config/limits';
 import {
   ConfigError,
   ENV_KEYS,
@@ -182,6 +183,17 @@ describe('parseEnv rejects unusable values, naming the variable', () => {
       expect(() => parseEnv({ WORKER_ENABLED: value }), value).toThrow(/WORKER_ENABLED/);
     }
     expect(parseEnv({ WORKER_ENABLED: 'false' }).workerEnabled).toBe(false);
+  });
+
+  it('bounds worker concurrency before it can fan out unbounded polling loops', () => {
+    expect(parseEnv({ WORKER_CONCURRENCY: String(MAX_WORKER_CONCURRENCY) }).workerConcurrency).toBe(
+      MAX_WORKER_CONCURRENCY,
+    );
+    const boundMessage = `WORKER_CONCURRENCY: must be between 1 and ${MAX_WORKER_CONCURRENCY} workers`;
+    expect(errorFrom({ WORKER_CONCURRENCY: String(MAX_WORKER_CONCURRENCY + 1) }).message).toContain(
+      boundMessage,
+    );
+    expect(errorFrom({ WORKER_CONCURRENCY: '999999999' }).message).toContain(boundMessage);
   });
 
   it('refuses byte counts written with units', () => {
