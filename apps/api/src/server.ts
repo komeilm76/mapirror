@@ -21,6 +21,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from './app';
 import { ConfigError, parseEnv, type AppConfig, type EnvSource } from './config/env';
 import { runHousekeeping } from './lib/housekeeping';
+import { startJobReaper } from './modules/jobs/reaper';
 import { startJobWorker, type JobHandlers } from './modules/jobs/worker';
 
 /** Signals that must shut the process down instead of killing it mid-request. */
@@ -120,10 +121,10 @@ export async function start(
   const app = await buildApp({ logger: { level: config.logLevel }, config });
 
   // A shutdown drains background work before `app.close()` destroys its database pool.
-  let stopWorker: (() => Promise<void>) | undefined;
+  let stopBackgroundWork: (() => Promise<void>) | undefined;
   const shutdown = createShutdown(app, {
     beforeClose: async () => {
-      await stopWorker?.();
+      await stopBackgroundWork?.();
     },
   });
   for (const signal of SHUTDOWN_SIGNALS) {
@@ -132,22 +133,25 @@ export async function start(
     });
   }
 
-  let worker: ReturnType<typeof startJobWorker> | undefined;
+  let stopWorkers: (() => Promise<void>) | undefined;
   if (config.workerEnabled) {
     // Concrete handlers are registered by the job-specific tasks. Until one exists, its job type is not claimed.
     const handlers: JobHandlers = {};
-    const startedWorker = startJobWorker(app.db.db, handlers, {
+    const worker = startJobWorker(app.db.db, handlers, {
       concurrency: config.workerConcurrency,
       log: app.log,
     });
-    worker = startedWorker;
-    stopWorker = () => startedWorker.stop();
+    const reaper = startJobReaper(app.db.db, { log: app.log });
+    stopWorkers = async () => {
+      await Promise.all([worker.stop(), reaper.stop()]);
+    };
+    stopBackgroundWork = stopWorkers;
   }
 
   try {
     await app.listen({ port: config.port, host: config.host });
   } catch (error) {
-    await worker?.stop();
+    await stopWorkers?.();
     await app.close().catch(() => undefined);
     throw error;
   }

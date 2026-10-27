@@ -133,18 +133,23 @@ stateDiagram-v2
   ```
 - **In-process worker pool** with `WORKER_CONCURRENCY` (default 2; bounded to 1–32) — each slot atomically claims one row and runs its
   registered handler without holding a database transaction during work. Only types with registered handlers are
-  eligible; other queued types remain untouched until their task installs a handler. Handler failures are logged and
-  persisted with a client-safe error. Shutdown stops new claims and drains active handlers before closing the pool.
+  eligible; other queued types remain untouched until their task installs a handler. A handler receives the pinned
+  session and should use it for database work rather than checking out a second pool connection. Handler failures are
+  logged and persisted with a client-safe error. Shutdown stops new claims and drains active handlers before closing the pool.
 - **Ownership is a lock, not a timestamp.** Before working a job the worker takes
-  `pg_try_advisory_lock(hashtext(job_id))` on its own connection and holds it until the job finishes.
-  A timestamp cannot distinguish *crashed* from *slow*: a stalled network read can block a heartbeat
-  for minutes while the transfer is still alive, and blindly requeueing would put two workers on the
-  same `.part` file. With the advisory lock, the crash case is unambiguous — the lock disappears when
-  the connection dies.
-- **Heartbeats:** `locked_at` is refreshed by a timer (every 15 s, independent of the download loop) so
-  the UI can show liveness. The reaper only *candidates* rows with `locked_at < now() - 5 min`; it
-  requeues a row only if `pg_try_advisory_lock(hashtext(id))` **succeeds** (proof the old owner is gone)
-  and releases it immediately. Otherwise it leaves the row alone.
+  `pg_try_advisory_lock(hashtextextended(job_id::text, 0))` on its own pinned PostgreSQL session and holds it until
+  the job finishes. A timestamp cannot distinguish *crashed* from *slow*: a stalled network read can block progress
+  for minutes while the transfer is still alive, and blindly requeueing could put two workers on the same `.part` file.
+  The session lock disappears when the worker's database connection dies.
+- **Heartbeats and recovery:** `locked_at` is refreshed every 15 s by a timer independent of handler progress. The
+  reaper runs every 15 s and only considers rows older than 4 min 30 s; this leaves 15 s of processing margin after
+  the next scan so recovery remains within five minutes. For each candidate it tries the identical advisory lock on a dedicated session; only a successful
+  acquisition proves the old owner is gone. It then requeues with backoff if attempts remain, otherwise marks the job
+  failed with `WORKER_LOST`, and releases the lock. A live slow handler's lock is never stolen even if its timestamp
+  is stale.
+- **Retry policy:** handler failures and recovered worker losses retry up to `max_attempts` total claims, with
+  exponential delays of 1 s, 2 s, 4 s, … capped at 5 min. Persisted error text is generic and safe for the admin UI;
+  detailed handler errors remain in the application log.
 - **Cancellation:** sets `cancel_requested = true`; the download loop checks it between chunks and
   between retries, deletes the `.part` file, and marks the job `canceled`.
 - **Progress:** `progress_bytes`, `total_bytes`, `speed_bps`, `eta_seconds`, `phase`

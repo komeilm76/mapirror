@@ -107,11 +107,12 @@ what a form needs to mark the right input:
 ```
 
 **Job & internal codes** (never HTTP status codes; they appear as `error_code` on a job or as a
-`storage` state, and are safe to show to the admin):
+`storage` state. Job messages are generic and safe for the admin UI):
 
 | Code | Where | Meaning |
 |---|---|---|
-| `WORKER_LOST` | job `error_code` | The worker died mid-job and attempts were exhausted |
+| `JOB_HANDLER_FAILED` | job `error_code` | A handler attempt failed; generic safe message, retried with backoff while attempts remain |
+| `WORKER_LOST` | job `error_code` | The worker died mid-job; retried with backoff or terminal after attempts are exhausted |
 | `RUN_INTERRUPTED` | `interval_runs.error_message` | A run was open when the process died; closed by the reaper |
 | `SKIPPED_OVERLAP` | `interval_runs` log | The previous occurrence was still running; this one was skipped |
 | `SOURCE_VERSION_GONE` | job `error_code` + HTTP 410 | The upstream dated snapshot no longer exists |

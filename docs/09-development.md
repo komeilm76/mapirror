@@ -214,9 +214,13 @@ bun run db:reset                                              # dev only
   flag removes a second pass, not the check.
 - Transactions in services, not repositories; repositories accept a `Kysely` instance / `tx`. Phase-2 catalog, cache and version reads live in `db/repositories/catalog.ts`, `cache.ts` and `map-versions.ts`; catalog/cache search, filters, count, sorting and page slicing are pushed into PostgreSQL. Search escapes SQL `LIKE` metacharacters, folds accents when optional `unaccent` is installed (and checks availability without aborting a caller-owned transaction when absent), and sort fields are a fixed whitelist, not request-provided identifiers. `upsertCatalogCountry` refreshes source facts but preserves a previously assigned slug.
 - `modules/jobs/worker.ts` owns the queue claim and in-process worker pool. `claimNextJob` claims in one SQL statement
-  with `FOR UPDATE SKIP LOCKED`; each configured slot runs an independent loop, and types without a registered handler
-  stay queued. `WORKER_ENABLED` controls whether `server.ts` starts it, and shutdown drains active handlers before the
-  database pool closes. Job-specific tasks add validated handlers; the generic worker never interprets `payload`.
+  with `FOR UPDATE SKIP LOCKED`; each configured slot runs an independent loop, pins a PostgreSQL session-level
+  advisory lock for its active job, and heartbeats `locked_at` every 15 seconds. Types without a registered handler stay
+  queued. Handlers receive the pinned session in their context and should use it for database operations instead of
+  checking out another pool connection. Handler failures retry with bounded exponential backoff;
+  `modules/jobs/reaper.ts` recovers stale rows only when it can acquire the same advisory lock (4:30 stale threshold +
+  15-second scans). `WORKER_ENABLED` controls whether `server.ts` starts both services, and shutdown drains them before
+  the database pool closes. Job-specific tasks add validated handlers; the generic worker never interprets `payload`.
 - Use `withTransaction(db, work, options)` (`db/transaction.ts`) rather than `db.transaction()` directly: it bounds the
   session (idle-in-transaction timeout, optional statement timeout), can enforce `read only` and `serializable`, and
   retries `40001`/`40P01` once. **`work` may therefore run twice** — anything outside the database (unlinking a file,

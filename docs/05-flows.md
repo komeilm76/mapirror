@@ -378,7 +378,7 @@ the API; retention 7 days.
 
 | Trigger | Action |
 |---|---|
-| Stale `running` job (lock > 5 min) **and** advisory lock acquirable | Proof the owner is gone → requeue if attempts remain, else `failed` with `WORKER_LOST`. A slow job that still holds its lock is left untouched |
+| `running` job with `locked_at` older than 4 min 30 s **and** advisory lock acquirable (reaper scans every 15 s) | Proof the owner is gone → requeue with exponential backoff if attempts remain, else `failed` with `WORKER_LOST`. A slow job that still holds its lock is left untouched; 15 s remains for scan processing within the 5 min target |
 | Running interval with a still-running previous occurrence | Skip the occurrence (`SKIPPED_OVERLAP`), keep the schedule intact |
 | `interval_runs` stuck in `running` (crash mid-run) | The `interval_runs_one_active` unique index would block every future run of that interval, so the reaper closes runs older than 6 h as `failed` with `RUN_INTERRUPTED` — without it, one crash silently disables a schedule |
 | `.part` older than 24 h with no job | Delete |

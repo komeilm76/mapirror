@@ -1,14 +1,8 @@
 /**
- * PostgreSQL-backed job claiming and the in-process worker pool (`P2-JOB-01`).
+ * PostgreSQL-backed job claiming and the in-process worker pool (`P2-JOB-01`, heartbeat/retry ownership in `P2-JOB-02`).
  *
- * Each claim is one atomic CTE + `UPDATE … FROM … RETURNING` statement whose candidate row is selected with
- * `FOR UPDATE SKIP LOCKED`. Competing
- * workers therefore take different queued rows without a process-local mutex, Redis, or a transaction left open while
- * a handler runs. The API process owns the pool; handlers are registered by job type as their tasks land.
- *
- * Unregistered job types remain queued rather than being claimed and failed before their handler exists. A handler
- * failure is logged and persisted as one generic client-safe error; retry/reaping, heartbeats, cancellation and
- * payload validation belong to later job tasks.
+ * Each slot claims one eligible row atomically with `FOR UPDATE SKIP LOCKED`, then holds a session-level advisory lock
+ * on that same dedicated connection for the whole handler lifetime. No database transaction spans job execution.
  *
  * @module modules/jobs/worker
  */
@@ -18,9 +12,19 @@ import { sql, type Kysely } from 'kysely';
 
 import { MAX_WORKER_CONCURRENCY } from '../../config/limits';
 import type { Database, Job, JobType, JsonValue } from '../../db/schema';
+import { releaseJobLock, tryAcquireJobLock } from './lock';
+import { jobRetryDelayMs } from './retry';
+
+/** Optional cancellation signal for handlers that can stop promptly after ownership/heartbeat is lost. */
+export interface JobHandlerContext {
+  /** The worker's pinned session; reuse it for database work instead of checking out another pool connection. */
+  readonly database: Kysely<Database>;
+  /** Aborted when the ownership heartbeat fails; cooperative handlers should stop external side effects promptly. */
+  readonly signal: AbortSignal;
+}
 
 /** A handler receives a claimed row and may return JSON to store as its result. */
-export type JobHandler = (job: Job) => Promise<JsonValue | void>;
+export type JobHandler = (job: Job, context: JobHandlerContext) => Promise<JsonValue | void>;
 
 /** One handler per job type. Missing handlers are deliberately not claimable. */
 export type JobHandlers = Partial<Record<JobType, JobHandler>>;
@@ -38,6 +42,12 @@ export interface JobWorkerOptions {
   readonly concurrency: number;
   /** Delay after no eligible row or a transient database error. Defaults to one second. */
   readonly pollIntervalMs?: number;
+  /** Heartbeat cadence. Defaults to 15 seconds. */
+  readonly heartbeatIntervalMs?: number;
+  /** Initial delay before a retry. Defaults to one second. */
+  readonly retryBaseDelayMs?: number;
+  /** Maximum retry delay. Defaults to five minutes. */
+  readonly retryMaxDelayMs?: number;
   /** Tests may supply a stable ID; production IDs are generated independently per worker slot. */
   readonly workerId?: () => string;
   /** Process logger. */
@@ -50,6 +60,7 @@ export interface JobWorker {
 }
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
 const FAILED_ERROR_CODE = 'JOB_HANDLER_FAILED';
 const FAILED_ERROR_MESSAGE = 'The job handler failed.';
 
@@ -101,9 +112,9 @@ export async function claimNextJob(
 /**
  * Starts `concurrency` independent poll-and-dispatch loops.
  *
- * Stopping aborts an idle poll immediately but lets a handler already in progress finish before resolving. Database
- * errors do not kill a slot: it warns, backs off for the poll interval, and tries again. Job execution itself is never
- * inside the claim transaction.
+ * Stopping aborts an idle poll immediately but lets a handler already in progress finish before resolving. Each active
+ * slot pins one PostgreSQL connection for its session-level job lock; the handler itself is outside a transaction.
+ * Database errors do not kill a slot: it warns, backs off for the poll interval, and tries again.
  *
  * @param database - The process Kysely handle.
  * @param handlers - Registered handlers; unregistered types stay queued.
@@ -124,8 +135,14 @@ export function startJobWorker(
   }
 
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
-  if (!Number.isSafeInteger(pollIntervalMs) || pollIntervalMs < 1) {
-    throw new RangeError('worker poll interval must be a positive safe integer');
+  const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+  const retryBaseDelayMs = options.retryBaseDelayMs;
+  const retryMaxDelayMs = options.retryMaxDelayMs;
+  validateInterval(pollIntervalMs, 'worker poll interval');
+  validateInterval(heartbeatIntervalMs, 'worker heartbeat interval');
+  if (retryBaseDelayMs !== undefined || retryMaxDelayMs !== undefined) {
+    // Validate the full override pair before starting any asynchronous loop.
+    jobRetryDelayMs(1, retryBaseDelayMs, retryMaxDelayMs);
   }
 
   const eligibleTypes = (Object.keys(handlers) as JobType[]).filter(
@@ -141,6 +158,9 @@ export function startJobWorker(
             signal: controller.signal,
             workerId: `${makeWorkerId()}-${index + 1}`,
             pollIntervalMs,
+            heartbeatIntervalMs,
+            retryBaseDelayMs,
+            retryMaxDelayMs,
             log: options.log,
           }),
         );
@@ -159,6 +179,9 @@ interface WorkerSlotOptions {
   readonly signal: AbortSignal;
   readonly workerId: string;
   readonly pollIntervalMs: number;
+  readonly heartbeatIntervalMs: number;
+  readonly retryBaseDelayMs?: number;
+  readonly retryMaxDelayMs?: number;
   readonly log: WorkerLog;
 }
 
@@ -170,76 +193,168 @@ async function runWorkerSlot(
   options: WorkerSlotOptions,
 ): Promise<void> {
   while (!options.signal.aborted) {
-    let job: Job | null;
     try {
-      job = await claimNextJob(database, options.workerId, eligibleTypes);
+      const processed = await database.connection().execute(async (session) => {
+        const job = await claimNextJob(session, options.workerId, eligibleTypes);
+        if (job === null) return false;
+        await processClaimedJob(session, job, handlers[job.type], options);
+        return true;
+      });
+      if (!processed) await pause(options.pollIntervalMs, options.signal);
     } catch (error) {
       options.log.warn(
         { err: error, workerId: options.workerId },
-        'job claim failed; worker will retry',
+        'job worker cycle failed; worker will retry',
       );
       await pause(options.pollIntervalMs, options.signal);
-      continue;
-    }
-
-    if (job === null) {
-      await pause(options.pollIntervalMs, options.signal);
-      continue;
-    }
-
-    const handler = handlers[job.type];
-    // The eligible type list is derived from this same immutable handler map. Keep the guard anyway so a future
-    // mutable registry cannot turn a claimed row into an unhandled, permanently-running job.
-    if (handler === undefined) {
-      options.log.error({ jobId: job.id, type: job.type }, 'claimed job has no registered handler');
-      try {
-        await markFailed(database, job, options.workerId);
-      } catch (error) {
-        options.log.error(
-          { err: error, jobId: job.id, type: job.type },
-          'could not persist job failure',
-        );
-      }
-      continue;
-    }
-
-    let result: JsonValue | void;
-    try {
-      result = await handler(job);
-    } catch (error) {
-      options.log.error({ err: error, jobId: job.id, type: job.type }, 'job handler failed');
-      try {
-        await markFailed(database, job, options.workerId);
-      } catch (persistError) {
-        options.log.error(
-          { err: persistError, jobId: job.id, type: job.type },
-          'could not persist job failure',
-        );
-      }
-      continue;
-    }
-
-    try {
-      await markSucceeded(database, job, options.workerId, result ?? null);
-    } catch (error) {
-      // Do not misreport a completed handler as a handler failure when only the terminal database write failed.
-      // Job recovery is the reaper's concern (`P2-JOB-02`).
-      options.log.error(
-        { err: error, jobId: job.id, type: job.type },
-        'could not persist job success',
-      );
     }
   }
 }
 
-/** Marks the job successful only while this worker still owns its running row. */
+/** Processes a claimed row while retaining the session lock, heartbeating and applying bounded retry policy. */
+async function processClaimedJob(
+  session: Kysely<Database>,
+  job: Job,
+  handler: JobHandler | undefined,
+  options: WorkerSlotOptions,
+): Promise<void> {
+  const acquired = await tryAcquireJobLock(session, job.id);
+  if (!acquired) {
+    options.log.warn({ jobId: job.id }, 'job advisory lock was busy; returning claim to queue');
+    await returnUnstartedClaim(session, job, options.workerId, options.pollIntervalMs);
+    return;
+  }
+
+  const ownership = new AbortController();
+  let heartbeatError: unknown;
+  const heartbeat = startHeartbeat(session, job, options, ownership, (error) => {
+    heartbeatError = error;
+  });
+
+  try {
+    let result: JsonValue | void;
+    try {
+      if (handler === undefined) throw new Error('claimed job has no registered handler');
+      result = await handler(job, { database: session, signal: ownership.signal });
+    } catch (error) {
+      await heartbeat.stop();
+      if (heartbeatError !== undefined) {
+        options.log.warn(
+          { err: heartbeatError, jobId: job.id, type: job.type },
+          'job ownership heartbeat failed; leaving job for reaper recovery',
+        );
+        return;
+      }
+
+      options.log.error({ err: error, jobId: job.id, type: job.type }, 'job handler failed');
+      try {
+        await markFailed(
+          session,
+          job,
+          options.workerId,
+          options.retryBaseDelayMs,
+          options.retryMaxDelayMs,
+        );
+      } catch (persistError) {
+        options.log.error(
+          { err: persistError, jobId: job.id, type: job.type },
+          'could not persist job retry or failure',
+        );
+      }
+      return;
+    }
+
+    await heartbeat.stop();
+    if (heartbeatError !== undefined) {
+      options.log.warn(
+        { err: heartbeatError, jobId: job.id, type: job.type },
+        'job ownership heartbeat failed; leaving job for reaper recovery',
+      );
+      return;
+    }
+
+    try {
+      await markSucceeded(session, job, options.workerId, result ?? null);
+    } catch (error) {
+      // A completed handler is not misreported as a handler failure when only the terminal DB write failed. Releasing
+      // the session lock lets the reaper retry the row instead of stranding it behind a live pooled connection.
+      options.log.error(
+        { err: error, jobId: job.id, type: job.type },
+        'could not persist job success; leaving job for reaper recovery',
+      );
+    }
+  } finally {
+    await heartbeat.stop();
+    await releaseJobLock(session, job.id);
+  }
+}
+
+/** Starts a non-overlapping heartbeat timer that refreshes `locked_at` independently of handler progress. */
+function startHeartbeat(
+  session: Kysely<Database>,
+  job: Job,
+  options: WorkerSlotOptions,
+  ownership: AbortController,
+  onFailure: (error: unknown) => void,
+): { stop: () => Promise<void> } {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let inFlight: Promise<void> | undefined;
+
+  const schedule = (): void => {
+    timer = setTimeout(() => {
+      inFlight = (async () => {
+        try {
+          const owned = await refreshHeartbeat(session, job, options.workerId);
+          if (!owned) throw new Error('job row is no longer owned by this worker');
+        } catch (error) {
+          onFailure(error);
+          ownership.abort();
+          options.log.warn({ err: error, jobId: job.id }, 'job heartbeat failed');
+        }
+      })().finally(() => {
+        inFlight = undefined;
+        if (!stopped) schedule();
+      });
+    }, options.heartbeatIntervalMs);
+    timer.unref?.();
+  };
+  schedule();
+
+  return {
+    stop: async () => {
+      stopped = true;
+      if (timer !== undefined) clearTimeout(timer);
+      await inFlight;
+    },
+  };
+}
+
+/** Extends the lease timestamp only while the same worker still owns a running row. */
+async function refreshHeartbeat(
+  session: Kysely<Database>,
+  job: Job,
+  workerId: string,
+): Promise<boolean> {
+  const row = await session
+    .updateTable('jobs')
+    .set({ locked_at: sql`now()` })
+    .where('id', '=', job.id)
+    .where('status', '=', 'running')
+    .where('locked_by', '=', workerId)
+    .returning('id')
+    .executeTakeFirst();
+  return row !== undefined;
+}
+
+/** Marks success only while this worker still owns the running row. */
 async function markSucceeded(
-  database: Kysely<Database>,
+  session: Kysely<Database>,
   job: Job,
   workerId: string,
   result: JsonValue | null,
 ): Promise<void> {
-  await database
+  await session
     .updateTable('jobs')
     .set({
       status: 'succeeded',
@@ -256,15 +371,24 @@ async function markSucceeded(
     .execute();
 }
 
-/** Marks the job failed with a safe message; detailed errors remain in the application log. */
-async function markFailed(database: Kysely<Database>, job: Job, workerId: string): Promise<void> {
-  await database
+/** Retries a failed attempt after bounded exponential backoff, or marks it terminal after max_attempts. */
+async function markFailed(
+  session: Kysely<Database>,
+  job: Job,
+  workerId: string,
+  retryBaseDelayMs?: number,
+  retryMaxDelayMs?: number,
+): Promise<void> {
+  const retry = job.attempts < job.max_attempts;
+  const delayMs = retry ? jobRetryDelayMs(job.attempts, retryBaseDelayMs, retryMaxDelayMs) : 0;
+  await session
     .updateTable('jobs')
     .set({
-      status: 'failed',
+      status: retry ? 'queued' : 'failed',
+      run_after: retry ? sql`now() + ${delayMs} * interval '1 millisecond'` : job.run_after,
       error_code: FAILED_ERROR_CODE,
       error_message: FAILED_ERROR_MESSAGE,
-      finished_at: sql`now()`,
+      finished_at: retry ? null : sql`now()`,
       locked_by: null,
       locked_at: null,
     })
@@ -272,6 +396,36 @@ async function markFailed(database: Kysely<Database>, job: Job, workerId: string
     .where('status', '=', 'running')
     .where('locked_by', '=', workerId)
     .execute();
+}
+
+/** Returns an unstarted claim to the queue without consuming an attempt. */
+async function returnUnstartedClaim(
+  session: Kysely<Database>,
+  job: Job,
+  workerId: string,
+  delayMs: number,
+): Promise<void> {
+  await session
+    .updateTable('jobs')
+    .set({
+      status: 'queued',
+      attempts: sql`greatest(attempts - 1, 0)`,
+      run_after: sql`now() + ${delayMs} * interval '1 millisecond'`,
+      locked_by: null,
+      locked_at: null,
+      started_at: null,
+    })
+    .where('id', '=', job.id)
+    .where('status', '=', 'running')
+    .where('locked_by', '=', workerId)
+    .execute();
+}
+
+/** Validates a timer interval before worker slots are started. */
+function validateInterval(milliseconds: number, name: string): void {
+  if (!Number.isSafeInteger(milliseconds) || milliseconds < 1) {
+    throw new RangeError(`${name} must be a positive safe integer`);
+  }
 }
 
 /** Waits for the poll delay, or wakes immediately when shutdown aborts it. */

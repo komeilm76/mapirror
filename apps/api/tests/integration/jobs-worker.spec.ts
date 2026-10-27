@@ -116,12 +116,22 @@ describe.skipIf(skipReason !== null)('PostgreSQL job worker', () => {
           .values({ type: 'prune', payload: {} })
           .returning('id')
           .executeTakeFirstOrThrow();
+        let attempts = 0;
         const worker = startJobWorker(
           db,
           {
-            prune: () => Promise.reject(new Error('private database detail')),
+            prune: () => {
+              attempts += 1;
+              return Promise.reject(new Error('private database detail'));
+            },
           },
-          { concurrency: 1, pollIntervalMs: 10, log },
+          {
+            concurrency: 1,
+            pollIntervalMs: 5,
+            retryBaseDelayMs: 5,
+            retryMaxDelayMs: 20,
+            log,
+          },
         );
 
         try {
@@ -132,7 +142,7 @@ describe.skipIf(skipReason !== null)('PostgreSQL job worker', () => {
 
         const failed = await db
           .selectFrom('jobs')
-          .select(['status', 'error_code', 'error_message', 'locked_by', 'locked_at'])
+          .select(['status', 'error_code', 'error_message', 'locked_by', 'locked_at', 'attempts'])
           .where('id', '=', job.id)
           .executeTakeFirstOrThrow();
         expect(failed).toMatchObject({
@@ -141,7 +151,9 @@ describe.skipIf(skipReason !== null)('PostgreSQL job worker', () => {
           error_message: 'The job handler failed.',
           locked_by: null,
           locked_at: null,
+          attempts: 3,
         });
+        expect(attempts).toBe(3);
         expect(failed.error_message).not.toContain('private database detail');
       },
       { migrate: true, prefix: 'jobfailure' },
