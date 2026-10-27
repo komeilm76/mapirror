@@ -43,8 +43,9 @@ operator ever wants a dedicated container.
 | `admin` | Admin JSON APIs (`/_admin/api/*`), orchestration of jobs | Stream files without going through `storage` |
 | `public` | Published read model, public downloads, stats counters | Return unpublished data, mutate anything |
 | `geofabrik` (MapSource) | Catalog fetch, region page parse, local slug derivation, version discovery, bounded HEAD/metadata + `.md5` | Write to DB or disk (returns facts only) |
-| `lib/download` | Generic PBF byte streaming, Range/If-Range, and streaming MD5/length verification | Decide source identity, build cache paths, or mutate job/version rows |
-| `jobs` | Queue, worker loop, job handlers, progress, cancellation; orchestrates source resolution + the shared streaming utility | Parse source pages or implement low-level byte-stream protocol (delegated to `geofabrik` / `lib/download`) |
+| `storage` | Validated cache paths, `.partial` lifecycle, no-follow file access, atomic installation, safe leaf/link unlink, readiness-probe writes | Accept arbitrary relative paths, traverse symlinks, or recursively delete directories |
+| `lib/download` | Generic PBF byte streaming, Range/If-Range, and streaming MD5/length verification through a storage-owned file handle | Decide source identity, build cache paths, or mutate job/version rows |
+| `jobs` | Queue, worker loop, job handlers, progress, cancellation; orchestrates source resolution + storage + the shared streaming utility | Parse source pages or implement low-level byte-stream protocol (delegated to `geofabrik` / `lib/download`) |
 | `system` | CPU/RAM/disk sampling, disk preflight | Decide when to prune |
 | `db` | SQL, repositories, transactions | Contain business rules that belong in modules |
 
@@ -214,6 +215,7 @@ Key guarantees:
 
 - **Empty shells never appear:** the DB row is created as `pending` and only becomes `ready` after
   the checksum matches and the rename succeeds.
+- **Storage paths never come from unchecked joins:** the storage module validates country/version/filename components and persisted relative paths, rejects symlinked parents for access, opens leaf files with `O_NOFOLLOW`, and unlinks only the named leaf or a first encountered symlink (never its target). Cache operations stay behind this boundary.
 - **Resume:** `.partial/<job>.part` is kept on transient failures; retries send `Range: bytes=<size>-` and append only when `206 Content-Range` starts at the exact local offset. Immutable dated snapshots can resume by identity; the mutable `latest` alias resumes only with a strong ETag or Last-Modified validator (`If-Range`). Weak/no validators disable latest resume. If the server ignores Range or `If-Range` returns a full `200`, the part is truncated and that body replaces it. Invalid ranges are rejected without appending.
 - **Disk preflight:** estimates `ceil(content-length * 1.1)` bytes and reads `statfs` available bytes (`bavail`) for
   `CACHE_DIR`. A download proceeds only when `available >= estimate + DISK_RESERVE_BYTES` (default 2 GiB); an exact fit

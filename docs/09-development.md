@@ -223,10 +223,15 @@ bun run db:reset                                              # dev only
   derived from bytes and speed. Handler failures retry with bounded exponential backoff; `modules/jobs/reaper.ts`
   recovers stale rows only when it can acquire the same advisory lock (4:30 stale threshold + 15-second scans).
   `WORKER_ENABLED` controls whether `server.ts` starts both services, and shutdown drains them before the database pool
-  closes. Job-specific tasks add validated handlers; the generic worker never interprets `payload`. The P2-JOB-05
-  download handler currently keeps its narrowly scoped cache paths and `.partial/<job>.part` operations local so
-  P2-JOB-05 does not depend on the later P2-JOB-06 storage task; P2-JOB-06 must extract common path construction and
-  complete unlink/symlink safety before other storage operations are added.
+  closes. Job-specific tasks add validated handlers; the generic worker never interprets `payload`. The
+  `modules/storage/storage.ts` boundary owns all `CACHE_DIR` artifact paths and operations: resolve only validated
+  `<slug>/<version>/<filename>` paths or UUID `.partial/<job>.part` parts, check every ancestor for symlinks, use
+  `O_NOFOLLOW` for file opens, install parts by same-volume rename, and unlink only a leaf file or encountered link
+  component (never recursively follow a path). The download handler and readiness probe use this boundary; future cache
+  consumers must too. The
+  configured cache root itself may be an operator symlink and is canonicalized once. Keep the cache volume writable
+  only by the API service/operator because portable Node path operations cannot make a multi-component walk atomic
+  against a hostile concurrent writer.
 - `modules/system/disk.ts` measures `statfs` capacity using `bavail` (space available to the API user). Download preflight
   uses `ceil(content-length × 1.1)` and proceeds only if that padded estimate plus `DISK_RESERVE_BYTES` fits; `DISK_FULL`
   details include required/free/reserve/shortfall bytes, encoded as decimal strings if they exceed safe JSON integers.

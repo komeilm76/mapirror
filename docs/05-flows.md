@@ -243,7 +243,10 @@ sequenceDiagram
 ```
 
 **Rules:** DB first, files second (a failed unlink leaves a sweepable orphan, never a dangling row that
-looks valid). Deleting the last version auto-unpublishes. Public URLs for deleted versions ⇒ `404`.
+looks valid). All cache paths and unlinks go through `modules/storage/storage.ts`: parent symlinks are never followed,
+only a named file or encountered link component is unlinked, and directories are never recursively deleted. Deleting the
+last version auto-unpublishes.
+Public URLs for deleted versions ⇒ `404`.
 **Tests:** country delete, last-version delete closes public, file-unlink failure reports an orphan
 without 500-ing the API, in-flight job blocks deletion.
 

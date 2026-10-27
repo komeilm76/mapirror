@@ -18,10 +18,8 @@
  * @module routes/probes
  */
 
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-
 import { PROBE_PATHS } from '@mapirror/shared';
+import { CACHE_PROBE_FILE, createCacheStorage } from '../modules/storage/storage';
 import type { FastifyInstance, FastifyPluginCallback, FastifyReply } from 'fastify';
 
 /** How long a readiness check may take before it counts as failed. */
@@ -33,7 +31,7 @@ export const READY_PROBE_TIMEOUT_MS = 2_000;
  * leave a uniquely named file that nothing ever cleans up, and the storage screen reports unknown files under
  * `CACHE_DIR` as orphans. With a fixed name the next probe overwrites and removes it.
  */
-export const CACHE_PROBE_FILE = '.readyz';
+export { CACHE_PROBE_FILE };
 
 /** Outcome of one readiness check, as it appears in the body. */
 export type CheckResult = 'ok' | 'fail';
@@ -114,17 +112,8 @@ async function bounded(run: () => Promise<unknown>, timeoutMs: number): Promise<
  * @throws When the directory cannot be created or written to. The reason is logged by the caller's handler.
  */
 async function cacheWritable(cacheDir: string): Promise<void> {
-  const file = join(cacheDir, CACHE_PROBE_FILE);
-  try {
-    await mkdir(cacheDir, { recursive: true });
-    // One byte, not an empty file: a full data volume may still allow a zero-byte inode, which would falsely report
-    // readiness while every real cache artifact fails with ENOSPC.
-    await writeFile(file, 'x');
-  } finally {
-    // Best-effort, and outside the failure path: a leftover probe file is harmless, and a throw here would mask
-    // the write error that explains why the probe failed.
-    await unlink(file).catch(() => undefined);
-  }
+  // The storage boundary owns `.readyz` too, so the probe cannot follow a planted symlink outside CACHE_DIR.
+  await createCacheStorage(cacheDir).probeWritable();
 }
 
 /**

@@ -425,7 +425,7 @@ CREATE INDEX audit_logs_action_idx ON audit_logs (action, created_at DESC);
 
 ## 3. Invariants (enforced in DB where possible, otherwise in service + tests)
 
-1. `map_versions.file_size_bytes > 0` and `storage_path` starts with `<country.slug>/`.
+1. `map_versions.file_size_bytes > 0` and `storage_path` is exactly three components, `<country.slug>/<version>/<filename>`; the storage boundary validates every component and rejects malformed stored paths before filesystem access.
 2. A version may be `ready` only with a non-null checksum (enforced by `mv_ready_needs_checksum`).
 3. `country_cache` exists ⇔ the country has ≥ 1 version row.
 4. `is_public = true` requires ≥ 1 `ready` version (service-checked; toggling auto-closes on last delete).

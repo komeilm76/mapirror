@@ -3,9 +3,23 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 62 passes · 227 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6).
+**Totals:** 63 passes · 230 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 63 — 2026-10-27 (cache paths and unlinking needed no-symlink review)
+
+P2-JOB-06 centralizes cache filesystem access behind validated path references. Adversarial review checked attacker-controlled path components, persisted `storage_path` parsing, symlinked parent/leaf entries, atomic installation, deletion behavior, readiness probing, and the JOB-05 streaming integration.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **Cache operations could traverse a symlinked parent under `CACHE_DIR`.** A planted `.partial` or country/version directory link could redirect download reads, writes, install, or cleanup outside the cache root | Walk each parent with `lstat` + canonical-path checks before access, reject symlink traversal, and open the leaf with `O_NOFOLLOW`. Cleanup unlinks only the first link component or named file, never its target. Tests preserve outside sentinel bytes for `.partial`, country, and version paths |
+| 2 | **The readiness probe followed a leaf `.readyz` symlink and could truncate its target.** Its direct `writeFile` bypassed the cache path policy | Move the probe write/remove into the storage module and use the same no-follow open and safe unlink; the symlink probe confirms outside bytes stay unchanged and the link is removed |
+| 3 | **A generic storage file reference initially allowed direct truncate/append access to an installed version.** A future consumer could bypass the atomic part-install contract | Make final version references read-only; writes go through a private part and validated atomic install. Tests reject `write` and `append` while preserving installed bytes |
+
+The download handler and readiness probe now use the storage boundary; relative DB storage paths must contain exactly the validated `<slug>/<version>/<filename>` shape. Twenty-six storage tests cover path traversal, malformed stored paths, symlinked parents/leaves, atomic install, outside-target preservation, safe unlink, readiness, and read-only final files. All nine P2-JOB-05 PostgreSQL worker tests and all 14 readiness-probe tests pass with the new storage API. Two adversarial mutations—disabling component validation and disabling symlink-parent checks—were rejected by the focused tests. Full non-Docker `bun run check`: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint and formatting; **1,331 passed across 97 files, 7 skipped**. Docker runtime/operator tests remain excluded per operator direction. **Totals after this pass: 63 passes · 230 defects fixed · 0 open.**
 
 ---
 

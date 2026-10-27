@@ -70,7 +70,8 @@ mapirror/
 │  │  │  │  │  ├─ handlers/        # download.ts, import.ts, update-check.ts,
 │  │  │  │  │  │                   # catalog-sync.ts, prune.ts, delete.ts
 │  │  │  │  │  └─ scheduler.ts     # Interval evaluation (daily/weekly/monthly)
-│  │  │  │  └─ system/             # Metrics sampler (CPU/RAM/disk), disk preflight
+│  │  │  │  ├─ system/             # Metrics sampler (CPU/RAM/disk), disk preflight
+│  │  │  │  └─ storage/             # Validated CACHE_DIR paths, parts, no-follow open/install/unlink
 │  │  │  ├─ db/
 │  │  │  │  ├─ migrations/         # 0001_init.sql, 0002_catalog.sql … (SQL only, Kysely migrator)
 │  │  │  │  ├─ migrator.ts         # SQL provider, migrateToLatest/resetDatabase, name rules
@@ -87,8 +88,7 @@ mapirror/
 │  │  │     ├─ client-ip.ts        # Untrusted forwarded address → a value `inet` accepts, or null
 │  │  │     ├─ rate-limit.ts       # Sliding-window limiter: bounded, injectable clock, refusal is free
 │  │  │     ├─ housekeeping.ts     # Boot-time token pruning: bounded, off the boot path, never fatal
-│  │  │     ├─ storage.ts          # Path building, .part files, atomic rename, delete
-│  │  │     ├─ download.ts         # Streamed fetch, resume, progress, checksum
+│  │  │     ├─ download.ts         # Streamed fetch, resume, progress, checksum via a storage-owned file handle
 │  │  │     ├─ checksum.ts         # MD5/SHA-256 streaming
 │  │  │     ├─ time.ts             # UTC helpers, schedule math (tested)
 │  │  │     ├─ errors.ts           # AppError subclasses + codes
@@ -97,7 +97,8 @@ mapirror/
 │  │     ├─ integration/catalog-repositories.spec.ts # Real-Postgres search, filters, cache, paging and versions
 │  │     ├─ geofabrik-region-page.spec.ts   # Three offline HTML fixtures + size/date edge cases
 │  │     ├─ geofabrik-file-metadata.spec.ts # Bounded HEAD and MD5 request cases
-│  │     └─ geofabrik-slug.spec.ts          # Normalization, collisions, stability, path constraints
+│  │     ├─ geofabrik-slug.spec.ts          # Normalization, collisions, stability, path constraints
+│  │     └─ storage.spec.ts                 # Path validation, symlink safety, atomic install, safe unlink
 │  │
 │  └─ web/                         # Vue 3 + Vuetify 3 SPA (served by nginx)
 │     ├─ package.json              # vue, vue-router, vuetify, pinia, @vueuse/core

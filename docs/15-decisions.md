@@ -81,10 +81,9 @@ Settings. Bootstrap and reset scripts act on a username, so adding a second admi
 ## ADR-006 — Local disk storage at `/data/cache` (D-5)
 
 **Decision.** Files live on a named Docker volume mounted at `/data/cache`, addressed by
-`<slug>/<version>/<filename>`; a thin `storage` module owns every path.
+`<slug>/<version>/<filename>`; the `modules/storage/storage.ts` boundary owns every path and filesystem operation. It accepts validated identity components or validated three-component persisted paths, isolates worker parts under `.partial/<uuid>.part`, installs them by same-volume rename, rejects symlink traversal beneath the canonicalized root, and unlinks only the named leaf or an encountered link component.
 
-**Consequences.** No S3 credentials, no network latency on public downloads (Nginx sends files at disk
-speed). The storage module is the only place to change for object storage later.
+**Consequences.** No S3 credentials, no network latency on public downloads (Nginx streams the API response). The storage module is the only place to change for object storage later. The cache volume must be writable only by the API service/operator because portable path walks cannot be made atomic against a hostile concurrent writer.
 
 ---
 
@@ -111,7 +110,7 @@ for the last few updates. Pruning is a separate, audited operation.
 ## ADR-009 — Hard delete with typed confirmation (D-7b)
 
 **Decision.** Country deletion requires typing the slug; version deletion requires an explicit confirm.
-Files are unlinked after the DB transaction commits.
+Files are unlinked through the storage boundary after the DB transaction commits; cleanup removes only named files or the encountered symlink itself, never recursively following paths.
 
 **Consequences.** No trash UI or restore path; a failed unlink leaves an orphan that the sweep reports
 (it never becomes a broken download). Simpler code, smaller storage footprint, unambiguous state.

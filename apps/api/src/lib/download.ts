@@ -1,23 +1,30 @@
 /**
  * Bounded-memory HTTP range transfer and streaming file verification (`P2-JOB-05`).
  *
- * This utility owns the byte-stream protocol, not source identity or cache paths. The caller validates destination paths,
- * obtains a trusted expected MD5 from the configured source adapter, and decides whether a mutable alias has a validator.
+ * This utility owns the byte-stream protocol, not source identity or cache path construction. The caller supplies a file
+ * handle from the storage boundary, obtains a trusted expected MD5 from the configured source adapter, and decides
+ * whether a mutable alias has a validator.
  * It never buffers the complete artifact in memory.
  *
  * @module lib/download
  */
 
 import { createHash } from 'node:crypto';
-import { open, rm, stat } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
 
 /** Fetch signature narrowed to absolute URLs for deterministic offline tests. */
 export type DownloadFetch = (input: URL, init?: RequestInit) => Promise<Response>;
+/** Minimal safe file operations required by the byte-stream utility; storage supplies the implementation. */
+export interface DownloadFile {
+  /** Current size, or zero if absent. */
+  size(): Promise<bigint>;
+  /** Opens the file using storage-enforced no-follow rules. */
+  open(mode: 'read' | 'write' | 'append'): Promise<FileHandle>;
+  /** Removes this storage-owned file/link without traversing a symlink. */
+  remove(): Promise<void>;
+}
 /** Injectable low-level write operation; production loops until the entire chunk is written. */
-export type DownloadChunkWriter = (
-  handle: Awaited<ReturnType<typeof open>>,
-  bytes: Uint8Array,
-) => Promise<void>;
+export type DownloadChunkWriter = (handle: FileHandle, bytes: Uint8Array) => Promise<void>;
 /** The one progress shape emitted by a streaming transfer. */
 export interface DownloadProgressUpdate {
   readonly progressBytes: bigint;
@@ -29,8 +36,8 @@ export interface DownloadProgressUpdate {
 export interface StreamDownloadOptions {
   /** Validated absolute upstream URL. */
   readonly url: string;
-  /** Caller-owned `.part` file path. */
-  readonly partPath: string;
+  /** Caller-owned `.part` file reference supplied by the safe storage module. */
+  readonly part: DownloadFile;
   /** Advertised full size, or `null` when unavailable. */
   readonly expectedSize: bigint | null;
   /** Whether the URL is mutable (`latest`) rather than an immutable dated snapshot. */
@@ -49,16 +56,6 @@ export interface StreamDownloadOptions {
   readonly writeChunk?: DownloadChunkWriter;
 }
 
-/** Reads a `.part` file's current length without converting it through an unsafe number. */
-export async function fileSize(path: string): Promise<bigint> {
-  try {
-    return (await stat(path, { bigint: true })).size;
-  } catch (error) {
-    if (hasCode(error, 'ENOENT')) return 0n;
-    throw error;
-  }
-}
-
 /**
  * Streams a source response to `.part`, using Range only when the local prefix is safe to resume.
  *
@@ -69,13 +66,13 @@ export async function fileSize(path: string): Promise<bigint> {
 export async function streamDownloadToPart(options: StreamDownloadOptions): Promise<void> {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const writeChunk = options.writeChunk ?? writeAll;
-  let offset = await fileSize(options.partPath);
+  let offset = await options.part.size();
   if (options.mutable && options.validator === null && offset > 0n) {
-    await rm(options.partPath, { force: true });
+    await options.part.remove();
     offset = 0n;
   }
   if (options.expectedSize !== null && offset > options.expectedSize) {
-    await rm(options.partPath, { force: true });
+    await options.part.remove();
     offset = 0n;
   }
   if (options.expectedSize !== null && offset === options.expectedSize && offset > 0n) return;
@@ -93,7 +90,7 @@ export async function streamDownloadToPart(options: StreamDownloadOptions): Prom
   if (offset > 0n && response.status === 200) {
     // If-Range failed or Range was ignored: use this full response as a replacement, not an append.
     try {
-      await rm(options.partPath, { force: true });
+      await options.part.remove();
       offset = 0n;
     } catch (error) {
       await response.body?.cancel().catch(() => undefined);
@@ -116,9 +113,9 @@ export async function streamDownloadToPart(options: StreamDownloadOptions): Prom
     throw new Error('Source returned an empty download.');
   }
 
-  let target: Awaited<ReturnType<typeof open>>;
+  let target: FileHandle;
   try {
-    target = await open(options.partPath, offset > 0n ? 'a' : 'w');
+    target = await options.part.open(offset > 0n ? 'append' : 'write');
   } catch (error) {
     await response.body.cancel().catch(() => undefined);
     throw error;
@@ -165,40 +162,37 @@ export async function streamDownloadToPart(options: StreamDownloadOptions): Prom
 
 /** Streams the file through MD5 and counts bytes without materializing it in memory. */
 export async function hashFile(
-  path: string,
+  file: DownloadFile,
   signal: AbortSignal,
 ): Promise<{ checksum: string; size: bigint }> {
-  const hash = createHash('md5');
-  let size = 0n;
-  for await (const chunk of readFileChunks(path)) {
-    assertNotAborted(signal);
-    size += BigInt(chunk.byteLength);
-    hash.update(chunk);
-  }
-  return { checksum: hash.digest('hex'), size };
-}
-
-/** Creates the file reader lazily; each chunk is a bounded copy. */
-async function* readFileChunks(path: string): AsyncGenerator<Uint8Array> {
-  const handle = await open(path, 'r');
+  const handle = await file.open('read');
   try {
-    const buffer = new Uint8Array(128 * 1024);
-    let position = 0;
-    while (true) {
-      const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, position);
-      if (bytesRead === 0) return;
-      position += bytesRead;
-      yield buffer.slice(0, bytesRead);
+    const hash = createHash('md5');
+    let size = 0n;
+    for await (const chunk of readFileChunks(handle)) {
+      assertNotAborted(signal);
+      size += BigInt(chunk.byteLength);
+      hash.update(chunk);
     }
+    return { checksum: hash.digest('hex'), size };
   } finally {
     await handle.close();
   }
 }
 
-export async function writeAll(
-  handle: Awaited<ReturnType<typeof open>>,
-  bytes: Uint8Array,
-): Promise<void> {
+/** Reads an already safe-opened file in bounded copies. */
+async function* readFileChunks(handle: FileHandle): AsyncGenerator<Uint8Array> {
+  const buffer = new Uint8Array(128 * 1024);
+  let position = 0;
+  while (true) {
+    const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, position);
+    if (bytesRead === 0) return;
+    position += bytesRead;
+    yield buffer.slice(0, bytesRead);
+  }
+}
+
+export async function writeAll(handle: FileHandle, bytes: Uint8Array): Promise<void> {
   let offset = 0;
   while (offset < bytes.byteLength) {
     const result = await handle.write(bytes, offset, bytes.byteLength - offset, null);
@@ -235,8 +229,4 @@ function assertNotAborted(signal: AbortSignal): void {
 
 function maxBigInt(left: bigint, right: bigint): bigint {
   return left > right ? left : right;
-}
-
-function hasCode(error: unknown, code: string): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
 }
