@@ -64,12 +64,15 @@ mapirror/
 │  │  │  │  │  ├─ file-metadata.ts # Bounded HEAD metadata and .md5 requests
 │  │  │  │  ├─ slug.ts           # Name-based local slugs and deterministic collision resolution
 │  │  │  │  └─ fixtures/          # Saved upstream-shaped samples for offline tests
-│  │  │  │  ├─ jobs/               # Queue + worker
-│  │  │  │  │  ├─ queue.ts         # claim/complete/fail with FOR UPDATE SKIP LOCKED
-│  │  │  │  │  ├─ worker.ts        # Loop, concurrency, graceful stop
-│  │  │  │  │  ├─ handlers/        # download.ts, import.ts, update-check.ts,
-│  │  │  │  │  │                   # catalog-sync.ts, prune.ts, delete.ts
-│  │  │  │  │  └─ scheduler.ts     # Interval evaluation (daily/weekly/monthly)
+│  │  │  │  ├─ jobs/               # Queue, download enqueue guard, worker and cancellation
+│  │  │  │  │  ├─ enqueue-download.ts # Partial unique-index conflict → JOB_ALREADY_RUNNING / 409
+│  │  │  │  │  ├─ download-handler.ts # Resumable transfer, verify, atomically install
+│  │  │  │  │  ├─ worker.ts        # FOR UPDATE SKIP LOCKED, loop, concurrency, graceful stop
+│  │  │  │  ├─ cancellation.ts    # Cooperative cancellation + ownership-loss abort
+│  │  │  │  ├─ lock.ts            # Session advisory lock ownership
+│  │  │  │  ├─ progress.ts        # Monotonic, throttled progress reporting
+│  │  │  │  ├─ reaper.ts          # Stale worker recovery
+│  │  │  │  └─ retry.ts           # Bounded exponential backoff
 │  │  │  │  ├─ system/             # Metrics sampler (CPU/RAM/disk), disk preflight
 │  │  │  │  └─ storage/             # Validated CACHE_DIR paths, parts, no-follow open/install/unlink
 │  │  │  ├─ db/
@@ -98,6 +101,7 @@ mapirror/
 │  │     ├─ geofabrik-region-page.spec.ts   # Three offline HTML fixtures + size/date edge cases
 │  │     ├─ geofabrik-file-metadata.spec.ts # Bounded HEAD and MD5 request cases
 │  │     ├─ geofabrik-slug.spec.ts          # Normalization, collisions, stability, path constraints
+│  │     ├─ integration/jobs-enqueue.spec.ts # PostgreSQL duplicate, race, terminal reuse, and 409 mapping
 │  │     └─ storage.spec.ts                 # Path validation, symlink safety, atomic install, safe unlink
 │  │
 │  └─ web/                         # Vue 3 + Vuetify 3 SPA (served by nginx)

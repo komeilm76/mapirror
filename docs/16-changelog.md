@@ -3,9 +3,23 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 63 passes · 230 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3).
+**Totals:** 64 passes · 231 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
+
+---
+
+## Pass 64 — 2026-10-27 (active download uniqueness needed a conflict boundary)
+
+P2-JOB-07 closes the gap between the existing PostgreSQL partial unique index and the documented duplicate-download response.
+
+| # | Bug | Fix |
+|---|---|---|
+| 1 | **The database rejected a second active download, but there was no safe enqueue operation to translate that exact rejection into the documented `JOB_ALREADY_RUNNING` / 409.** A check-then-insert would still race between API processes, while letting the raw PostgreSQL error escape would become an internal error | Add `modules/jobs/enqueue-download.ts`: make one insert and translate only SQLSTATE `23505` on `jobs_one_active_download` to the safe public `AppError`; preserve all other database failures. The PostgreSQL index remains the concurrency authority |
+
+Four new real-PostgreSQL integration tests cover duplicate queued and running jobs, 409 envelope mapping, simultaneous requests on separate pooled connections, distinct key acceptance, terminal-state key reuse, and preservation of an unrelated foreign-key error. Two mutations were killed: changing the mapped constraint name breaks duplicate-to-409 coverage; narrowing the database predicate to `queued` permits a second request after the first job enters `running`, which the integration test rejects. `P2-API-04` remains responsible for HTTP route wiring and end-to-end route coverage.
+
+Full non-Docker `bun run check`: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint and formatting; **1,335 passed across 98 files, 7 skipped**. Docker runtime/operator tests remain excluded per operator direction. **Totals after this pass: 64 passes · 231 defects fixed · 0 open.**
 
 ---
 

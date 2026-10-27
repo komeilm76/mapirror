@@ -268,7 +268,9 @@ Errors: `409 VERSION_ALREADY_CACHED` (that exact version is already `ready`), `4
 `503 DISK_FULL` (`details.requiredBytes` is the padded download estimate, `freeBytes` is filesystem space
 available to the API process, and `reserveBytes` / `shortfallBytes` explain the configured floor). Values are JSON
 integers when safe, otherwise decimal strings; `410 SOURCE_VERSION_GONE` (the dated snapshot was deleted upstream —
-offer `latest` instead), `502 SOURCE_UNAVAILABLE` (network failure, safe to retry).
+offer `latest` instead), `502 SOURCE_UNAVAILABLE` (network failure, safe to retry). The partial unique index on active
+`download` jobs is authoritative for `(countryId, version)`: concurrent requests cannot both enqueue, and its named
+constraint maps to `JOB_ALREADY_RUNNING` rather than a generic database error.
 
 ---
 
