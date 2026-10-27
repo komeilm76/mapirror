@@ -154,7 +154,7 @@ CREATE INDEX country_cache_update_idx ON country_cache (update_state)
 CREATE TABLE map_versions (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   country_id       uuid NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
-  version          text NOT NULL,              -- '260101' | 'latest@2026-10-23T20:20:51Z' | upload label
+  version          text NOT NULL,              -- '260101' | 'latest@2026-10-23T20-20-51Z' | upload label
   origin           text NOT NULL CHECK (origin IN ('geofabrik_snapshot','geofabrik_latest','upload')),
   source_url       text,                       -- where it came from (null for uploads)
   source_filename  text NOT NULL,
@@ -196,7 +196,7 @@ CREATE INDEX mv_status_idx ON map_versions (status) WHERE status <> 'ready';
 | Origin | `version` value | Uniqueness meaning |
 |---|---|---|
 | `geofabrik_snapshot` | `260101` (YYMMDD from the file name) | One row per dated snapshot — the archive of what upstream may later delete |
-| `geofabrik_latest` | `latest@2026-10-23T20:20:51Z` | Each download of `latest` becomes a distinct immutable version keyed by the source data timestamp (fallback: `latest@<yyyymmdd-hhmmss>` of fetch time) |
+| `geofabrik_latest` | `latest@2026-10-23T20-20-51Z` | Each download of `latest` becomes a distinct immutable version keyed by the source data timestamp (fallback: fetch time). Colons in the timestamp are encoded as hyphens to satisfy `mv_version_fmt` |
 | `upload` | admin text, default today `YYYY-MM-DD` | Must be unique per country; duplicates rejected (D-10) |
 
 Why: upstream mutates `-latest.osm.pbf` in place and deletes dated files. Recording *what we actually

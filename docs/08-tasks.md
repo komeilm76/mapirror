@@ -127,9 +127,11 @@ prove L1–L3.
 | P2-JOB-02 | Heartbeat + advisory-lock reaper + retry/backoff | D-11 | P2-JOB-01 | ✅ | Killed worker → job requeued within 5 min; a slow job holding its lock is never stolen |
 | P2-JOB-03 | Progress reporting + cancellation | CACHE-1 | P2-JOB-01 | ✅ | Monotonic progress, one DB write/s, bounded ETA; queued cancel is immediate; cooperative running cancel aborts within ≤2 s and `.part` cleanup completes before `canceled` |
 | P2-JOB-04 | Disk preflight + reserve | CACHE-1 | P2-JOB-01 | ✅ | `statfs` available bytes; `ceil(size × 1.1)` + reserve threshold; `503 DISK_FULL` with required/free details and safe byte encoding |
-| P2-JOB-05 | Download handler (stream, Range resume, md5 verify, atomic rename) | CACHE-1 | P2-SRC-04, P2-JOB-03, P2-JOB-04 | ⬜ | Byte-identical file; mismatch aborts cleanly |
+| P2-JOB-05 | Download handler (stream, Range resume, md5 verify, atomic rename) | CACHE-1 | P2-SRC-04, P2-JOB-03, P2-JOB-04 | ✅ | `jobs/download-handler.ts` validates job/source identity and safe path components; `lib/download.ts` streams bounded-memory, resumes only with an exact `206 Content-Range` (mutable `latest` requires strong ETag/Last-Modified), restarts a full `200`, verifies exact known size + MD5, atomically renames, then marks `map_versions` ready and recomputes `country_cache`. Nine PostgreSQL worker tests cover bytes/sidecar, resume, ignored Range, invalid Range cancellation, latest ID format/weak validators, checksum mismatch, running + pre-canceled cleanup, and simulated `ENOSPC`; the 12 source-metadata tests additionally prove bounded sidecar parsing and prompt caller abort |
 | P2-JOB-06 | Storage module (paths, `.part`, unlink safety) | L6 | P2-DB-01 | ⬜ | Path traversal attempts impossible (test) |
 | P2-JOB-07 | Uniqueness guard: one active download per (country, version) | CACHE-1 | P2-JOB-01 | ⬜ | Second request → 409 |
+
+**JOB-05/JOB-06 boundary:** JOB-05 implements only the minimum validated `CACHE_DIR` paths and same-filesystem `.partial/<job>.part` operations required by its acceptance; it does not acquire a dependency on later JOB-06. `P2-JOB-06` remains responsible for consolidating paths, no-symlink traversal protection, and safe unlink/delete operations before other storage consumers use them. The handler is a factory exercised through the real worker; production server registration waits for `P2-API-04` to compose the download API and concrete `MapSource`.
 
 ### Admin API
 

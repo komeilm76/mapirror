@@ -190,8 +190,8 @@ sequenceDiagram
     A->>API: GET /jobs/:jobId
     API-->>A: progressBytes/totalBytes/speed/phase
   end
-  W->>G: HEAD pbf → content-length, last-modified
-  W->>FS: write <job>.part with Range resume
+  W->>G: resolve PBF URL + bounded HEAD/.md5 metadata (cancellable)
+  W->>FS: write .partial/<job>.part on CACHE_DIR with Range resume
   alt administrator cancels while running
     A->>API: POST /jobs/:jobId/cancel
     API->>Q: set cancel_requested (durable)
@@ -200,22 +200,26 @@ sequenceDiagram
       W->>Q: poll cancel_requested on owned job
     end
     W-->>W: abort handler signal; wait for cooperative cleanup
-    W->>FS: remove <job>.part
+    W->>FS: remove .partial/<job>.part
     W->>Q: mark canceled after cleanup
   else transfer completes
-    W->>G: GET .md5
-    W->>FS: verify → rename to finland/261023/…
-    W->>Q: mark succeeded + result {versionId}
+    W->>FS: verify exact known length + MD5
+    W->>FS: atomic rename to finland/261023/…
+    W->>Q: commit ready version + cache summary; worker records success {versionId}
+  else checksum mismatch or disk write failure
+    W->>FS: remove corrupt/full .part
+    W->>Q: mark version failed; worker retries safely or becomes terminal
   end
 ```
 
-**Invariants:** no `ready` row before checksum + rename; no duplicate active job; disk preflight
-before enqueue; the preflight requires `ceil(content-length × 1.1)` plus the configured reserve; queued cancellation is
-immediate; a running cancel leaves no `.part` before its terminal state. Cancellation targets ≤2 s for a cooperative
-handler; arbitrary blocking code is not forcibly interrupted.
-**Tests:** happy path with a fixture HTTP server, resume after mid-stream abort, checksum mismatch
-fails cleanly, disk-full refuses with `503` plus required/free details, cancellation is observed within 2 s and cleanup precedes `canceled`,
-duplicate request → `409`.
+**Invariants:** no `ready` row before MD5 verification + atomic rename; the ready transaction recomputes the country-cache
+summary; no duplicate active job; disk preflight before enqueue; the preflight requires `ceil(content-length × 1.1)` plus
+the configured reserve; queued cancellation is immediate; running cancellation leaves no `.partial/<job>.part` before its
+terminal state. Cancellation targets ≤2 s for a cooperative handler; arbitrary blocking code is not forcibly interrupted.
+**Tests:** P2-JOB-05 worker integration tests use an injected offline transport for byte-identical happy path, sidecar MD5,
+Range resume, server-ignored Range restart, checksum mismatch, cancellation cleanup, and simulated `ENOSPC`. P2-TST-01/02
+remain responsible for the shared fixture HTTP server and full download suite; disk preflight and duplicate-request `409`
+are covered by their own API tasks.
 
 ---
 

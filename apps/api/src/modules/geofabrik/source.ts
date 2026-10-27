@@ -106,7 +106,12 @@ export interface MapSource {
    *
    * @param regionId - Raw upstream region identifier, not a local slug.
    * @param version - A dated source version or the moving `latest` alias.
+   * @param signal - Optional cancellation signal for bounded upstream requests.
    * @returns The resolved URL and metadata; never downloads or stores the artifact itself.
    */
-  resolveDownload(regionId: string, version: string): Promise<ResolvedDownload>;
+  resolveDownload(
+    regionId: string,
+    version: string,
+    signal?: AbortSignal,
+  ): Promise<ResolvedDownload>;
 }

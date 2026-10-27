@@ -228,7 +228,7 @@ must mean *what we actually stored*, not a mutable URL.
 | Origin | `version` | Meaning |
 |---|---|---|
 | Dated snapshot | `260101` | The upstream snapshot date |
-| Latest download | `latest@2026-10-23T20:20:51Z` | The source's "data up to" timestamp at fetch time (fallback: fetch time) |
+| Latest download | `latest@2026-10-23T20-20-51Z` | The source's "data up to" timestamp at fetch time (fallback: fetch time); time colons become hyphens to satisfy the database version-format constraint |
 | Upload | admin text, default `YYYY-MM-DD` | Local artifact |
 
 Every version stores `source_url`, `source_filename`, `file_size_bytes`, `checksum_md5`,

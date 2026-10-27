@@ -135,6 +135,25 @@ describe('fetchGeofabrikHeadMetadata', () => {
     expect(signals.every((signal) => signal.aborted)).toBe(true);
   });
 
+  it('settles promptly when the caller aborts a fetch implementation that ignores AbortSignal', async () => {
+    const controller = new AbortController();
+    let requestSignal: AbortSignal | null | undefined;
+    const neverSettles: GeofabrikFetch = (_input, init) => {
+      requestSignal = init?.signal;
+      return new Promise<Response>(() => undefined);
+    };
+    const pending = fetchGeofabrikHeadMetadata(PBF_URL, {
+      fetchImpl: neverSettles,
+      timeoutMs: 30_000,
+      signal: controller.signal,
+    });
+    setTimeout(() => controller.abort(new Error('caller canceled')), 5);
+
+    await expect(pending).rejects.toThrow('caller canceled');
+    expect(requestSignal).toBeInstanceOf(AbortSignal);
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
   it('rejects unbounded option values and invalid source URLs', async () => {
     const fetchImpl: GeofabrikFetch = () => Promise.resolve(headResponse());
 

@@ -43,7 +43,8 @@ operator ever wants a dedicated container.
 | `admin` | Admin JSON APIs (`/_admin/api/*`), orchestration of jobs | Stream files without going through `storage` |
 | `public` | Published read model, public downloads, stats counters | Return unpublished data, mutate anything |
 | `geofabrik` (MapSource) | Catalog fetch, region page parse, local slug derivation, version discovery, bounded HEAD/metadata + `.md5` | Write to DB or disk (returns facts only) |
-| `jobs` | Queue, worker loop, job handlers, progress, cancellation | Contain HTTP concerns |
+| `lib/download` | Generic PBF byte streaming, Range/If-Range, and streaming MD5/length verification | Decide source identity, build cache paths, or mutate job/version rows |
+| `jobs` | Queue, worker loop, job handlers, progress, cancellation; orchestrates source resolution + the shared streaming utility | Parse source pages or implement low-level byte-stream protocol (delegated to `geofabrik` / `lib/download`) |
 | `system` | CPU/RAM/disk sampling, disk preflight | Decide when to prune |
 | `db` | SQL, repositories, transactions | Contain business rules that belong in modules |
 
@@ -198,15 +199,14 @@ sequenceDiagram
   API->>Q: insert job (queued)
   API-->>A: 202 {jobId}
   W->>Q: claim job
-  W->>G: HEAD (size, etag, last-modified)
-  W->>FS: open <job>.part, stream with Range resume
+  W->>G: resolve PBF + bounded HEAD/.md5 metadata (cancellable)
+  W->>FS: open .partial/<job>.part on CACHE_DIR, stream with Range resume
   loop every chunk
     W->>Q: progress_bytes (throttled to 1/s)
   end
-  W->>G: GET .md5
-  W->>FS: verify checksum
-  W->>FS: rename to <slug>/<version>/<file>
-  W->>API: insert map_versions (ready), audit, maybe prune
+  W->>FS: verify MD5 and exact known length
+  W->>FS: atomic rename to <slug>/<version>/<file>
+  W->>Q: commit map_versions ready + country_cache summary
   API-->>A: poll sees succeeded
 ```
 
@@ -214,8 +214,7 @@ Key guarantees:
 
 - **Empty shells never appear:** the DB row is created as `pending` and only becomes `ready` after
   the checksum matches and the rename succeeds.
-- **Resume:** `.part` file kept on transient failures; retries send `Range: bytes=<size>-` and append.
-  If the server ignores Range (`200`), the file is truncated and restarted — correct either way.
+- **Resume:** `.partial/<job>.part` is kept on transient failures; retries send `Range: bytes=<size>-` and append only when `206 Content-Range` starts at the exact local offset. Immutable dated snapshots can resume by identity; the mutable `latest` alias resumes only with a strong ETag or Last-Modified validator (`If-Range`). Weak/no validators disable latest resume. If the server ignores Range or `If-Range` returns a full `200`, the part is truncated and that body replaces it. Invalid ranges are rejected without appending.
 - **Disk preflight:** estimates `ceil(content-length * 1.1)` bytes and reads `statfs` available bytes (`bavail`) for
   `CACHE_DIR`. A download proceeds only when `available >= estimate + DISK_RESERVE_BYTES` (default 2 GiB); an exact fit
   is allowed. Unknown source length contributes zero known transfer bytes, but the reserve is still enforced and the
@@ -225,7 +224,8 @@ Key guarantees:
   `SOURCE_VERSION_GONE` and the UI suggests `latest` — we never silently substitute a different file.
 - **Source metadata requests:** `HEAD` and `.md5` reads have a 10-second default deadline and three total attempts;
   request-level overrides are capped at 30 seconds and five attempts. Network failures and transient HTTP statuses
-  retry with bounded backoff; permanent 4xx responses fail immediately. Sidecar bodies are capped at 4 KiB.
+  retry with bounded backoff; permanent 4xx responses fail immediately. Sidecar bodies are capped at 4 KiB, and a
+  handler cancellation aborts the in-flight request rather than waiting for its deadline.
 
 ## 7. Update detection
 
@@ -272,10 +272,10 @@ class implementing the interface + one line where it is constructed.
 | Failure | Behaviour |
 |---|---|
 | Geofabrik unreachable | Catalog sync job fails; UI shows stale-catalog timestamp + retry; cached maps keep serving |
-| Checksum mismatch | Job fails, `.part` deleted, no version created, admin sees the expected vs actual hash |
-| Disk full | Preflight blocks new jobs; running job fails cleanly, `.part` removed, `DISK_LOW` alert widget |
+| Checksum mismatch | `.part` is deleted and the version remains `failed` (never served); the worker persists the safe generic `JOB_HANDLER_FAILED` retry/terminal contract, not upstream checksum values |
+| Disk full | Preflight blocks new jobs; a running `ENOSPC`/`EDQUOT` fails safely with `.partial/<job>.part` removed; the operator-facing disk signal remains `DISK_LOW` |
 | DB down | API returns `503` with `DB_UNAVAILABLE`; worker pauses; Nginx keeps serving nothing else |
-| Process crash mid-download | Reaper requeues once the job's advisory lock is free; resume continues from `.part` (details: `05-flows.md` F12) |
+| Process crash mid-download | Reaper requeues once the job's advisory lock is free; resume continues from `.partial/<job>.part` (details: `05-flows.md` F12) |
 | File missing for a `ready` version | Download returns `410 VERSION_FILE_MISSING` + audit entry; admin row shows "file missing" |
 | Public toggle off mid-download | New requests get `404`; in-flight transfers finish (no broken pipes) |
 

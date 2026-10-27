@@ -144,7 +144,7 @@ sibling are mutually exclusive, and the hygiene check counts commented declarati
 | `POSTGRES_PASSWORD` | `mapirror` | ✅ (compose) | Password for the `db` container — the one place it is written — and the value the API completes its password-less DSN from. Any character works: it is percent-encoded, never concatenated into a URL by hand |
 | `POSTGRES_PASSWORD_FILE` | — | — | Docker-secret alternative to `POSTGRES_PASSWORD`, read at boot with trailing newlines stripped. Never set beside it: `parseEnv` refuses the pair, and `.env` reaches a compose container whole, so compose's own `POSTGRES_PASSWORD` would arrive at the same time (`12-deployment.md` §2) |
 | `CACHE_DIR` | `./data/cache` | ✅ | Artifact storage root (compose: `/data/cache` volume) |
-| `TMP_DIR` | `./data/tmp` | ✅ | Uploads + `.part` files (compose: `/data/tmp` volume) |
+| `TMP_DIR` | `./data/tmp` | ✅ | Upload staging files (compose: `/data/tmp` volume); download `.part` files stay under `CACHE_DIR` for same-filesystem atomic rename |
 | `ADMIN_USERNAME` | `admin` | — | Bootstrap username |
 | `ADMIN_PASSWORD` | — | ✅ (first boot) | Bootstrap password (never logged) |
 | `ADMIN_PASSWORD_FILE` | — | — | Alternative to env (Docker secret) |
@@ -218,12 +218,15 @@ bun run db:reset                                              # dev only
   advisory lock for its active job, and heartbeats `locked_at` every 15 seconds. Types without a registered handler stay
   queued. Handlers receive the pinned session, an `AbortSignal`, and a throttled `reportProgress` callback; use the
   session for DB work rather than checking out another pool connection. Running cancellation is durably polled every
-  250 ms and handlers must check the signal on entry and between chunks/retries, removing temporary `.part` files
-  before returning even when already canceled at entry; the worker marks `canceled` only after cleanup. Progress-byte writes are monotonic and capped at one per second; ETA is
+  250 ms and handlers must check the signal on entry and between chunks/retries, removing temporary `.partial/<job>.part`
+  files before returning even when already canceled at entry; the worker marks `canceled` only after cleanup. Progress-byte writes are monotonic and capped at one per second; ETA is
   derived from bytes and speed. Handler failures retry with bounded exponential backoff; `modules/jobs/reaper.ts`
   recovers stale rows only when it can acquire the same advisory lock (4:30 stale threshold + 15-second scans).
   `WORKER_ENABLED` controls whether `server.ts` starts both services, and shutdown drains them before the database pool
-  closes. Job-specific tasks add validated handlers; the generic worker never interprets `payload`.
+  closes. Job-specific tasks add validated handlers; the generic worker never interprets `payload`. The P2-JOB-05
+  download handler currently keeps its narrowly scoped cache paths and `.partial/<job>.part` operations local so
+  P2-JOB-05 does not depend on the later P2-JOB-06 storage task; P2-JOB-06 must extract common path construction and
+  complete unlink/symlink safety before other storage operations are added.
 - `modules/system/disk.ts` measures `statfs` capacity using `bavail` (space available to the API user). Download preflight
   uses `ceil(content-length × 1.1)` and proceeds only if that padded estimate plus `DISK_RESERVE_BYTES` fits; `DISK_FULL`
   details include required/free/reserve/shortfall bytes, encoded as decimal strings if they exceed safe JSON integers.

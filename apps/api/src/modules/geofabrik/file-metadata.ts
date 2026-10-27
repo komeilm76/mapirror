@@ -21,6 +21,8 @@ export interface GeofabrikRequestOptions {
   readonly maxAttempts?: number;
   /** Base retry delay in milliseconds; defaults to 150 ms and is capped at 2 seconds. */
   readonly retryDelayMs?: number;
+  /** Optional caller cancellation; aborts the active request and response-body read promptly. */
+  readonly signal?: AbortSignal;
 }
 
 /** Parsed response headers for one PBF file. */
@@ -39,6 +41,7 @@ interface ResolvedOptions {
   readonly timeoutMs: number;
   readonly maxAttempts: number;
   readonly retryDelayMs: number;
+  readonly signal: AbortSignal | undefined;
 }
 
 /** Internal timeout marker, used to distinguish an expired deadline from an ordinary network failure. */
@@ -78,6 +81,7 @@ function resolveOptions(options: GeofabrikRequestOptions): ResolvedOptions {
     timeoutMs,
     maxAttempts,
     retryDelayMs,
+    signal: options.signal,
   };
 }
 
@@ -96,8 +100,19 @@ function retryPause(baseMs: number, attempt: number): Promise<void> {
 async function withDeadline<T>(
   timeoutMs: number,
   operation: (signal: AbortSignal) => Promise<T>,
+  outerSignal?: AbortSignal,
 ): Promise<T> {
   const controller = new AbortController();
+  let rejectCaller: ((reason: unknown) => void) | undefined;
+  const callerAbort = new Promise<never>((_resolve, reject) => {
+    rejectCaller = reject;
+  });
+  const abortFromCaller = (): void => {
+    controller.abort(outerSignal?.reason);
+    rejectCaller?.(outerSignal?.reason ?? new Error('Geofabrik request was canceled'));
+  };
+  if (outerSignal?.aborted === true) abortFromCaller();
+  else outerSignal?.addEventListener('abort', abortFromCaller, { once: true });
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {
@@ -108,9 +123,12 @@ async function withDeadline<T>(
 
   try {
     const request = Promise.resolve().then(() => operation(controller.signal));
-    return await Promise.race([request, timeout]);
+    return await Promise.race(
+      outerSignal === undefined ? [request, timeout] : [request, timeout, callerAbort],
+    );
   } finally {
     if (timer !== undefined) clearTimeout(timer);
+    outerSignal?.removeEventListener('abort', abortFromCaller);
   }
 }
 
@@ -125,15 +143,20 @@ async function requestWithRetries<T>(
 ): Promise<T> {
   for (let attempt = 1; attempt <= options.maxAttempts; attempt += 1) {
     try {
-      return await withDeadline(options.timeoutMs, async (signal) => {
-        const response = await options.fetchImpl(url, { method, headers, signal });
-        if (!response.ok) {
-          await response.body?.cancel().catch(() => undefined);
-          throw new HttpStatusError(response.status, isRetryableStatus(response.status));
-        }
-        return readResponse(response, signal);
-      });
+      return await withDeadline(
+        options.timeoutMs,
+        async (signal) => {
+          const response = await options.fetchImpl(url, { method, headers, signal });
+          if (!response.ok) {
+            await response.body?.cancel().catch(() => undefined);
+            throw new HttpStatusError(response.status, isRetryableStatus(response.status));
+          }
+          return readResponse(response, signal);
+        },
+        options.signal,
+      );
     } catch (error) {
+      if (options.signal?.aborted === true) throw options.signal.reason ?? error;
       if (error instanceof InvalidChecksumError) {
         throw new Error('Geofabrik MD5 response did not contain a valid checksum');
       }
