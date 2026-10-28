@@ -42,25 +42,15 @@ afterEach(async () => {
 });
 
 describe('the three API prefixes are registered', () => {
-  const stubs: [string, 'GET' | 'POST', string][] = [
-    ['admin', 'GET', '/_admin/api/catalog'],
-    ['public', 'GET', '/_public/api/countries'],
-  ];
+  const stubs: [string, 'GET' | 'POST', string][] = [['public', 'GET', '/_public/api/countries']];
 
   for (const [scope, method, url] of stubs) {
     it(`${scope} namespace answers under its prefix`, async () => {
       const response = await (await app()).inject({ method, url });
 
-      if (scope === 'admin') {
-        // New as of `P1-AUTH-05`: the guard answers before the route does, so an anonymous request to an admin route
-        // is a `401` and never reaches the stub. The stub's own `503` is asserted in `admin-guard.spec.ts`, behind a
-        // token — this table states where the namespace *is*, and for admin that answer now comes from the guard.
-        expect(response.statusCode).toBe(statusFor('UNAUTHENTICATED'));
-        expect(response.statusCode).toBe(401);
-      } else {
-        expect(response.statusCode).toBe(statusFor('NOT_READY'));
-        expect(response.statusCode).toBe(503);
-      }
+      // The admin catalog endpoint is implemented; the public countries endpoint is the only remaining stub.
+      expect(response.statusCode).toBe(statusFor('NOT_READY'));
+      expect(response.statusCode).toBe(503);
       expect(response.headers['content-type']).toMatch(/^application\/json/);
     });
   }
@@ -95,8 +85,8 @@ describe('the three API prefixes are registered', () => {
       expect(isApiPath(url), route).toBe(true);
       expect(task, route).toMatch(/^P[0-9]-[A-Z]+-[0-9]+$/);
     }
-    // Two stubs remain; each disappears from this map as its module lands, and `_auth/api/login` is the first to go.
-    expect(Object.keys(STUB_ROUTES)).toHaveLength(2);
+    // The public countries route is the only remaining stub; catalog listing was implemented by P2-API-01.
+    expect(Object.keys(STUB_ROUTES)).toHaveLength(1);
   });
 
   it('serves nothing outside the three prefixes — no root, no bare prefix, no page', async () => {

@@ -54,6 +54,7 @@ mapirror/
 │  │  │  │  │  └─ tokens.ts         # Bearer tokens: mint, digest, verify verdict, revoke, prune
 │  │  │  │  ├─ admin/              # /_admin/api: catalog, cache, versions, imports,
 │  │  │  │  │  │                   # intervals, jobs, metrics, settings, audit
+│  │  │  │  │  ├─ catalog-route.ts # Authenticated search/filter/page + consistent freshness snapshot
 │  │  │  │  │  ├─ routes/{catalog,cache,versions,imports,intervals,jobs,system,settings,audit}.ts
 │  │  │  │  │  └─ services/{cache,versions,publication,intervals,metrics}.ts
 │  │  │  │  ├─ public/             # /_public/api: countries, versions, download, stats
@@ -99,6 +100,7 @@ mapirror/
 │  │  │     └─ logger.ts           # Pino config with redaction
 │  │  └─ tests/                    # API, integration, and source-adapter tests
 │  │     ├─ integration/catalog-repositories.spec.ts # Real-Postgres search, filters, cache, paging and versions
+│  │     ├─ integration/catalog-route.spec.ts # Authenticated API projection, contract, filtering and 400-row budget
 │  │     ├─ geofabrik-region-page.spec.ts   # Three offline HTML fixtures + size/date edge cases
 │  │     ├─ geofabrik-file-metadata.spec.ts # Bounded HEAD and MD5 request cases
 │  │     ├─ geofabrik-slug.spec.ts          # Normalization, collisions, stability, path constraints
@@ -181,6 +183,7 @@ mapirror/
 │     │  ├─ pagination.ts          # parsePagination/buildPageMeta, defaults + clamping
 │     │  ├─ license.ts             # ODbL + Geofabrik attribution strings
 │     │  ├─ constants.ts           # Token format, sort fields, 9 DB-mirrored vocabularies
+│     │  ├─ catalog.ts             # Catalog query, list response and exact JSON integer contracts
 │     │  ├─ schemas/               # Zod request/response schemas (with the API contract tasks)
 │     │  ├─ types/                 # z.infer exports (no hand-written duplicates)
 │     │  └─ index.ts

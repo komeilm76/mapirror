@@ -13,14 +13,12 @@ import { z } from 'zod';
 import { sql, type Kysely, type Transaction } from 'kysely';
 
 import { insertAuditLog, AUDIT_ACTIONS } from '../../db/repositories/audit-logs';
-import { upsertCatalogCountry } from '../../db/repositories/catalog';
+import { CATALOG_SYNCED_AT_SETTING, upsertCatalogCountry } from '../../db/repositories/catalog';
 import { withTransaction } from '../../db/transaction';
 import type { Database, JsonValue } from '../../db/schema';
 import { baseGeofabrikSlug, deriveGeofabrikSlugs } from '../geofabrik/slug';
 import type { MapSource, SourceRegion } from '../geofabrik/source';
 import type { JobHandler } from './worker';
-
-const CATALOG_SYNCED_AT_SETTING = 'source.catalogSyncedAt';
 
 const CatalogSyncPayloadSchema = z
   .object({

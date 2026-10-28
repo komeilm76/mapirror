@@ -55,7 +55,7 @@ async function withAdmin(
   );
 }
 
-/** One `GET` on the admin stub, with an optional credential. */
+/** One `GET` on the admin catalog endpoint, with an optional credential. */
 function getCatalog(app: FastifyInstance, token?: string) {
   return app.inject({
     method: 'GET',
@@ -74,10 +74,9 @@ describe.skipIf(skipReason !== null)('the guard with the real verifier', () => {
     await withAdmin(async ({ app, token }) => {
       const response = await getCatalog(app, token);
 
-      // Past the guard, so the route's own answer — the `503` stub — is what comes back. The guard's job is to stop
-      // the request or not; what the handler then says is the handler's business.
-      expect(response.statusCode).toBe(503);
-      expect(code(response.body)).toBe('NOT_READY');
+      // Past the guard, the catalog handler runs against an empty but healthy database.
+      expect(response.statusCode).toBe(200);
+      expect(response.json<{ data: unknown[]; meta: { total: number } }>().meta.total).toBe(0);
     });
   });
 
@@ -157,7 +156,7 @@ describe.skipIf(skipReason !== null)('the guard with the real verifier', () => {
           expect(login.statusCode).toBe(200);
           const { token } = login.json<{ token: string }>();
 
-          expect((await getCatalog(app, token)).statusCode).toBe(503);
+          expect((await getCatalog(app, token)).statusCode).toBe(200);
 
           const logout = await app.inject({
             method: 'POST',

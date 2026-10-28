@@ -24,10 +24,10 @@ import { buildTestApp } from './helpers/test-app';
  * through `buildApp`, because the questions that matter are about *which* requests are charged and which are not, and
  * those are answered by the pipeline rather than by the counter.
  *
- * No database: the limiter runs before the guard and before every handler, so the stub routes' `503` is the proof that
- * a charged request was let through. The same file also parses the limit table out of `14-security.md` §7 — a document
- * that promises `60`, `10` and `600` and a code that uses different numbers is a contract that is wrong in the one
- * place an operator would look.
+ * No database: the limiter runs before the guard and before every handler. A charged request must reach its handler
+ * rather than be refused with `429`; the catalog handler may itself fail when it touches this suite's hostile DB stub.
+ * The same file parses the limit table out of `14-security.md` §7 — a document that promises `60`, `10` and `600` and
+ * a code that uses different numbers is a contract that is wrong in the one place an operator would look.
  */
 
 /** A clock a test moves by hand. */
@@ -220,7 +220,7 @@ async function appWithClock(
 ): Promise<FastifyInstance> {
   const config = parseEnv({});
   return buildTestApp({
-    // Accepts any token, so an admin request the limiter charged reaches its route without a database.
+    // Accepts any token; the database stub may make a protected handler fail, but only the limiter's 429 is relevant.
     authVerify: () => Promise.resolve({}),
     rateLimitNow: () => clock.now,
     config:
@@ -328,15 +328,15 @@ describe('the stage charges the documented requests, and only those', () => {
         );
 
       const responses = await token(ADMIN_REQUESTS_PER_MINUTE + 1, first);
-      // `authVerify` accepts anything, so every charged request reaches the stub.
-      expect(responses.slice(0, ADMIN_REQUESTS_PER_MINUTE).every((r) => r.statusCode === 503)).toBe(
+      // `authVerify` accepts anything. These requests must reach the handler; only the next one is a rate-limit refusal.
+      expect(responses.slice(0, ADMIN_REQUESTS_PER_MINUTE).every((r) => r.statusCode !== 429)).toBe(
         true,
       );
       expect(responses.at(-1)?.statusCode).toBe(429);
       expect(responses.at(-1)?.headers['retry-after']).toBe('60');
 
       // A second administrator, or the same one on another device, has its own bucket.
-      expect((await token(1, second))[0]?.statusCode).toBe(503);
+      expect((await token(1, second))[0]?.statusCode).not.toBe(429);
     } finally {
       await app.close();
     }
@@ -362,7 +362,7 @@ describe('the stage charges the documented requests, and only those', () => {
           }),
         ),
       );
-      expect(responses.every((response) => response.statusCode === 503)).toBe(true);
+      expect(responses.every((response) => response.statusCode !== 429)).toBe(true);
     } finally {
       await app.close();
     }

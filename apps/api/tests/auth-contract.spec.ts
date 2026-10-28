@@ -99,7 +99,6 @@ describe('the login contract matches 04-api.md', () => {
     expect(section, '§0.3 must exist').toContain('| Route |');
 
     const rows = section.split('\n').filter((line) => line.startsWith('| `'));
-    expect(rows.length, 'the stub table must still have its rows').toBe(2);
-    for (const row of rows) expect(row).not.toContain('_auth');
+    expect(rows).toEqual(['| `GET /_public/api/countries` | `P3-API-03` |']);
   });
 });

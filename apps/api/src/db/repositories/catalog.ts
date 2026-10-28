@@ -15,8 +15,12 @@ import { sql, type Expression, type SelectQueryBuilder, type SqlBool } from 'kys
 import type { Country, Database } from '../schema';
 import type { RepositoryExecutor } from './executor';
 
+/** System-owned settings key written with a successful catalog transaction. */
+export const CATALOG_SYNCED_AT_SETTING = 'source.catalogSyncedAt';
+
 /** Stable order keys exposed to callers; SQL identifiers are never accepted from request data. */
-export type CatalogSort = 'name' | 'sourceSizeHintBytes' | 'lastSyncedAt' | 'totalSizeBytes';
+export type CatalogSort =
+  'name' | 'sourceSizeHintBytes' | 'lastSyncedAt' | 'createdAt' | 'totalSizeBytes';
 /** Direction for a whitelisted catalog sort. */
 export type SortOrder = 'asc' | 'desc';
 
@@ -179,6 +183,20 @@ export async function findCatalogCountryById(
   return row ?? null;
 }
 
+/** Reads the durable successful-sync timestamp, ignoring missing or malformed system-owned values. */
+export async function findCatalogSyncedAt(executor: RepositoryExecutor): Promise<Date | null> {
+  const setting = await executor
+    .selectFrom('settings')
+    .select('value')
+    .where('key', '=', CATALOG_SYNCED_AT_SETTING)
+    .executeTakeFirst();
+  if (typeof setting?.value !== 'string') return null;
+  const syncedAt = new Date(setting.value);
+  return Number.isFinite(syncedAt.getTime()) && syncedAt.toISOString() === setting.value
+    ? syncedAt
+    : null;
+}
+
 /**
  * Lists catalog countries, with the cache summary joined and all filters applied before count and page slicing.
  *
@@ -244,8 +262,9 @@ function catalogConditions(
     conditions.push(sql<SqlBool>`(
       ${nameMatch}
       OR countries.iso_alpha2 @> ARRAY[upper(${search})]::text[]
+      OR countries.iso_other @> ARRAY[upper(${search})]::text[]
       OR EXISTS (
-        SELECT 1 FROM unnest(countries.iso_alpha2) AS iso(code)
+        SELECT 1 FROM unnest(countries.iso_alpha2 || countries.iso_other) AS iso(code)
         WHERE iso.code ILIKE ${pattern} ESCAPE ${escape}
       )
     )`);
@@ -291,6 +310,11 @@ function orderCatalogRows<O>(
     case 'lastSyncedAt':
       return query
         .orderBy('countries.catalog_synced_at', order)
+        .orderBy('countries.name', 'asc')
+        .orderBy('countries.id', 'asc');
+    case 'createdAt':
+      return query
+        .orderBy('countries.created_at', order)
         .orderBy('countries.name', 'asc')
         .orderBy('countries.id', 'asc');
     case 'totalSizeBytes':

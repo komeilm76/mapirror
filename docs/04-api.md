@@ -24,12 +24,11 @@ This table is the single normative source for route placement. `00-index.md` sum
 
 ### 0.3 Bootstrap state (temporary)
 
-The server is running before the modules are. Exactly two routes are still stubs, each at a path this document
-already defines, and each answers `503 NOT_READY` with the standard envelope naming the task that implements it:
+The server is running before every module is. Exactly one route is still a stub, at a path this document
+already defines, and it answers `503 NOT_READY` with the standard envelope naming its owning task:
 
 | Route | Replaced by |
 |---|---|
-| `GET /_admin/api/catalog` | `P2-API-01` |
 | `GET /_public/api/countries` | `P3-API-03` |
 
 `POST /_auth/api/login` used to be the third; it is implemented as of `P1-AUTH-03` and documented in §1.
@@ -48,7 +47,7 @@ lands.
 | Auth (admin) | `Authorization: Bearer mm_…` on **every** `/_admin/api/*` request |
 | Auth (public) | none |
 | IDs | UUIDv4 strings; `countryId` is the local UUID; `sourceId` is the Geofabrik id (`europe/finland`) |
-| Pagination | `?page=1&limit=25` → envelope `{ data, meta: { page, limit, total, totalPages } }`; values are **clamped** (never rejected) and only plain decimals are read — `?limit=0x10` or `?page=1e3` fall back to the defaults |
+| Pagination | `?page=1&limit=25` → envelope `{ data, meta: { page, limit, total, totalPages } }`; `limit` (≤ 100) values are **clamped** (never rejected) and only plain decimals are read — `?limit=0x10` or `?page=1e3` fall back to the defaults |
 | Sorting | `?sort=name|size|updated|created&order=asc|desc` |
 | Time | ISO-8601 UTC strings; byte counts are integers |
 | Nullability | absent/null means "unknown", never 0 |
@@ -202,8 +201,14 @@ pretend to have ended anything, and the original `revoked_at` is never rewritten
 
 #### `GET /_admin/api/catalog`
 
-Query: `q` (name/ISO search), `continent` (parent id, e.g. `europe`), `cache` = `all|uncached|cached`,
-`update` = `any|available`, `page`, `limit` (≤ 100), `sort`, `order`.
+Query: `q` (trimmed name or ISO alpha-2/3166-2 substring, up to 128 characters), `continent` (non-empty parent id, up to 255 characters),
+`cache` = `all|uncached|cached` (default `all`), `update` = `any|available` (default `any`), `page`, `limit` (≤ 100), default 50,
+`sort=name|size|updated|created` (default `name`), and `order=asc|desc` (default `asc`). `size` orders by upstream size hint,
+`updated` by the last catalog sync for each row, and `created` by the row's first local insertion. Unknown query keys and invalid enum values return
+`400 VALIDATION_ERROR`; page/limit follow §0.2's decimal-only clamping. An empty filtered result reports `totalPages: 0`.
+
+`iso` contains the deduplicated ISO alpha-2 and ISO 3166-2 codes. Byte counts are JSON integers when safe and decimal strings otherwise.
+`catalogSyncedAt` is the durable successful-sync time, or `null` before the first committed sync.
 
 ```json
 200 {

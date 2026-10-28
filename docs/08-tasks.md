@@ -139,7 +139,7 @@ prove L1–L3.
 
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
-| P2-API-01 | `GET /_admin/api/catalog` (search/filters/pagination) | GEO-1/2 | P2-DB-02 | ⬜ | <300 ms at 400 rows; ISO + name search |
+| P2-API-01 | `GET /_admin/api/catalog` (search/filters/pagination) | GEO-1/2 | P2-DB-02 | ✅ | `modules/admin/catalog-route.ts` validates filters and pagination, returns shared-Zod-projected country/cache rows plus durable freshness, and reads rows/count/marker in one repeatable-read snapshot. SQL search/filter/order/page; defaults to 50, clamps at 100; numbers remain exact above JS safe-integer range. PostgreSQL route tests cover ISO/name search, cache/update/continent filters, sort keys, empty results, malformed markers, strict validation, and a 400-row request under 300 ms |
 | P2-API-02 | `POST /_admin/api/catalog/sync` | GEO-1 | P2-SRC-06 | ⬜ | Idempotent queued/running job creation, register the catalog handler with the configured index source, and add `bun run sync:catalog` as the same queue-backed manual trigger |
 | P2-API-03 | `GET /catalog/regions/:slug` + `/snapshots` | GEO-4 | P2-SRC-03 | ⬜ | Unreachable source → `sourceReachable:false` |
 | P2-API-04 | `POST /_admin/api/cache/downloads` (latest or explicit) | GEO-3/4 | P2-JOB-04, P2-JOB-05, P2-JOB-07 | ⬜ | 202 + jobId; 409 duplicates; 410 gone; disk preflight before enqueue |

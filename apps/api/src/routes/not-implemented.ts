@@ -22,7 +22,6 @@ import type { FastifyReply, FastifyRequest, RouteHandlerMethod } from 'fastify';
 
 /** Every stub the bootstrap registers, with the task that replaces it. */
 export const STUB_ROUTES = {
-  'GET /_admin/api/catalog': 'P2-API-01',
   'GET /_public/api/countries': 'P3-API-03',
 } as const;
 

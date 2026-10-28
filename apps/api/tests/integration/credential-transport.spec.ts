@@ -187,8 +187,8 @@ describe.skipIf(skipReason !== null)(
     });
 
     it('accepts the same token in the Authorization header, so the refusals are about transport', async () => {
-      // The other half: if the guard refused everything, the sweep above would pass and the API would be unusable. The
-      // answer for these routes is the stub's `503` (they are stubs), which proves the guard let the request through.
+      // The other half: if the guard refused everything, the sweep above would pass and the API would be unusable. An
+      // implemented route's success or a remaining stub's `503` proves the guard let the request through.
       await withToken(async ({ app, routes, token }) => {
         const admin = adminRoutes(routes);
         expect(admin.length).toBeGreaterThan(0);
@@ -201,8 +201,14 @@ describe.skipIf(skipReason !== null)(
             headers: { authorization: `Bearer ${token}` },
           });
 
-          expect(response.statusCode, route).toBe(503);
-          expect(response.json<{ error: { code: string } }>().error.code, route).toBe('NOT_READY');
+          if (route === 'GET /_admin/api/catalog') {
+            expect(response.statusCode, route).toBe(200);
+          } else {
+            expect(response.statusCode, route).toBe(503);
+            expect(response.json<{ error: { code: string } }>().error.code, route).toBe(
+              'NOT_READY',
+            );
+          }
         }
       });
     });

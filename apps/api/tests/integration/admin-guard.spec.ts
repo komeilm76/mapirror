@@ -78,7 +78,7 @@ describe('the route table', () => {
         expect(response.json<{ error: { code: string } }>().error.code, route).toBe(
           'UNAUTHENTICATED',
         );
-        // The stub's own answer must not leak through: a `503 NOT_READY` here would mean the handler ran.
+        // No handler response may leak through the guard, whether it succeeds or reports a database error.
         expect(response.body, route).not.toContain('NOT_READY');
       }
     } finally {
