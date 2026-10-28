@@ -31,7 +31,6 @@
 import { ROUTE_PREFIXES } from '@mapirror/shared';
 import type { RouteRecordRaw } from 'vue-router';
 
-import CacheCountryPage from '@/pages/admin/CacheCountryPage.vue';
 import CachePage from '@/pages/admin/CachePage.vue';
 import CatalogPage from '@/pages/admin/CatalogPage.vue';
 import LoginPage from '@/pages/auth/LoginPage.vue';
@@ -116,7 +115,7 @@ export const APP_ROUTES: readonly RouteRecordRaw[] = [
   {
     path: `${ADMIN_ROOT}/cache/:countryId`,
     name: 'admin-cache-country',
-    component: CacheCountryPage,
+    component: () => import('@/pages/admin/CacheCountryPage.vue'),
     meta: { title: 'Cached country', screen: 'S8', owner: 'P2-WEB-04' },
   },
   pending({

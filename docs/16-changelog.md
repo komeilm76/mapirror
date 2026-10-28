@@ -3,7 +3,7 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 80 passes · 320 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4, pass 76: 4, pass 77: 4, pass 78: 4, pass 79: 5, pass 80: 7).
+**Totals:** 81 passes · 327 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4, pass 76: 4, pass 77: 4, pass 78: 4, pass 79: 5, pass 80: 7, pass 81: 7).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
@@ -96,6 +96,24 @@ P2-WEB-04 replaces the S8 placeholder with a UUID-addressed cached-country detai
 Focused client/page/router tests cover Bearer headers and cookie omission, unbuffered byte piping, streams longer than the JSON timeout, expired-token handling, summary/active jobs, pagination, detail breadcrumbs, unsupported file-picker fallback, explicit confirmation, optimistic deletion/refresh, server conflict rollback, malformed UUIDs, route guards and the table-to-detail links. Full non-Docker `bun run check` passes: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint, formatting, and **1,177 passed across 115 files; 284 skipped**. The PostgreSQL-dependent tests were skipped because this environment has no test database; Docker/operator tests were not run. The Vite production web build succeeds (419 modules; 495.75 kB JS, 139.19 kB CSS).
 
 **Totals after this pass: 80 passes · 320 defects fixed · 0 open.**
+
+## Pass 81 — 2026-10-28 (whole-country cache deletion needed typed, job-aware confirmation)
+
+P2-WEB-05 adds whole-country deletion to the cached-country detail header. It uses the authenticated `DELETE /_admin/api/cache/:countryId` contract and, on `204`, returns to the cache list; the catalog country itself remains. The API’s existing cooperative-cancellation option is exposed only as a separate explicit choice.
+
+| # | Bug found in contract/code review | Fix |
+|---|---|---|
+| 1 | The country-delete API existed, but the admin detail screen offered no whole-cache deletion action | Add the destructive outlined action to the country-detail header, inside a dedicated confirmation dialog |
+| 2 | A destructive request could be triggered without proving the administrator intended to remove this exact country | Require the case-sensitive API slug in a labelled text field; keep the final action disabled until it matches exactly |
+| 3 | The endpoint rejects active jobs by default and permits cancellation only through `cancelJobs=true`, but the UI had no safe way to discover or opt into that policy | List queued/running jobs in the dialog, require a separate cancellation checkbox, explain the three-second cooperative-cleanup wait, and surface request-id conflicts; if a job appears after loading, offer the explicit cancellation choice after the `409` |
+| 4 | A slow deletion response arriving after country navigation could redirect the reader away from the different country they had opened | Scope completion and redirect side effects to the initiating country/operation; a successful response navigates only when still on that country |
+| 5 | The confirmation did not communicate the full deletion result or support keyboard dismissal/focus return | State that local versions and public access are removed while catalog identity remains; add an accessible alert dialog, Escape/focus restoration, progress and retryable errors |
+| 6 | The destructive button hover filled with the error color, contrary to the design law requiring outlined destructive controls | Retain the error outline and use only a subtle tinted hover background |
+| 7 | Eagerly importing the new detail screen pushed the initial production JS chunk past Vite’s 500 kB warning threshold | Lazy-load the UUID detail route; the initial entry chunk is now 481.21 kB, with the 21.83 kB detail chunk fetched only for S8 |
+
+The cached-country page tests now cover exact/case-sensitive slug gating, Bearer-authenticated confirmation query, optional `cancelJobs=true`, active-job conflict/request-id handling, late-job cancellation opt-in, keyboard Escape and focus restoration, success navigation, and navigation during a pending deletion. Full non-Docker `bun run check` passes: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint and formatting; **1,181 passed across 115 files; 284 skipped**. PostgreSQL/Docker-gated tests remain skipped because this environment has no test database and per operator direction. The Vite production build succeeds without a chunk-size warning: 481.21 kB initial JS, 21.83 kB lazy detail JS, and 140.23 kB CSS.
+
+**Totals after this pass: 81 passes · 327 defects fixed · 0 open.**
 
 ## Pass 78 — 2026-10-28 (the catalog needed source-version selection and a working download action)
 

@@ -161,7 +161,7 @@ yet. Until then `font-display: swap` means text paints in the fallback face firs
 | S5 | `/_site/admin/` | Dashboard | 4 stat cards, CPU/RAM/disk charts, updates, jobs | "No data yet — sampling…" |
 | S6 | `/_site/admin/catalog` | Search Geofabrik | search, continent, cache filter, table with Download | "No country matches" |
 | S7 | `/_site/admin/cache` | Cached countries | search/update filter; sortable, paginated table: name, ready versions, local size, public/private state, update badge, catalog sync/source-download times | "Nothing cached yet — browse catalog" |
-| S8 | `/_site/admin/cache/:countryId` | Cached-country detail | cache summary, active work, paginated version table with download/delete | "No versions stored" |
+| S8 | `/_site/admin/cache/:countryId` | Cached-country detail | cache summary, active work, paginated version table with download/delete, delete-country action | "No versions stored" |
 | S9 | `/_site/admin/intervals` | Schedules | list + create button, next run, last status | "No intervals yet" |
 | S10 | `/_site/admin/import` | Upload | dropzone, country select, version, submit, progress | — |
 | S11 | `/_site/admin/jobs` | Job queue | filters, progress rows, cancel | "No jobs" |
@@ -170,7 +170,7 @@ yet. Until then `font-display: swap` means text paints in the fallback face firs
 | S14 | `/_site/admin/audit` | Audit log | filter by action, paginated | "No entries" |
 | S15 | `/_site/*` (unmatched) | Not found | friendly 404 + link home | — |
 
-The admin detail URL carries the local country UUID because the cache detail/version APIs are UUID-scoped. The page reads the country name from the API for its heading and breadcrumb. Its current version actions are scoped to P2-WEB-04; the publication switch is P3-WEB-06, and update-check actions remain outside this task.
+The admin detail URL carries the local country UUID because the cache detail/version APIs are UUID-scoped. The page reads the country name from the API for its heading and breadcrumb. Version download/delete belongs to P2-WEB-04; whole-country deletion is P2-WEB-05 and requires exact slug typing, with explicit opt-in before canceling active work. The publication switch is P3-WEB-06, and update-check actions remain outside these tasks.
 
 ## 5. Component rules
 
@@ -181,7 +181,7 @@ The admin detail URL carries the local country UUID because the cache detail/ver
 | **Update badge** | Amber pill "Update available · 261024"; row action "Update" opens a confirm showing size delta and retention effect. |
 | **Download button** | Present only when not cached (catalog) or for a specific uncached version. Destructive/disabled states explained by tooltip, never silently invisible without a reason on hover. |
 | **Version table** | Version · Source date · Size · Checksum (truncated, copyable) · Status · Created · Actions (download, delete). "Latest" is a chip, not a separate row. |
-| **Delete dialogs** | Country: type the slug to enable. Version: checkbox "I understand" + shows what will be deleted. Always state consequences (public access closes). |
+| **Delete dialogs** | Country: type the exact slug to enable; show retained catalog identity, closed public access and every active job, with a separate explicit opt-in to cooperative cancellation. Version: checkbox "I understand" + shows what will be deleted. Always state consequences (public access closes). |
 | **Job progress** | Indeterminate → determinate bar, `12.3 MB/s · 35 s left`, phase label, cancel button. On failure: error code + human message + retry. |
 | **Charts** | One y-axis, gridlines at 25 %, area fill at 12 % opacity, tooltip on hover showing exact values + time. Colors from the palette; never rely on color alone (label + value). |
 | **Empty states** | Icon + one sentence + the next action as a button. Never a bare table with "No data". |

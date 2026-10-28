@@ -2,6 +2,7 @@
 /** Admin cache-country detail and map-version actions (`P2-WEB-04`, `13-ui-ux.md` §4 S8). */
 
 import {
+  CacheCountryDeleteQuerySchema,
   CacheCountryParamsSchema,
   CacheDetailResponseSchema,
   CacheVersionDeleteParamsSchema,
@@ -49,6 +50,16 @@ const deleteTarget = ref<CacheVersionListItem | null>(null);
 const deleteDialogElement = ref<HTMLElement | null>(null);
 const deleteAcknowledgeElement = ref<HTMLInputElement | null>(null);
 const deleteFocusReturn = ref<HTMLElement | null>(null);
+const countryDeleteDialogOpen = ref(false);
+const countryDeleteSlug = ref('');
+const countryDeleteCancelJobs = ref(false);
+const countryDeleteJobConflict = ref(false);
+const countryDeleting = ref(false);
+const countryDeleteErrorMessage = ref<string | null>(null);
+const countryDeleteErrorRequestId = ref<string | null>(null);
+const countryDeleteDialogElement = ref<HTMLElement | null>(null);
+const countryDeleteInputElement = ref<HTMLInputElement | null>(null);
+const countryDeleteFocusReturn = ref<HTMLElement | null>(null);
 const downloadingVersionId = ref<string | null>(null);
 const downloadController = ref<AbortController | null>(null);
 const downloadMessage = ref<string | null>(null);
@@ -58,11 +69,13 @@ const downloadAnnouncementElement = ref<HTMLElement | null>(null);
 const pageAnnouncement = ref<string | null>(null);
 const pageHeadingElement = ref<HTMLHeadingElement | null>(null);
 let deleteOperationId = 0;
+let countryDeleteOperationId = 0;
 let pageMounted = true;
 
 onUnmounted(() => {
   pageMounted = false;
   deleteOperationId += 1;
+  countryDeleteOperationId += 1;
   downloadController.value?.abort();
 });
 
@@ -85,6 +98,13 @@ const deletionClosesPublicAccess = computed(
     detail.value.cache.versionsReady <= 1 &&
     deleteTarget.value?.status === 'ready',
 );
+const countryDeleteHasActiveJobs = computed(() => (detail.value?.activeJobs.length ?? 0) > 0);
+const countryDeleteNeedsCancel = computed(
+  () => countryDeleteHasActiveJobs.value || countryDeleteJobConflict.value,
+);
+const countryDeleteSlugMatches = computed(
+  () => detail.value !== null && countryDeleteSlug.value === detail.value.country.slug,
+);
 
 watch(
   [countryId, page, retryNumber],
@@ -105,6 +125,15 @@ watch(
       deleting.value = false;
       deleteErrorMessage.value = null;
       deleteErrorRequestId.value = null;
+      countryDeleteOperationId += 1;
+      countryDeleteDialogOpen.value = false;
+      countryDeleteSlug.value = '';
+      countryDeleteCancelJobs.value = false;
+      countryDeleteJobConflict.value = false;
+      countryDeleting.value = false;
+      countryDeleteErrorMessage.value = null;
+      countryDeleteErrorRequestId.value = null;
+      countryDeleteFocusReturn.value = null;
     }
     const controller = new AbortController();
     let current = true;
@@ -391,6 +420,118 @@ async function confirmDelete(): Promise<void> {
   }
 }
 
+/** Opens the country-wide confirmation after preserving the triggering control for focus restoration. */
+function openCountryDeleteDialog(event: MouseEvent): void {
+  if (detail.value === null || deleting.value || downloadingVersionId.value !== null) return;
+  countryDeleteSlug.value = '';
+  countryDeleteCancelJobs.value = false;
+  countryDeleteJobConflict.value = false;
+  countryDeleteErrorMessage.value = null;
+  countryDeleteErrorRequestId.value = null;
+  countryDeleteFocusReturn.value =
+    event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  countryDeleteDialogOpen.value = true;
+  void nextTick(() => countryDeleteInputElement.value?.focus());
+}
+
+/** Closes the country-delete confirmation without sending a request. */
+function closeCountryDeleteDialog(): void {
+  if (countryDeleting.value) return;
+  countryDeleteDialogOpen.value = false;
+  countryDeleteSlug.value = '';
+  countryDeleteCancelJobs.value = false;
+  const target = countryDeleteFocusReturn.value;
+  countryDeleteFocusReturn.value = null;
+  void nextTick(() => target?.focus());
+}
+
+/** Keeps keyboard focus within the whole-country confirmation. */
+function handleCountryDeleteDialogKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeCountryDeleteDialog();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  const dialog = countryDeleteDialogElement.value;
+  if (dialog === null) return;
+  const focusable = [
+    ...dialog.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), a[href]'),
+  ];
+  const first = focusable[0];
+  const last = focusable.at(-1);
+  if (first === undefined || last === undefined) {
+    event.preventDefault();
+    dialog.focus();
+  } else if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+/** Deletes the whole local cache only after the API country slug matches exactly. */
+async function deleteCountry(): Promise<void> {
+  const currentDetail = detail.value;
+  if (
+    currentDetail === null ||
+    !countryDeleteSlugMatches.value ||
+    (countryDeleteNeedsCancel.value && !countryDeleteCancelJobs.value) ||
+    deleting.value ||
+    downloadingVersionId.value !== null
+  )
+    return;
+
+  const parsedParams = CacheCountryParamsSchema.safeParse({ countryId: countryId.value });
+  const parsedQuery = CacheCountryDeleteQuerySchema.safeParse({
+    confirm: countryDeleteSlug.value,
+    ...(countryDeleteCancelJobs.value ? { cancelJobs: 'true' } : {}),
+  });
+  if (!parsedParams.success || !parsedQuery.success) {
+    countryDeleteErrorMessage.value =
+      'This cached country could not be identified safely. Close this dialog and reload the page.';
+    return;
+  }
+
+  const requestedCountryId = parsedParams.data.countryId;
+  const operationId = ++countryDeleteOperationId;
+  countryDeleting.value = true;
+  countryDeleteErrorMessage.value = null;
+  countryDeleteErrorRequestId.value = null;
+  try {
+    await api.delete<void>(`${CACHE_API}/${encodeURIComponent(requestedCountryId)}`, {
+      query: parsedQuery.data,
+    });
+    if (
+      !pageMounted ||
+      countryId.value !== requestedCountryId ||
+      operationId !== countryDeleteOperationId
+    )
+      return;
+    countryDeleteDialogOpen.value = false;
+    await router.replace({ name: 'admin-cache', query: {} });
+  } catch (cause) {
+    if (
+      !pageMounted ||
+      countryId.value !== requestedCountryId ||
+      operationId !== countryDeleteOperationId
+    )
+      return;
+    if (cause instanceof ApiError) {
+      if (cause.code === 'JOB_ALREADY_RUNNING') countryDeleteJobConflict.value = true;
+      countryDeleteErrorMessage.value = cause.message;
+      countryDeleteErrorRequestId.value = cause.requestId;
+    } else {
+      countryDeleteErrorMessage.value =
+        'The cached country could not be deleted. Check your connection and try again.';
+    }
+  } finally {
+    if (operationId === countryDeleteOperationId) countryDeleting.value = false;
+  }
+}
+
 /** UTC date formatter with an explicit fallback for unknown timestamps. */
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat('en-GB', {
@@ -469,7 +610,20 @@ const deletionWarning = computed(() =>
           <span v-if="detail.country.iso.length > 0">ISO {{ detail.country.iso.join(' · ') }}</span>
         </p>
       </div>
-      <RouterLink class="mm-cache-button" :to="adminPagePaths.cache()">Back to cache</RouterLink>
+      <div class="mm-cache-country-actions">
+        <button
+          class="mm-cache-button mm-cache-button-danger"
+          type="button"
+          :disabled="
+            detail === null || deleting || downloadingVersionId !== null || countryDeleting
+          "
+          aria-haspopup="dialog"
+          @click="openCountryDeleteDialog"
+        >
+          Delete cached country
+        </button>
+        <RouterLink class="mm-cache-button" :to="adminPagePaths.cache()">Back to cache</RouterLink>
+      </div>
     </header>
 
     <div v-if="errorMessage !== null" class="mm-cache-error" role="alert">
@@ -798,6 +952,98 @@ const deletionWarning = computed(() =>
             @click="confirmDelete"
           >
             {{ deleting ? 'Deleting…' : 'Delete version' }}
+          </button>
+        </footer>
+      </section>
+    </div>
+
+    <div
+      v-if="countryDeleteDialogOpen && detail"
+      class="mm-cache-dialog-backdrop"
+      @click.self="closeCountryDeleteDialog"
+    >
+      <section
+        ref="countryDeleteDialogElement"
+        class="mm-cache-delete-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="cache-country-delete-title"
+        aria-describedby="cache-country-delete-copy cache-country-delete-guidance"
+        tabindex="-1"
+        @keydown="handleCountryDeleteDialogKeydown"
+      >
+        <h2 id="cache-country-delete-title" class="mm-cache-state-title">
+          Delete cached country {{ detail.country.name }}?
+        </h2>
+        <p id="cache-country-delete-copy" class="mm-cache-state-copy">
+          Every locally stored map version will be permanently removed, and public access will
+          close. The country will remain in the catalog and can be cached again later.
+        </p>
+        <p id="cache-country-delete-guidance" class="mm-cache-delete-guidance">
+          Files are removed only after the database deletion commits. If cleanup cannot finish, the
+          cache stays intact; try again after active work has stopped.
+        </p>
+        <div v-if="countryDeleteNeedsCancel" class="mm-cache-delete-active-jobs" role="status">
+          <p v-if="countryDeleteHasActiveJobs" class="mm-cache-state-copy">
+            This country has queued or running work. You can request cooperative cancellation; the
+            server waits up to three seconds for cleanup before it deletes anything.
+          </p>
+          <p v-else class="mm-cache-state-copy">
+            A country job or cache operation started since this page loaded. You may request
+            cooperative cancellation of active jobs before retrying the deletion.
+          </p>
+          <ul v-if="countryDeleteHasActiveJobs" class="mm-cache-delete-job-list">
+            <li v-for="job in detail.activeJobs" :key="job.id">
+              {{ job.type.replaceAll('_', ' ') }} · {{ job.status }}
+            </li>
+          </ul>
+          <label class="mm-cache-confirm-check">
+            <input v-model="countryDeleteCancelJobs" type="checkbox" />
+            <span>Request cancellation of active country jobs and wait for cleanup</span>
+          </label>
+        </div>
+        <label class="mm-cache-confirm-field">
+          <span
+            >Type <code>{{ detail.country.slug }}</code> to confirm</span
+          >
+          <input
+            ref="countryDeleteInputElement"
+            v-model="countryDeleteSlug"
+            type="text"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            :disabled="countryDeleting"
+          />
+        </label>
+        <p v-if="countryDeleteErrorMessage" class="mm-cache-delete-error" role="alert">
+          {{ countryDeleteErrorMessage }}
+        </p>
+        <p v-if="countryDeleteErrorRequestId" class="mm-mono-small mm-cache-request-id">
+          Request id: {{ countryDeleteErrorRequestId }}
+        </p>
+        <footer>
+          <button
+            class="mm-cache-button"
+            type="button"
+            :disabled="countryDeleting"
+            @click="closeCountryDeleteDialog"
+          >
+            Cancel
+          </button>
+          <button
+            class="mm-cache-button mm-cache-button-danger"
+            type="button"
+            :disabled="
+              !countryDeleteSlugMatches ||
+              (countryDeleteNeedsCancel && !countryDeleteCancelJobs) ||
+              deleting ||
+              downloadingVersionId !== null ||
+              countryDeleting
+            "
+            @click="deleteCountry"
+          >
+            {{ countryDeleting ? 'Deleting country…' : 'Delete country' }}
           </button>
         </footer>
       </section>

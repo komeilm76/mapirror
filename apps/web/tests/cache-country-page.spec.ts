@@ -14,6 +14,7 @@ import { createWebApp } from '../src/bootstrap';
 import { adminPagePaths } from '../src/router/paths';
 
 const COUNTRY_ID = '00000000-0000-4000-8000-000000000001';
+const OTHER_COUNTRY_ID = '00000000-0000-4000-8000-000000000005';
 const READY_ID = '00000000-0000-4000-8000-000000000002';
 const FAILED_ID = '00000000-0000-4000-8000-000000000003';
 const JOB_ID = '00000000-0000-4000-8000-000000000004';
@@ -22,7 +23,18 @@ const ME = { admin: PROFILE, expiresAt: '2026-10-26T21:00:00.000Z', lastUsedAt: 
 const mounted: VueApp<Element>[] = [];
 let previousSavePicker: PropertyDescriptor | undefined;
 
-function detail(overrides: Partial<CacheDetailResponse['cache']> = {}): CacheDetailResponse {
+function detail(
+  overrides: Partial<CacheDetailResponse['cache']> = {},
+  activeJobs: CacheDetailResponse['activeJobs'] = [
+    {
+      id: JOB_ID,
+      type: 'download',
+      status: 'running',
+      progressBytes: '1048576',
+      totalBytes: '3145728',
+    },
+  ],
+): CacheDetailResponse {
   return {
     country: {
       countryId: COUNTRY_ID,
@@ -43,15 +55,7 @@ function detail(overrides: Partial<CacheDetailResponse['cache']> = {}): CacheDet
       ...overrides,
     },
     versions: [],
-    activeJobs: [
-      {
-        id: JOB_ID,
-        type: 'download',
-        status: 'running',
-        progressBytes: '1048576',
-        totalBytes: '3145728',
-      },
-    ],
+    activeJobs,
   };
 }
 
@@ -99,6 +103,11 @@ function jsonResponse(value: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   });
+}
+
+function typeInto(input: HTMLInputElement, value: string): void {
+  input.value = value;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function routerOf(app: VueApp<Element>): Router {
@@ -406,6 +415,230 @@ describe('admin cached-country detail', () => {
     expect(container.querySelectorAll('.mm-cache-version-table tbody tr')).toHaveLength(2);
     expect(container.textContent).toContain('Request id: req-busy');
     expect(container.textContent).toContain('Delete version 261025?');
+  });
+
+  it('requires an exact country slug, sends the authenticated delete, then returns to the cache list', async () => {
+    const deleteRequest: { url?: URL; init?: RequestInit } = {};
+    const fetchMock = makeFetch((url, init) => {
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}` && init?.method === 'DELETE') {
+        deleteRequest.url = url;
+        deleteRequest.init = init;
+        return new Response(null, { status: 204 });
+      }
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}`) return jsonResponse(detail({}, []));
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}/versions`)
+        return jsonResponse(versionPage());
+      if (url.pathname === '/_admin/api/cache')
+        return jsonResponse({ data: [], meta: { page: 1, limit: 50, total: 0, totalPages: 0 } });
+      throw new Error(`Unexpected request ${url.pathname}`);
+    });
+    const { container, router } = await mountCountry(fetchMock);
+
+    await vi.waitFor(() => expect(container.querySelector('h1')?.textContent).toBe('Finland'));
+    const deleteAction = container.querySelector<HTMLButtonElement>(
+      '.mm-cache-country-actions button',
+    );
+    deleteAction?.click();
+    await flushPromises();
+    let dialog = container.querySelector<HTMLElement>(
+      '[aria-labelledby="cache-country-delete-title"]',
+    );
+    expect(dialog?.getAttribute('role')).toBe('alertdialog');
+    expect(dialog?.textContent).toContain('public access will close');
+    dialog?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    );
+    await flushPromises();
+    expect(container.querySelector('[aria-labelledby="cache-country-delete-title"]')).toBeNull();
+    expect(document.activeElement).toBe(deleteAction);
+    deleteAction?.click();
+    await flushPromises();
+    dialog = container.querySelector<HTMLElement>('[aria-labelledby="cache-country-delete-title"]');
+    const input = dialog?.querySelector<HTMLInputElement>('input[type="text"]');
+    const submit = [...(dialog?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find(
+      (button) => button.textContent?.includes('Delete country'),
+    );
+    expect(submit?.disabled).toBe(true);
+    typeInto(input!, 'Finland');
+    await flushPromises();
+    expect(submit?.disabled).toBe(true);
+    typeInto(input!, 'finland');
+    await flushPromises();
+    expect(submit?.disabled).toBe(false);
+    submit?.click();
+
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('admin-cache'));
+    expect(deleteRequest.url?.searchParams.get('confirm')).toBe('finland');
+    expect(deleteRequest.url?.searchParams.has('cancelJobs')).toBe(false);
+    expect(deleteRequest.init?.method).toBe('DELETE');
+    expect(new Headers(deleteRequest.init?.headers).get('authorization')).toBe(
+      'Bearer mm_country_test',
+    );
+    expect(deleteRequest.init?.credentials).toBe('omit');
+  });
+
+  it('requires explicit active-job cancellation and keeps the dialog open on a conflict', async () => {
+    const deleteRequest: { url?: URL } = {};
+    const fetchMock = makeFetch((url, init) => {
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}` && init?.method === 'DELETE') {
+        deleteRequest.url = url;
+        return jsonResponse(
+          {
+            error: {
+              code: 'JOB_ALREADY_RUNNING',
+              message: 'Active work has not finished cleanup yet.',
+              requestId: 'req-delete-busy',
+            },
+          },
+          409,
+        );
+      }
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}`) return jsonResponse(detail());
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}/versions`)
+        return jsonResponse(versionPage());
+      throw new Error(`Unexpected request ${url.pathname}`);
+    });
+    const { container } = await mountCountry(fetchMock);
+
+    await vi.waitFor(() => expect(container.querySelector('h1')?.textContent).toBe('Finland'));
+    container.querySelector<HTMLButtonElement>('.mm-cache-country-actions button')?.click();
+    await flushPromises();
+    const dialog = container.querySelector<HTMLElement>(
+      '[aria-labelledby="cache-country-delete-title"]',
+    );
+    const input = dialog?.querySelector<HTMLInputElement>('input[type="text"]');
+    const cancellation = dialog?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    const submit = [...(dialog?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find(
+      (button) => button.textContent?.includes('Delete country'),
+    );
+    typeInto(input!, 'finland');
+    await flushPromises();
+    expect(submit?.disabled).toBe(true);
+    cancellation?.click();
+    await flushPromises();
+    expect(submit?.disabled).toBe(false);
+    submit?.click();
+
+    await vi.waitFor(() =>
+      expect(dialog?.querySelector('[role="alert"]')?.textContent).toContain(
+        'Active work has not finished cleanup yet.',
+      ),
+    );
+    expect(deleteRequest.url?.searchParams.get('confirm')).toBe('finland');
+    expect(deleteRequest.url?.searchParams.get('cancelJobs')).toBe('true');
+    expect(container.textContent).toContain('Request id: req-delete-busy');
+    expect(container.textContent).toContain('Delete cached country Finland?');
+  });
+
+  it('offers explicit cancellation when a country job appears after the detail was loaded', async () => {
+    const deleteUrls: URL[] = [];
+    const fetchMock = makeFetch((url, init) => {
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}` && init?.method === 'DELETE') {
+        deleteUrls.push(url);
+        if (deleteUrls.length === 1)
+          return jsonResponse(
+            {
+              error: {
+                code: 'JOB_ALREADY_RUNNING',
+                message: 'This country has queued or running jobs.',
+                requestId: 'req-new-job',
+              },
+            },
+            409,
+          );
+        return new Response(null, { status: 204 });
+      }
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}`) return jsonResponse(detail({}, []));
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}/versions`)
+        return jsonResponse(versionPage());
+      if (url.pathname === '/_admin/api/cache')
+        return jsonResponse({ data: [], meta: { page: 1, limit: 50, total: 0, totalPages: 0 } });
+      throw new Error(`Unexpected request ${url.pathname}`);
+    });
+    const { container, router } = await mountCountry(fetchMock);
+
+    await vi.waitFor(() => expect(container.querySelector('h1')?.textContent).toBe('Finland'));
+    container.querySelector<HTMLButtonElement>('.mm-cache-country-actions button')?.click();
+    await flushPromises();
+    const dialog = container.querySelector<HTMLElement>(
+      '[aria-labelledby="cache-country-delete-title"]',
+    );
+    typeInto(dialog!.querySelector<HTMLInputElement>('input[type="text"]')!, 'finland');
+    await flushPromises();
+    [...dialog!.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.includes('Delete country'))
+      ?.click();
+
+    await vi.waitFor(() => expect(dialog?.querySelector('[role="alert"]')).not.toBeNull());
+    const cancelJobs = dialog?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    const submit = [...(dialog?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find(
+      (button) => button.textContent?.includes('Delete country'),
+    );
+    expect(deleteUrls[0]?.searchParams.has('cancelJobs')).toBe(false);
+    expect(submit?.disabled).toBe(true);
+    cancelJobs?.click();
+    await flushPromises();
+    expect(submit?.disabled).toBe(false);
+    submit?.click();
+
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('admin-cache'));
+    expect(deleteUrls).toHaveLength(2);
+    expect(deleteUrls[1]?.searchParams.get('cancelJobs')).toBe('true');
+  });
+
+  it('does not navigate away when a country delete completes after the reader changed countries', async () => {
+    let deleteStarted!: () => void;
+    let finishDelete!: (response: Response) => void;
+    const started = new Promise<void>((resolve) => {
+      deleteStarted = resolve;
+    });
+    const fetchMock = makeFetch((url, init) => {
+      const countryId = url.pathname.match(/^\/_admin\/api\/cache\/([^/]+)$/u)?.[1];
+      if (countryId === COUNTRY_ID && init?.method === 'DELETE') {
+        deleteStarted();
+        return new Promise<Response>((resolve) => {
+          finishDelete = resolve;
+        });
+      }
+      if (countryId === COUNTRY_ID) return jsonResponse(detail({}, []));
+      if (countryId === OTHER_COUNTRY_ID) {
+        const sweden = detail({}, []);
+        sweden.country = {
+          ...sweden.country,
+          countryId: OTHER_COUNTRY_ID,
+          name: 'Sweden',
+          slug: 'sweden',
+          sourceId: 'europe/sweden',
+          iso: ['SE'],
+        };
+        return jsonResponse(sweden);
+      }
+      if (url.pathname.endsWith('/versions')) return jsonResponse(versionPage());
+      throw new Error(`Unexpected request ${url.pathname}`);
+    });
+    const { container, router } = await mountCountry(fetchMock);
+
+    await vi.waitFor(() => expect(container.querySelector('h1')?.textContent).toBe('Finland'));
+    container.querySelector<HTMLButtonElement>('.mm-cache-country-actions button')?.click();
+    await flushPromises();
+    const dialog = container.querySelector<HTMLElement>(
+      '[aria-labelledby="cache-country-delete-title"]',
+    );
+    typeInto(dialog!.querySelector<HTMLInputElement>('input[type="text"]')!, 'finland');
+    await flushPromises();
+    [...dialog!.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.includes('Delete country'))
+      ?.click();
+    await started;
+
+    await router.push(adminPagePaths.cacheCountry(OTHER_COUNTRY_ID));
+    await vi.waitFor(() => expect(container.querySelector('h1')?.textContent).toBe('Sweden'));
+    finishDelete?.(new Response(null, { status: 204 }));
+    await flushPromises();
+
+    expect(router.currentRoute.value.params.countryId).toBe(OTHER_COUNTRY_ID);
+    expect(router.currentRoute.value.name).toBe('admin-cache-country');
+    expect(container.querySelector('h1')?.textContent).toBe('Sweden');
   });
 
   it('refuses malformed UUID links without calling the cache API', async () => {
