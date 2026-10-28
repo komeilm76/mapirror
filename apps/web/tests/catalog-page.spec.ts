@@ -6,7 +6,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { App as VueApp } from 'vue';
 import type { Router } from 'vue-router';
 
-import type { CatalogListItem, CatalogListResponse } from '@mapirror/shared';
+import type {
+  CatalogListItem,
+  CatalogListResponse,
+  CatalogRegionSnapshotsResponse,
+} from '@mapirror/shared';
 
 import { SESSION_TOKEN_KEY } from '../src/auth/token-storage';
 import { createWebApp } from '../src/bootstrap';
@@ -76,6 +80,28 @@ const TWO_ROWS: CatalogListResponse = {
   data: [catalogItem(0), catalogItem(1)],
   meta: { page: 1, limit: 50, total: 2, totalPages: 1 },
   catalogSyncedAt: CATALOG_SYNCED_AT,
+};
+
+const SOURCE_SNAPSHOTS: CatalogRegionSnapshotsResponse = {
+  data: [
+    {
+      version: '261024',
+      dataTimestamp: '2026-10-23T20:20:51.000Z',
+      sizeBytes: 774_000_000,
+      checksumMd5: null,
+      cached: false,
+    },
+    {
+      version: '261023',
+      dataTimestamp: '2026-10-22T20:19:04.000Z',
+      sizeBytes: 773_465_008,
+      checksumMd5: '0123456789abcdef0123456789abcdef',
+      cached: false,
+    },
+  ],
+  latest: { version: '261024', sizeBytes: 774_000_000 },
+  fetchedAt: '2026-10-24T09:12:00.000Z',
+  sourceReachable: true,
 };
 
 const PAGE_ONE: CatalogListResponse = {
@@ -294,6 +320,183 @@ describe('admin catalog page', () => {
     container.querySelector<HTMLButtonElement>('.mm-catalog-error button')?.click();
     await vi.waitFor(() => expect(container.textContent).toContain('Finland'));
     expect(calls).toBe(3);
+  });
+
+  it('offers downloads only for uncached regions and queues a selected dated source snapshot', async () => {
+    const fetchMock = makeFetch((url, init) => {
+      if (url.pathname === '/_admin/api/catalog') return jsonResponse(TWO_ROWS);
+      if (url.pathname === '/_admin/api/catalog/regions/finland/snapshots')
+        return jsonResponse(SOURCE_SNAPSHOTS);
+      if (url.pathname === '/_admin/api/cache/downloads') {
+        expect(init?.method).toBe('POST');
+        return jsonResponse(
+          {
+            jobId: '00000000-0000-4000-8000-000000000099',
+            resolvedVersion: '261023',
+          },
+          202,
+        );
+      }
+      throw new Error(`Unexpected request: ${url.pathname}`);
+    });
+    const { container } = await mountCatalog(fetchMock);
+
+    await vi.waitFor(() => expect(container.textContent).toContain('Finland'));
+    const downloadButtons = [
+      ...container.querySelectorAll<HTMLButtonElement>('.mm-catalog-download-button'),
+    ];
+    expect(downloadButtons).toHaveLength(2);
+    expect(
+      downloadButtons.every((button) => button.getAttribute('aria-label')?.includes('Finland')),
+    ).toBe(true);
+    expect(container.textContent).toContain('Already cached');
+
+    downloadButtons[0]?.click();
+    await vi.waitFor(() => expect(container.querySelector('[role="dialog"]')).not.toBeNull());
+    expect(document.activeElement).toBe(
+      container.querySelector('[role="dialog"] .mm-catalog-dialog-heading button'),
+    );
+    expect(container.textContent).toContain('Latest · 261024');
+    expect(container.textContent).toContain('737.6 MiB');
+    expect(container.textContent).toContain('22 Oct 2026');
+
+    const datedOption = container.querySelector<HTMLInputElement>(
+      'input[name="catalog-download-version"][value="261023"]',
+    );
+    expect(datedOption).not.toBeNull();
+    if (datedOption === null) return;
+    datedOption.checked = true;
+    datedOption.dispatchEvent(new Event('change', { bubbles: true }));
+    await flushPromises();
+    container
+      .querySelector<HTMLButtonElement>(
+        '[role="dialog"] .mm-catalog-dialog-actions button:last-child',
+      )
+      ?.click();
+
+    await vi.waitFor(() => expect(container.querySelector('[role="dialog"]')).toBeNull());
+    expect(container.textContent).toContain('Finland download queued for 261023');
+    expect(container.textContent).toContain('00000000-0000-4000-8000-000000000099');
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(container.querySelector('.mm-catalog-queued')),
+    );
+    expect(
+      [...container.querySelectorAll<HTMLButtonElement>('.mm-catalog-download-button')].every(
+        (button) => button.disabled,
+      ),
+    ).toBe(true);
+
+    const calls = (
+      fetchMock as typeof fetchMock & { catalogCalls: { url: URL; init?: RequestInit }[] }
+    ).catalogCalls;
+    const snapshotRequest = calls.find(
+      (call) => call.url.pathname === '/_admin/api/catalog/regions/finland/snapshots',
+    );
+    expect(new Headers(snapshotRequest?.init?.headers).get('authorization')).toBe(
+      'Bearer mm_catalog_test',
+    );
+    const enqueueRequest = calls.find(
+      (call) => call.url.pathname === '/_admin/api/cache/downloads',
+    );
+    const enqueueBody = enqueueRequest?.init?.body;
+    expect(typeof enqueueBody).toBe('string');
+    if (typeof enqueueBody !== 'string') throw new Error('Expected a JSON download request body.');
+    expect(JSON.parse(enqueueBody)).toEqual({
+      countryId: catalogItem(0).countryId,
+      version: '261023',
+    });
+    expect(new Headers(enqueueRequest?.init?.headers).get('authorization')).toBe(
+      'Bearer mm_catalog_test',
+    );
+  });
+
+  it('shows supportable source-list and enqueue errors without losing the selected offer', async () => {
+    let snapshotsCalls = 0;
+    const fetchMock = makeFetch((url) => {
+      if (url.pathname === '/_admin/api/catalog') return jsonResponse(TWO_ROWS);
+      if (url.pathname.endsWith('/snapshots')) {
+        snapshotsCalls += 1;
+        if (snapshotsCalls === 1)
+          return jsonResponse(
+            {
+              error: {
+                code: 'SOURCE_UNAVAILABLE',
+                message: 'Geofabrik could not be reached.',
+                requestId: 'req-snapshots-001',
+              },
+            },
+            502,
+          );
+        return jsonResponse(SOURCE_SNAPSHOTS);
+      }
+      if (url.pathname === '/_admin/api/cache/downloads')
+        return jsonResponse(
+          {
+            error: {
+              code: 'VERSION_ALREADY_CACHED',
+              message: 'That version is already cached.',
+              requestId: 'req-download-001',
+            },
+          },
+          409,
+        );
+      throw new Error(`Unexpected request: ${url.pathname}`);
+    });
+    const { container } = await mountCatalog(fetchMock);
+
+    await vi.waitFor(() => expect(container.textContent).toContain('Finland'));
+    container.querySelector<HTMLButtonElement>('.mm-catalog-download-button')?.click();
+    await vi.waitFor(() => expect(container.textContent).toContain('req-snapshots-001'));
+    expect(container.textContent).toContain('Geofabrik could not be reached.');
+
+    container.querySelector<HTMLButtonElement>('[role="dialog"] .mm-catalog-error button')?.click();
+    await vi.waitFor(() => expect(container.textContent).toContain('Latest · 261024'));
+    container
+      .querySelector<HTMLButtonElement>(
+        '[role="dialog"] .mm-catalog-dialog-actions button:last-child',
+      )
+      ?.click();
+    await vi.waitFor(() => expect(container.textContent).toContain('req-download-001'));
+    expect(container.textContent).toContain('That version is already cached.');
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(
+      container.querySelector<HTMLButtonElement>(
+        '[role="dialog"] .mm-catalog-dialog-actions button:last-child',
+      )?.disabled,
+    ).toBe(false);
+  });
+
+  it('explains an upstream outage and disables downloads when only cached offers remain', async () => {
+    const unreachable: CatalogRegionSnapshotsResponse = {
+      data: [
+        {
+          version: '261023',
+          dataTimestamp: '2026-10-22T20:19:04.000Z',
+          sizeBytes: 773_465_008,
+          checksumMd5: null,
+          cached: true,
+        },
+      ],
+      latest: null,
+      fetchedAt: '2026-10-24T09:12:00.000Z',
+      sourceReachable: false,
+    };
+    const fetchMock = makeFetch((url) => {
+      if (url.pathname === '/_admin/api/catalog') return jsonResponse(TWO_ROWS);
+      if (url.pathname.endsWith('/snapshots')) return jsonResponse(unreachable);
+      throw new Error(`Unexpected request: ${url.pathname}`);
+    });
+    const { container } = await mountCatalog(fetchMock);
+
+    await vi.waitFor(() => expect(container.textContent).toContain('Finland'));
+    container.querySelector<HTMLButtonElement>('.mm-catalog-download-button')?.click();
+    await vi.waitFor(() => expect(container.querySelector('[role="dialog"]')).not.toBeNull());
+    expect(container.textContent).toContain('Geofabrik is unreachable');
+    expect(container.textContent).toContain('Already cached');
+    const queueButton = container.querySelector<HTMLButtonElement>(
+      '[role="dialog"] .mm-catalog-dialog-actions button:last-child',
+    );
+    expect(queueButton?.disabled).toBe(true);
   });
 
   it('uses cards below the documented responsive breakpoint and honors reduced motion', () => {

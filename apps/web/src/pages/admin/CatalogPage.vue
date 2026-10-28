@@ -14,15 +14,19 @@
  */
 
 import {
+  CacheDownloadRequestSchema,
+  CacheDownloadResponseSchema,
   CatalogListResponseSchema,
   CatalogQuerySchema,
+  CatalogRegionSnapshotsResponseSchema,
   SORT_FIELDS,
   type CatalogListItem,
   type CatalogListResponse,
   type CatalogQuery,
+  type CatalogRegionSnapshotsResponse,
 } from '@mapirror/shared';
 import { useDebounceFn } from '@vueuse/core';
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { ApiError } from '@/api/errors';
@@ -44,6 +48,24 @@ const errorMessage = ref<string | null>(null);
 const errorRequestId = ref<string | null>(null);
 const retryNumber = ref(0);
 const continentInput = ref(queryText(route.query.continent) ?? '');
+const downloadDialogOpen = ref(false);
+const downloadDialogElement = ref<HTMLElement | null>(null);
+const downloadCloseButton = ref<HTMLButtonElement | null>(null);
+const selectedRegion = ref<CatalogListItem | null>(null);
+let returnFocusElement: HTMLElement | null = null;
+const snapshots = ref<CatalogRegionSnapshotsResponse | null>(null);
+const snapshotsLoading = ref(false);
+const snapshotsErrorMessage = ref<string | null>(null);
+const snapshotsErrorRequestId = ref<string | null>(null);
+const selectedVersion = ref('');
+const queueingDownload = ref(false);
+const downloadErrorMessage = ref<string | null>(null);
+const downloadErrorRequestId = ref<string | null>(null);
+const queuedJobs = ref<Record<string, string>>({});
+const queueAnnouncement = ref<string | null>(null);
+const queueAnnouncementElement = ref<HTMLElement | null>(null);
+let snapshotsController: AbortController | undefined;
+let snapshotsRequestNumber = 0;
 
 /**
  * The query to send, built only from the documented route keys and enum values.
@@ -100,6 +122,11 @@ const updateContinentLater = useDebounceFn(
   () => updateQuery({ continent: continentInput.value }),
   300,
 );
+
+onUnmounted(() => {
+  snapshotsRequestNumber += 1;
+  snapshotsController?.abort();
+});
 
 watch(
   () => route.query.continent,
@@ -323,6 +350,216 @@ function updateLabel(item: CatalogListItem): string {
   if (item.cache.updateState === 'up_to_date') return 'Up to date';
   return 'Unknown';
 }
+
+/** Source snapshots other than the newest moving offer. */
+const datedSnapshots = computed(() =>
+  (snapshots.value?.data ?? []).filter(
+    (snapshot) => snapshot.version !== snapshots.value?.latest?.version,
+  ),
+);
+
+/** Whether the selected offer is still available and not already ready in the local cache. */
+const canQueueSelectedVersion = computed(() => {
+  const current = snapshots.value;
+  if (current === null || !current.sourceReachable || selectedVersion.value === '') return false;
+  const matching = current.data.find((snapshot) => snapshot.version === selectedVersion.value);
+  if (selectedVersion.value === 'latest') {
+    return current.latest !== null && matching?.cached !== true;
+  }
+  return matching !== undefined && !matching.cached;
+});
+
+/** Metadata shown for the selected latest offer when the source also provides a timestamp. */
+const selectedLatestMetadata = computed(() => {
+  if (selectedVersion.value !== 'latest' || snapshots.value?.latest === null) return null;
+  return (
+    snapshots.value?.data.find(
+      (snapshot) => snapshot.version === snapshots.value?.latest?.version,
+    ) ?? null
+  );
+});
+
+/** Whether an offered snapshot is already ready in the local cache. */
+function snapshotIsCached(version: string): boolean {
+  return (
+    snapshots.value?.data.some((snapshot) => snapshot.version === version && snapshot.cached) ??
+    false
+  );
+}
+
+/** Whether the latest source offer can be selected for a download. */
+const latestOfferDisabled = computed(() => {
+  const current = snapshots.value;
+  return (
+    current === null ||
+    !current.sourceReachable ||
+    current.latest === null ||
+    snapshotIsCached(current.latest.version)
+  );
+});
+
+/** Opens the picker and requests current source offers for this local catalog slug. */
+function openDownloadPicker(item: CatalogListItem): void {
+  if (item.cache.cached || queuedJobs.value[item.countryId] !== undefined) return;
+  snapshotsController?.abort();
+  selectedRegion.value = item;
+  snapshots.value = null;
+  snapshotsErrorMessage.value = null;
+  snapshotsErrorRequestId.value = null;
+  downloadErrorMessage.value = null;
+  downloadErrorRequestId.value = null;
+  selectedVersion.value = '';
+  queueAnnouncement.value = null;
+  returnFocusElement =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  downloadDialogOpen.value = true;
+  void nextTick(() => downloadCloseButton.value?.focus());
+  void loadSnapshots();
+}
+
+/** Loads and validates the current upstream offers, aborting a stale picker request. */
+async function loadSnapshots(): Promise<void> {
+  const region = selectedRegion.value;
+  if (region === null) return;
+  snapshotsController?.abort();
+  const controller = new AbortController();
+  snapshotsController = controller;
+  const requestNumber = ++snapshotsRequestNumber;
+  snapshotsLoading.value = true;
+  snapshots.value = null;
+  selectedVersion.value = '';
+  snapshotsErrorMessage.value = null;
+  snapshotsErrorRequestId.value = null;
+  try {
+    const response = await api.get<unknown>(
+      `/_admin/api/catalog/regions/${encodeURIComponent(region.slug)}/snapshots`,
+      { signal: controller.signal },
+    );
+    const parsed = CatalogRegionSnapshotsResponseSchema.safeParse(response);
+    if (!parsed.success) {
+      if (requestNumber === snapshotsRequestNumber) {
+        snapshotsErrorMessage.value = 'The source version list could not be read. Try again.';
+      }
+      return;
+    }
+    if (requestNumber !== snapshotsRequestNumber) return;
+    snapshots.value = parsed.data;
+    const latestVersion = parsed.data.latest?.version;
+    if (
+      latestVersion !== undefined &&
+      !parsed.data.data.some((snapshot) => snapshot.version === latestVersion && snapshot.cached)
+    ) {
+      selectedVersion.value = 'latest';
+    } else {
+      selectedVersion.value = parsed.data.data.find((snapshot) => !snapshot.cached)?.version ?? '';
+    }
+  } catch (cause) {
+    if (
+      requestNumber !== snapshotsRequestNumber ||
+      (cause instanceof ApiError && cause.code === 'ABORTED')
+    )
+      return;
+    if (cause instanceof ApiError) {
+      snapshotsErrorMessage.value = cause.message;
+      snapshotsErrorRequestId.value = cause.requestId;
+    } else {
+      snapshotsErrorMessage.value = 'The source version list could not be loaded. Try again.';
+    }
+  } finally {
+    if (requestNumber === snapshotsRequestNumber) snapshotsLoading.value = false;
+  }
+}
+
+/** Closes the picker and cancels any still-pending source-list request. */
+function closeDownloadPicker(): void {
+  if (queueingDownload.value) return;
+  snapshotsRequestNumber += 1;
+  snapshotsController?.abort();
+  snapshotsController = undefined;
+  snapshotsLoading.value = false;
+  downloadDialogOpen.value = false;
+  selectedRegion.value = null;
+  const focusTarget = returnFocusElement;
+  returnFocusElement = null;
+  void nextTick(() => focusTarget?.focus());
+}
+
+/** Keeps keyboard focus inside the modal while it is open. */
+function handleDialogKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeDownloadPicker();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+
+  const dialog = downloadDialogElement.value;
+  if (dialog === null) return;
+  const focusable = [
+    ...dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ];
+  if (focusable.length === 0) {
+    event.preventDefault();
+    dialog.focus();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last?.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first?.focus();
+  }
+}
+
+/** Queues the selected currently-offered source version and validates the accepted job response. */
+async function queueDownload(): Promise<void> {
+  const region = selectedRegion.value;
+  if (region === null || !canQueueSelectedVersion.value || queueingDownload.value) return;
+  const request = CacheDownloadRequestSchema.safeParse({
+    countryId: region.countryId,
+    version: selectedVersion.value,
+  });
+  if (!request.success) {
+    downloadErrorMessage.value = 'Choose a currently available source version.';
+    downloadErrorRequestId.value = null;
+    return;
+  }
+
+  queueingDownload.value = true;
+  void nextTick(() => downloadDialogElement.value?.focus());
+  downloadErrorMessage.value = null;
+  downloadErrorRequestId.value = null;
+  try {
+    const response = await api.post<unknown>('/_admin/api/cache/downloads', request.data);
+    const parsed = CacheDownloadResponseSchema.safeParse(response);
+    if (!parsed.success) {
+      downloadErrorMessage.value =
+        'The server accepted the request, but its response could not be read. Verify whether a job was queued before retrying.';
+      return;
+    }
+    queuedJobs.value = { ...queuedJobs.value, [region.countryId]: parsed.data.jobId };
+    const version = parsed.data.resolvedVersion ?? request.data.version;
+    queueAnnouncement.value = `${region.name} download queued for ${version}. Job id: ${parsed.data.jobId}.`;
+    returnFocusElement = null;
+    queueingDownload.value = false;
+    closeDownloadPicker();
+    void nextTick(() => queueAnnouncementElement.value?.focus());
+  } catch (cause) {
+    if (cause instanceof ApiError) {
+      downloadErrorMessage.value = cause.message;
+      downloadErrorRequestId.value = cause.requestId;
+    } else {
+      downloadErrorMessage.value = 'The download could not be queued. Try again.';
+    }
+  } finally {
+    queueingDownload.value = false;
+  }
+}
 </script>
 
 <template>
@@ -343,6 +580,17 @@ function updateLabel(item: CatalogListItem): string {
         <span v-else>{{ syncedLabel }}</span>
       </p>
     </header>
+
+    <p
+      v-if="queueAnnouncement"
+      ref="queueAnnouncementElement"
+      class="mm-catalog-queued"
+      role="status"
+      aria-live="polite"
+      tabindex="-1"
+    >
+      {{ queueAnnouncement }}
+    </p>
 
     <section class="mm-catalog-filters" aria-label="Catalog filters">
       <div class="mm-catalog-filter-field">
@@ -478,6 +726,7 @@ function updateLabel(item: CatalogListItem): string {
                 </button>
               </th>
               <th scope="col" class="mm-catalog-last-sync">Last synced</th>
+              <th scope="col">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -518,6 +767,19 @@ function updateLabel(item: CatalogListItem): string {
               </td>
               <td class="mm-catalog-last-sync mm-catalog-secondary">
                 {{ formatDate(item.lastSyncedAt) }} UTC
+              </td>
+              <td class="mm-catalog-actions">
+                <button
+                  v-if="!item.cache.cached"
+                  class="mm-catalog-button mm-catalog-button-primary mm-catalog-download-button"
+                  type="button"
+                  :disabled="queuedJobs[item.countryId] !== undefined"
+                  :aria-label="`Choose a source version to download ${item.name}`"
+                  @click="openDownloadPicker(item)"
+                >
+                  {{ queuedJobs[item.countryId] ? 'Download queued' : 'Download' }}
+                </button>
+                <span v-else class="mm-catalog-secondary">Already cached</span>
               </td>
             </tr>
           </tbody>
@@ -571,6 +833,17 @@ function updateLabel(item: CatalogListItem): string {
               <dd>{{ formatDate(item.lastSyncedAt) }} UTC</dd>
             </div>
           </dl>
+          <button
+            v-if="!item.cache.cached"
+            class="mm-catalog-button mm-catalog-button-primary mm-catalog-download-button"
+            type="button"
+            :disabled="queuedJobs[item.countryId] !== undefined"
+            :aria-label="`Choose a source version to download ${item.name}`"
+            @click="openDownloadPicker(item)"
+          >
+            {{ queuedJobs[item.countryId] ? 'Download queued' : 'Download' }}
+          </button>
+          <p v-else class="mm-catalog-secondary">Already cached</p>
         </article>
       </div>
 
@@ -598,5 +871,161 @@ function updateLabel(item: CatalogListItem): string {
         </button>
       </nav>
     </template>
+
+    <div
+      v-if="downloadDialogOpen"
+      class="mm-catalog-dialog-backdrop"
+      @click.self="closeDownloadPicker"
+    >
+      <section
+        ref="downloadDialogElement"
+        class="mm-catalog-dialog"
+        role="dialog"
+        tabindex="-1"
+        :aria-busy="queueingDownload"
+        aria-modal="true"
+        aria-labelledby="catalog-download-title"
+        aria-describedby="catalog-download-description"
+        @keydown="handleDialogKeydown"
+      >
+        <header class="mm-catalog-dialog-heading">
+          <div>
+            <p class="mm-caption mb-2">Source version</p>
+            <h2 id="catalog-download-title" class="mm-catalog-state-title">
+              Choose a version for {{ selectedRegion?.name }}
+            </h2>
+          </div>
+          <button
+            ref="downloadCloseButton"
+            class="mm-catalog-button"
+            type="button"
+            :disabled="queueingDownload"
+            @click="closeDownloadPicker"
+          >
+            Close
+          </button>
+        </header>
+        <p id="catalog-download-description" class="mm-catalog-state-copy">
+          Choose the newest Geofabrik extract or a dated snapshot. Downloads are queued for the
+          worker.
+        </p>
+
+        <div
+          v-if="snapshotsLoading"
+          class="mm-catalog-dialog-status"
+          role="status"
+          aria-live="polite"
+        >
+          Loading source versions…
+        </div>
+        <div v-else-if="snapshotsErrorMessage !== null" class="mm-catalog-error" role="alert">
+          <div>
+            <p class="mm-catalog-state-copy">{{ snapshotsErrorMessage }}</p>
+            <p v-if="snapshotsErrorRequestId" class="mm-mono-small mm-catalog-request-id">
+              Request id: {{ snapshotsErrorRequestId }}
+            </p>
+          </div>
+          <button class="mm-catalog-button" type="button" @click="loadSnapshots">Try again</button>
+        </div>
+        <template v-else-if="snapshots !== null">
+          <p v-if="!snapshots.sourceReachable" class="mm-catalog-source-warning" role="status">
+            Geofabrik is unreachable. Only already-cached source versions are listed; new downloads
+            are unavailable.
+          </p>
+          <fieldset class="mm-catalog-version-list">
+            <legend>Available source versions</legend>
+            <label
+              v-if="snapshots.latest !== null"
+              class="mm-catalog-version-option"
+              :class="{ 'mm-catalog-version-unavailable': latestOfferDisabled }"
+            >
+              <input
+                v-model="selectedVersion"
+                type="radio"
+                name="catalog-download-version"
+                value="latest"
+                :disabled="latestOfferDisabled"
+              />
+              <span class="mm-catalog-version-copy">
+                <strong>Latest · {{ snapshots.latest.version }}</strong>
+                <span>
+                  {{ formatBytes(snapshots.latest.sizeBytes)
+                  }}<template v-if="selectedLatestMetadata?.dataTimestamp">
+                    · data up to
+                    {{ formatDate(selectedLatestMetadata.dataTimestamp) }} UTC</template
+                  >
+                </span>
+              </span>
+              <span v-if="latestOfferDisabled" class="mm-catalog-secondary">
+                {{ snapshotIsCached(snapshots.latest.version) ? 'Already cached' : 'Unavailable' }}
+              </span>
+            </label>
+            <label
+              v-for="snapshot in datedSnapshots"
+              :key="snapshot.version"
+              class="mm-catalog-version-option"
+              :class="{
+                'mm-catalog-version-unavailable': snapshot.cached || !snapshots.sourceReachable,
+              }"
+            >
+              <input
+                v-model="selectedVersion"
+                type="radio"
+                name="catalog-download-version"
+                :value="snapshot.version"
+                :disabled="snapshot.cached || !snapshots.sourceReachable"
+              />
+              <span class="mm-catalog-version-copy">
+                <strong>{{ snapshot.version }}</strong>
+                <span>
+                  {{ formatBytes(snapshot.sizeBytes) }} ·
+                  {{
+                    snapshot.dataTimestamp
+                      ? `${formatDate(snapshot.dataTimestamp)} UTC`
+                      : 'Date not reported'
+                  }}
+                </span>
+              </span>
+              <span v-if="snapshot.cached" class="mm-catalog-secondary">Already cached</span>
+            </label>
+            <p
+              v-if="
+                snapshots.latest === null && !snapshots.data.some((snapshot) => !snapshot.cached)
+              "
+              class="mm-catalog-state-copy"
+            >
+              No uncached source versions are available right now.
+            </p>
+          </fieldset>
+          <p class="mm-catalog-fetched-at mm-caption">
+            Source list checked {{ formatDate(snapshots.fetchedAt) }} UTC
+          </p>
+          <div v-if="downloadErrorMessage !== null" class="mm-catalog-action-error" role="alert">
+            <p>{{ downloadErrorMessage }}</p>
+            <p v-if="downloadErrorRequestId" class="mm-mono-small mm-catalog-request-id">
+              Request id: {{ downloadErrorRequestId }}
+            </p>
+          </div>
+          <footer class="mm-catalog-dialog-actions">
+            <button
+              class="mm-catalog-button"
+              type="button"
+              :disabled="queueingDownload"
+              @click="closeDownloadPicker"
+            >
+              Cancel
+            </button>
+            <button
+              class="mm-catalog-button mm-catalog-button-primary"
+              type="button"
+              :disabled="!canQueueSelectedVersion || queueingDownload"
+              @click="queueDownload"
+            >
+              {{ queueingDownload ? 'Queuing…' : 'Queue download' }}
+            </button>
+          </footer>
+        </template>
+      </section>
+    </div>
   </section>
 </template>

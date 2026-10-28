@@ -3,7 +3,7 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 77 passes · 304 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4, pass 76: 4, pass 77: 4).
+**Totals:** 78 passes · 308 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4, pass 76: 4, pass 77: 4, pass 78: 4).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
@@ -62,6 +62,21 @@ P2-API-08 implements `DELETE /_admin/api/cache/:countryId/versions/:versionId`. 
 Four targeted mutation probes were killed by integration tests: releasing the lock before cleanup, retaining the empty `country_cache` row, failing to unpublish with zero ready versions, and bypassing the active-job guard. The lock regression test was made failure-safe so a deliberate early release fails as an assertion rather than hanging its cleanup. Real-PostgreSQL targeted tests pass: **24 across the cache-delete and credential-transport specs**, including an audit-write failure probe that proves the file and row remain when the transaction rolls back. Full non-Docker `bun run check` passes: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint, formatting, and **1,419 tests across 109 files, 0 skipped**. Docker runtime/operator tests remain excluded per operator direction. The public download handler itself remains scheduled for P3-API-03; this task removes the persisted version and documents the required 404 behavior for that handler.
 
 **Totals after this pass: 73 passes · 291 defects fixed · 0 open.**
+
+## Pass 78 — 2026-10-28 (the catalog needed source-version selection and a working download action)
+
+P2-WEB-02 extends the catalog rows with an uncached-only download flow. It loads current Geofabrik offers through the authenticated API client, validates source and enqueue payloads with the shared contracts, and queues only the chosen `latest` or offered dated version.
+
+| # | Bug found in contract/code review | Fix |
+|---|---|---|
+| 1 | The catalog showed cache status but provided no path to start a download for an uncached region | Add a download action only to uncached table rows/cards; hide it for cached entries and disable it after a local queue acceptance |
+| 2 | Choosing a source version from the row's stale catalog hints would not prove that a `latest` or dated snapshot is still offered | Fetch `/catalog/regions/:slug/snapshots` on picker open, validate the response, render current latest and dated offers with exact size/date, and post only a schema-valid selected version |
+| 3 | Source outages and API failures could leave the user with a dead action or an unsafe blind retry | Show cached-only/outage guidance, disable unavailable choices, provide retryable list errors with request ids, and keep enqueue errors in the picker with support ids |
+| 4 | A modal picker could lose keyboard focus or submit duplicate work without communicating its outcome | Trap focus, support Escape/close and focus restoration, prevent duplicate queue submissions, validate the accepted response, and announce the queued version/job id |
+
+Web tests cover the hidden cached-row action, current snapshot size/date, authenticated snapshot and enqueue requests, selection of a dated version, success/disabled state, source outage, retry, API conflict and request-id presentation. Full non-Docker `bun run check` passes: 22 workspace checks, 54 hygiene checks, package typechecks, ESLint, formatting, and **1,161 passed across 113 files; 283 Docker/operator-dependent tests skipped**. The Vite production web build succeeds. Docker runtime/operator tests remain excluded per operator direction.
+
+**Totals after this pass: 78 passes · 308 defects fixed · 0 open.**
 
 ## Pass 77 — 2026-10-28 (the admin catalog screen was still a placeholder)
 
