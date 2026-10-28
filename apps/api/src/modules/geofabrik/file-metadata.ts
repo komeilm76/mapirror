@@ -57,6 +57,20 @@ class HttpStatusError extends Error {
   }
 }
 
+/** A non-success status that exhausted the bounded metadata-request policy. */
+export class GeofabrikMetadataHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly operation: 'HEAD' | 'MD5',
+    readonly attempts: number,
+  ) {
+    super(
+      `Geofabrik ${operation} request failed with HTTP ${String(status)}${attempts > 1 ? ` after ${String(attempts)} attempts` : ''}`,
+    );
+    this.name = 'GeofabrikMetadataHttpError';
+  }
+}
+
 /** A successful HTTP response whose contents cannot satisfy the checksum contract. */
 class InvalidChecksumError extends Error {}
 
@@ -161,15 +175,11 @@ async function requestWithRetries<T>(
         throw new Error('Geofabrik MD5 response did not contain a valid checksum');
       }
       if (error instanceof HttpStatusError && !error.retryable) {
-        throw new Error(
-          `Geofabrik ${operationName} request failed with HTTP ${String(error.status)}`,
-        );
+        throw new GeofabrikMetadataHttpError(error.status, operationName, attempt);
       }
       if (attempt === options.maxAttempts) {
         if (error instanceof HttpStatusError) {
-          throw new Error(
-            `Geofabrik ${operationName} request failed with HTTP ${String(error.status)} after ${String(attempt)} attempts`,
-          );
+          throw new GeofabrikMetadataHttpError(error.status, operationName, attempt);
         }
         if (error instanceof RequestTimeoutError) {
           throw new Error(

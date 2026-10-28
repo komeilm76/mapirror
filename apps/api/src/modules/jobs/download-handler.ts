@@ -78,8 +78,8 @@ interface PreparedDownload {
 }
 
 /**
- * Builds the worker handler. `P2-API-04` will register it in `server.ts` when the admin enqueue API composes a concrete
- * `MapSource`; tests already exercise this factory through the actual worker contract.
+ * Builds the worker handler. `server.ts` registers it alongside the catalog-sync handler with the composed Geofabrik
+ * `MapSource`; tests exercise this factory through the actual worker contract.
  *
  * @param options - Source, cache root, transport and optional clock.
  * @returns A `download` handler suitable for `JobHandlers`.

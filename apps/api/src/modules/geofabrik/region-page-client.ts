@@ -14,6 +14,16 @@ export interface GeofabrikRegionPageOptions {
   readonly timeoutMs?: number;
   /** Maximum decoded HTML body size; defaults to 2 MiB and is capped at 8 MiB. */
   readonly maxBytes?: number;
+  /** Optional caller cancellation, honored during both the request and bounded body read. */
+  readonly signal?: AbortSignal;
+}
+
+/** A non-success status returned by a Geofabrik region page. */
+export class GeofabrikRegionPageHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`Geofabrik region page returned HTTP ${String(status)}`);
+    this.name = 'GeofabrikRegionPageHttpError';
+  }
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -75,6 +85,9 @@ export async function fetchGeofabrikRegionPage(
 
   const url = geofabrikRegionPageUrl(baseUrl, regionId);
   const controller = new AbortController();
+  const abortFromCaller = (): void => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted === true) abortFromCaller();
+  else options.signal?.addEventListener('abort', abortFromCaller, { once: true });
   const timer = setTimeout(
     () => controller.abort(new Error('Geofabrik region page timed out')),
     timeoutMs,
@@ -88,7 +101,7 @@ export async function fetchGeofabrikRegionPage(
     });
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new Error(`Geofabrik region page returned HTTP ${response.status}`);
+      throw new GeofabrikRegionPageHttpError(response.status);
     }
 
     const contentLength = response.headers.get('content-length');
@@ -130,6 +143,7 @@ export async function fetchGeofabrikRegionPage(
     return parseGeofabrikRegionPage(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
   } finally {
     clearTimeout(timer);
+    options.signal?.removeEventListener('abort', abortFromCaller);
   }
 }
 

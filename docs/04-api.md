@@ -290,13 +290,20 @@ upstream attempt. Missing valid slugs return `404 NOT_FOUND`; malformed slugs re
 ```
 `202 { "jobId": "…", "resolvedVersion": "261024" | null }`
 
-Errors: `409 VERSION_ALREADY_CACHED` (that exact version is already `ready`), `409 JOB_ALREADY_RUNNING`,
+Errors: `409 VERSION_ALREADY_CACHED` (the resolved source identity is already `ready`), `409 JOB_ALREADY_RUNNING`,
 `503 DISK_FULL` (`details.requiredBytes` is the padded download estimate, `freeBytes` is filesystem space
 available to the API process, and `reserveBytes` / `shortfallBytes` explain the configured floor). Values are JSON
 integers when safe, otherwise decimal strings; `410 SOURCE_VERSION_GONE` (the dated snapshot was deleted upstream —
-offer `latest` instead), `502 SOURCE_UNAVAILABLE` (network failure, safe to retry). The partial unique index on active
-`download` jobs is authoritative for `(countryId, version)`: concurrent requests cannot both enqueue, and its named
-constraint maps to `JOB_ALREADY_RUNNING` rather than a generic database error.
+offer `latest` instead), `502 SOURCE_UNAVAILABLE` (source metadata could not be fetched, safe to retry). For a dated
+request the API rejects an already-ready local label before contacting Geofabrik, so a cached file remains recognizable
+during an upstream outage. For `latest`, it first resolves the current Geofabrik region page and PBF headers, then rejects
+an already-ready matching source identity. It creates the configured cache root if needed, checks
+`available >= ceil(size × 1.1) + reserve`, and inserts only after all preflights succeed. A missing PBF length is treated as unknown (zero known transfer bytes) while the configured reserve is
+still enforced; the worker validates actual streamed length and checksum. `resolvedVersion` is the current dated source
+label for `latest`, the requested date for an explicit snapshot, or `null` only when upstream metadata cannot identify
+the latest dated label. The partial unique index on active `download` jobs is authoritative for `(countryId, version)`:
+concurrent requests cannot both enqueue, and its named constraint maps to `JOB_ALREADY_RUNNING` rather than a generic
+database error.
 
 ---
 

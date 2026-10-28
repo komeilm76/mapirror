@@ -11,7 +11,8 @@
 import type { FastifyPluginCallback } from 'fastify';
 
 import type { AppConfig } from '../../config/env';
-import { createGeofabrikRegionPageSource } from '../geofabrik/region-page-client';
+import { createGeofabrikMapSource } from '../geofabrik/map-source';
+import { createCacheDownloadHandler } from './cache-download-route';
 import { createCatalogRegionHandlers } from './catalog-region-route';
 import { getCatalog } from './catalog-route';
 import { postCatalogSync } from './catalog-sync-route';
@@ -23,11 +24,12 @@ export interface AdminRouteOptions {
 
 /** Catalog, cache, versions, imports, intervals, jobs, system, settings, audit land here. */
 export const adminRoutes: FastifyPluginCallback<AdminRouteOptions> = (app, options) => {
-  const regionHandlers = createCatalogRegionHandlers(
-    createGeofabrikRegionPageSource(options.config.geofabrikBaseUrl),
-  );
+  const source = createGeofabrikMapSource(options.config.geofabrikBaseUrl);
+  const regionHandlers = createCatalogRegionHandlers(source);
+  const cacheDownload = createCacheDownloadHandler({ config: options.config, source });
   app.get('/catalog', getCatalog);
   app.post('/catalog/sync', postCatalogSync);
   app.get('/catalog/regions/:slug', regionHandlers.getRegion);
   app.get('/catalog/regions/:slug/snapshots', regionHandlers.getSnapshots);
+  app.post('/cache/downloads', cacheDownload);
 };

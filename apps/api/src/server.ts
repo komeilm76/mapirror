@@ -21,8 +21,9 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from './app';
 import { ConfigError, parseEnv, type AppConfig, type EnvSource } from './config/env';
 import { runHousekeeping } from './lib/housekeeping';
-import { createGeofabrikCatalogIndexSource } from './modules/geofabrik/index-client';
+import { createGeofabrikMapSource } from './modules/geofabrik/map-source';
 import { createCatalogSyncHandler } from './modules/jobs/catalog-sync-handler';
+import { createDownloadHandler } from './modules/jobs/download-handler';
 import { startJobReaper } from './modules/jobs/reaper';
 import { startJobWorker, type JobHandlers } from './modules/jobs/worker';
 
@@ -137,10 +138,11 @@ export async function start(
 
   let stopWorkers: (() => Promise<void>) | undefined;
   if (config.workerEnabled) {
-    // The catalog worker uses the validated index client pointed at the configured Geofabrik base URL.
-    const catalogSource = createGeofabrikCatalogIndexSource(config.geofabrikBaseUrl);
+    // One concrete provider composition serves catalog synchronization and source-backed PBF downloads.
+    const source = createGeofabrikMapSource(config.geofabrikBaseUrl);
     const handlers: JobHandlers = {
-      catalog_sync: createCatalogSyncHandler({ source: catalogSource }),
+      catalog_sync: createCatalogSyncHandler({ source }),
+      download: createDownloadHandler({ source, cacheDirectory: config.cacheDir }),
     };
     const worker = startJobWorker(app.db.db, handlers, {
       concurrency: config.workerConcurrency,

@@ -171,8 +171,8 @@ describe.skipIf(skipReason !== null)(
           });
           expect(viaQuery.statusCode, `${route} via the query string`).toBe(401);
 
-          // ...and the body, for the methods that have one. No admin route takes a body today; the case exists so the
-          // sweep stays honest the day one does, instead of being silently skipped.
+          // ...and the body, for methods that can carry one. The token remains misplaced even when a route validates
+          // its own request body, and the auth guard must reject it first.
           if (method === 'POST') {
             const viaBody = await app.inject({
               method: 'POST',
@@ -208,7 +208,8 @@ describe.skipIf(skipReason !== null)(
             expect(response.json<{ jobId: string }>().jobId).toMatch(/^[0-9a-f-]{36}$/u);
           } else if (
             route === 'GET /_admin/api/catalog/regions/:slug' ||
-            route === 'GET /_admin/api/catalog/regions/:slug/snapshots'
+            route === 'GET /_admin/api/catalog/regions/:slug/snapshots' ||
+            route === 'POST /_admin/api/cache/downloads'
           ) {
             expect(response.statusCode, route).toBe(400);
             expect(response.json<{ error: { code: string } }>().error.code, route).toBe(
