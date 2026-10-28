@@ -11,10 +11,10 @@
  * Nothing else belongs here. Anything a reader might want to test goes in `bootstrap.ts`; anything a reader might want
  * to configure goes in `plugins/`.
  *
- * The three stylesheets are the exception, and they are imported here rather than in `bootstrap.ts` for one reason: they
- * are the *application's* CSS, so they must load whichever component renders first, and `main.ts` is the only module a
+ * The stylesheets are the exception, and they are imported here rather than in `bootstrap.ts` for one reason: they are
+ * the *application's* CSS, so they must load whichever component renders first, and `main.ts` is the only module a
  * browser is guaranteed to evaluate before any component exists. Tokens first (`tokens.css`), then the type system
- * (`typography.css`), then the shell rules that use both (`shell.css`, `P1-WEB-07`).
+ * (`typography.css`), then shell rules (`shell.css`) and the catalog's responsive table/card rules (`catalog.css`).
  *
  * @module main
  */
@@ -22,6 +22,7 @@
 import './styles/tokens.css';
 import './styles/typography.css';
 import './styles/shell.css';
+import './styles/catalog.css';
 
 import { createWebApp, MOUNT_SELECTOR } from './bootstrap';
 

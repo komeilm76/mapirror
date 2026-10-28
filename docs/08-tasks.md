@@ -155,7 +155,7 @@ prove L1–L3.
 
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
-| P2-WEB-01 | Catalog page: search, continent filter, cache filter, table/cards | GEO-1 | P2-API-01 | ⬜ | Empty/loading/error states present |
+| P2-WEB-01 | Catalog page: search, continent filter, cache filter, table/cards | GEO-1 | P2-API-01 | ✅ | Query-backed global search with 300 ms debounce; exact parent-id and cached/uncached filters; server sort/page; responsive semantic table/cards; safe exact byte/date display; loading skeleton, retryable error with request id, and actionable empty state. Web tests cover route/query/auth wiring, filter/sort/page requests and all three states |
 | P2-WEB-02 | Download button only when uncached + source version picker | GEO-3/4 | P2-API-03/04 | ⬜ | Button hidden/disabled correctly; size/date shown |
 | P2-WEB-03 | Cache table (size, versions, public state, updated) | CACHE-2 | P2-API-05 | ⬜ | Sortable, responsive |
 | P2-WEB-04 | Country detail: versions table with download/delete | CACHE-2/4 | P2-API-07/08 | ⬜ | Confirm dialogs; optimistic refresh |

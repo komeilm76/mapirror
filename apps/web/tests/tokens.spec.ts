@@ -273,7 +273,7 @@ describe('no component holds a colour', () => {
     expect(sources.some((path) => path.endsWith('.vue'))).toBe(true);
   });
 
-  it('finds colours only in the token module and the three stylesheets', () => {
+  it('finds colours only in the token module and the stylesheets', () => {
     // The stylesheets hold `rgb(var(--v-theme-…))` — a reference, not a colour — and one `rgb(0 0 0 / 16%)` shadow,
     // which is §2's shadow token spelled out. Everything else must be a theme key.
     const allowed = [
@@ -281,6 +281,7 @@ describe('no component holds a colour', () => {
       'src/styles/tokens.css',
       'src/styles/typography.css',
       'src/styles/shell.css',
+      'src/styles/catalog.css',
     ];
     const offenders: string[] = [];
 
@@ -303,6 +304,7 @@ describe('no component holds a colour', () => {
       'src/styles/tokens.css',
       'src/styles/typography.css',
       'src/styles/shell.css',
+      'src/styles/catalog.css',
     ]) {
       const lines = readFileSync(resolve(import.meta.dirname, '..', name), 'utf8')
         .split('\n')

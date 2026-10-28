@@ -286,8 +286,9 @@ describe('the mounted app', () => {
     await flushPromises();
 
     expect(container.querySelector('.v-application')?.className).toContain('v-theme--dark');
-    // The admin page itself, not the login page: the placeholder names its §4 screen, and S6 is the catalog.
-    expect(container.textContent).toContain('Screen S6');
+    // S6 is now the real catalog screen rather than a placeholder.
+    expect(container.textContent).toContain('Catalog');
+    expect(container.textContent).toContain('The catalog could not be loaded');
   });
 
   it('follows the system with no options injected, which is how the app installs it', async () => {

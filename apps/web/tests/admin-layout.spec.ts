@@ -227,7 +227,7 @@ describe('the topbar', () => {
 
   it('sends a catalog search to the catalog screen, in the URL', async () => {
     // §3 lists global search in the topbar. It navigates: `P2-WEB-01` owns the query, and the term belongs in the URL so
-    // the view can be bookmarked.
+    // the view can be bookmarked. Enter submits immediately; typing alone uses the documented debounce below.
     const { container, router } = await mountAdmin({ at: adminPagePaths.dashboard() });
 
     const field = container.querySelector<HTMLInputElement>('input[type="search"]');
@@ -242,6 +242,22 @@ describe('the topbar', () => {
       expect(router.currentRoute.value.name).toBe('admin-catalog');
     });
     expect(router.currentRoute.value.query['q']).toBe('finland');
+  });
+
+  it('restores a bookmarked search and debounces new terms into the URL', async () => {
+    const { container, router } = await mountAdmin({
+      at: `${adminPagePaths.catalog()}?q=finland`,
+    });
+    const field = container.querySelector<HTMLInputElement>('form[role="search"] input');
+    expect(field?.value).toBe('finland');
+
+    if (field === null) return;
+    field.value = 'sweden';
+    field.dispatchEvent(new Event('input'));
+    await flushPromises();
+    expect(router.currentRoute.value.query['q']).toBe('finland');
+
+    await vi.waitFor(() => expect(router.currentRoute.value.query['q']).toBe('sweden'));
   });
 });
 

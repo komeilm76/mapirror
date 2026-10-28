@@ -248,9 +248,10 @@ describe('every route says what it is and who builds it', () => {
   });
 
   it('marks exactly the routes that still render a placeholder', () => {
-    // Three screens are real components: the home page (a wiring preview until `P3-WEB-01`), the login page (`P1-WEB-06`)
-    // and the not-found page. The home route is both real *and* a placeholder, which is why the flag is asserted rather
-    // than inferred from the component: it says "what is here is not the finished screen".
+    // Four screens render real components: the admin catalog (`P2-WEB-01`), the home page (a wiring preview until
+    // `P3-WEB-01`), the login page (`P1-WEB-06`) and the not-found page. The home route is both real *and* a placeholder,
+    // which is why the flag is asserted rather than inferred from the component: it says "what is here is not the
+    // finished screen".
     const placeholders = PAGES.filter((route) => route.meta.placeholder === true);
     expect(placeholders.map((route) => route.meta.screen).sort()).toEqual([
       'S10',
@@ -262,7 +263,6 @@ describe('every route says what it is and who builds it', () => {
       'S3',
       'S4',
       'S5',
-      'S6',
       'S7',
       'S8',
       'S9',

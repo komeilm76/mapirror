@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * One screen that is not built yet (`P1-WEB-03`).
+ * Shared view for a screen that is not built yet (`P1-WEB-03`).
  *
- * Thirteen of the fourteen screens in `13-ui-ux.md` §4 are owed to later tasks, and the router has to know their paths
- * today — the law test walks the table, and a deep link that 404s is worse than one that explains itself. Rather than
- * thirteen near-identical SFCs, every pending route points here and `meta` says which screen it stands in for
+ * Eleven of the fourteen screens in `13-ui-ux.md` §4 are still owed to later tasks, and the router has to know their
+ * paths today — the law test walks the table, and a deep link that 404s is worse than one that explains itself. Rather
+ * than eleven near-identical SFCs, every pending route points here and `meta` says which screen it stands in for
  * (`screen`), what it is called (`title`) and which task will replace it (`owner`).
  *
  * It shows **where you are** as well as what is missing: the path comes from the route rather than from `meta`, so this

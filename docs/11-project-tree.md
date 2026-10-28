@@ -152,6 +152,7 @@ mapirror/
 │     │  │  ├─ tokens.ts           # The palette of 13 §2 + themeFrom() + contrastRatio()/bestOn()
 │     │  │  ├─ tokens.css          # --mm-* spacing/radius/motion/focus, focus ring, reduced motion
 │     │  │  ├─ shell.css           # exists: skip link and the breadcrumb trail (P1-WEB-07)
+│     │  │  ├─ catalog.css         # exists: responsive catalog table/cards (P2-WEB-01)
 │     │  │  └─ typography.css      # @font-face (Space Grotesk, 22 kB) + the type roles
 │     │  ├─ assets/fonts/          # space-grotesk-latin-wght.woff2 + OFL.txt
 │     │  ├─ stores/                # notifications + auth (exist), catalog, cache, versions,
@@ -163,9 +164,10 @@ mapirror/
 │     │  │  ├─ adminShell.ts       # exists: 248 / 64 / 1024, the numbers §3 states
 │     │  │  └─ PublicLayout.vue, AuthLayout.vue  # owed (P3-WEB-01, P2)
 │     │  ├─ pages/
-│     │  │  ├─ PlaceholderPage.vue       # The one screen not built yet: names its §4 row and the owning task
+│     │  │  ├─ PlaceholderPage.vue       # Shared fallback for admin screens not built yet
 │     │  │  ├─ auth/LoginPage.vue        # exists (P1-WEB-06): the one page outside /_site
-│     │  │  ├─ admin/{Dashboard,Catalog,Cache,CountryDetail,Intervals,Import,Jobs,
+│     │  │  ├─ admin/CatalogPage.vue     # exists (P2-WEB-01): filters, sort, pagination, responsive table/cards
+│     │  │  ├─ admin/{Dashboard,Cache,CountryDetail,Intervals,Import,Jobs,
 │     │  │  │        System,Settings,Audit}Page.vue
 │     │  │  ├─ public/{Home,CountryDetail,ApiDocs,NotFound}Page.vue  # HomePage + NotFoundPage exist
 │     │  ├─ components/

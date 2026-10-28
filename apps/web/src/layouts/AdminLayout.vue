@@ -43,7 +43,7 @@
  * @module layouts/AdminLayout
  */
 
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useDisplay } from 'vuetify';
 
@@ -73,18 +73,59 @@ const crumbs = computed(() => breadcrumbsFor(route));
 /** The catalog search term (§3: global search in the topbar). */
 const search = ref('');
 
+/** The live field follows a bookmarked catalog query, without rewriting the user's input while typing. */
+watch(
+  () => [route.name, route.query.q] as const,
+  ([name, value]) => {
+    if (name === 'admin-catalog') search.value = typeof value === 'string' ? value : '';
+  },
+  { immediate: true },
+);
+
+/** Pending search timer, cleared when a new character arrives or the layout is unmounted. */
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
 /**
- * Sends the typed term to the catalog screen.
+ * Sends a stable search term to the catalog.
  *
- * A navigation, not a live filter: `P2-WEB-01` owns the query and the results, and the term rides in the URL where that
- * page — and a bookmark of it — can find it. Bound to the form's `submit`, so Enter is the browser's job.
+ * When already on the catalog it replaces the query in place and preserves other filters; from another admin page it
+ * navigates there once. Keeping the query in the URL makes the search refreshable and bookmarkable.
  */
-async function submitSearch(): Promise<void> {
+async function applySearch(): Promise<void> {
   const term = search.value.trim();
+  if (route.name === 'admin-catalog') {
+    const query = { ...route.query };
+    if (term === '') delete query.q;
+    else query.q = term;
+    delete query.page;
+    if ((typeof route.query.q === 'string' ? route.query.q : '') === term) return;
+    await router.replace({ name: 'admin-catalog', query });
+    return;
+  }
+
   await router.push({
     name: 'admin-catalog',
     ...(term === '' ? {} : { query: { q: term } }),
   });
+}
+
+watch(search, () => {
+  if (searchTimer !== undefined) clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    searchTimer = undefined;
+    void applySearch();
+  }, 300);
+});
+
+onUnmounted(() => {
+  if (searchTimer !== undefined) clearTimeout(searchTimer);
+});
+
+/** Submits immediately on Enter; typing alone is debounced by 300 ms. */
+async function submitSearch(): Promise<void> {
+  if (searchTimer !== undefined) clearTimeout(searchTimer);
+  searchTimer = undefined;
+  await applySearch();
 }
 
 onMounted(() => {
@@ -131,6 +172,7 @@ onMounted(() => {
         aria-label="Search the catalog"
         density="compact"
         hide-details
+        maxlength="128"
         placeholder="Search catalog"
         single-line
         type="search"
