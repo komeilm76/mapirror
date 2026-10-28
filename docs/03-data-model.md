@@ -151,6 +151,8 @@ CREATE INDEX country_cache_update_idx ON country_cache (update_state)
 - `versions_ready_count`/`total_size_bytes` are recomputed by the service in the **same transaction** as
   any version change (no triggers: explicit SQL is easier to test and to reason about). They are a
   cache for the admin table, never the source of truth — a repair query recomputes them on demand.
+- If a manual delete removes the last version, the `country_cache` row is deleted. If non-ready rows remain
+  but no `ready` version remains, public access is automatically closed and `public_since` cleared.
 
 ### 2.5 `map_versions`
 

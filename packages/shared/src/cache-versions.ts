@@ -76,3 +76,25 @@ export const CacheSpecificVersionResponseSchema = z.object({ jobId: z.uuid() }).
 
 /** Accepted pinned-version download response. */
 export type CacheSpecificVersionResponse = z.infer<typeof CacheSpecificVersionResponseSchema>;
+
+/** Path contract for `DELETE /_admin/api/cache/:countryId/versions/:versionId`. */
+export const CacheVersionDeleteParamsSchema = z
+  .object({ countryId: z.uuid(), versionId: z.uuid() })
+  .strict();
+
+/** Path contract for a specific cached-version delete. */
+export type CacheVersionDeleteParams = z.infer<typeof CacheVersionDeleteParamsSchema>;
+
+/** Query contract for explicit version-delete confirmation. */
+export const CacheVersionDeleteQuerySchema = z
+  .object({ confirm: z.enum(['true', 'false']).optional() })
+  .strict();
+
+/** Query contract for explicit version-delete confirmation. */
+export type CacheVersionDeleteQuery = z.infer<typeof CacheVersionDeleteQuerySchema>;
+
+/** Optional JSON-body form of the explicit version-delete confirmation. */
+export const CacheVersionDeleteBodySchema = z.object({ confirm: z.boolean().optional() }).strict();
+
+/** Optional JSON-body form of explicit version-delete confirmation. */
+export type CacheVersionDeleteBody = z.infer<typeof CacheVersionDeleteBodySchema>;

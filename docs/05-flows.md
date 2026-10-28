@@ -302,6 +302,12 @@ sequenceDiagram
   API-->>A: 204 → cache row disappears; catalog country remains
 ```
 
+**Specific-version path:** `DELETE /cache/:countryId/versions/:versionId?confirm=true` uses the same per-country exclusive
+lock, but refuses rather than cancels any queued/running country job. One transaction deletes the selected version, writes
+`version.delete`, and recomputes the cache summary; the last version removes the cache row, while zero remaining ready
+versions auto-unpublish even if pending/failed rows remain. After commit, only the selected safe file path is unlinked;
+the lock remains held until cleanup completes.
+
 **Rules:** DB first, files second (a failed unlink leaves a sweepable orphan, never a dangling row that looks valid).
 The per-country advisory lock is shared with download admission and remains held across the commit and file cleanup, so a
 new worker cannot install into a path while it is being unlinked. When admin/public stream routes are implemented

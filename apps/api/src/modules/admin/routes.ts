@@ -17,6 +17,7 @@ import {
   createCacheSpecificVersionHandler,
 } from './cache-download-route';
 import { createCacheDeleteHandler } from './cache-delete-route';
+import { createCacheVersionDeleteHandler } from './cache-version-delete-route';
 import { getCacheDetail, getCacheList } from './cache-route';
 import { getCacheVersions } from './cache-versions-route';
 import { createCatalogRegionHandlers } from './catalog-region-route';
@@ -38,6 +39,7 @@ export const adminRoutes: FastifyPluginCallback<AdminRouteOptions> = (app, optio
     source,
   });
   const cacheDelete = createCacheDeleteHandler({ config: options.config });
+  const cacheVersionDelete = createCacheVersionDeleteHandler({ config: options.config });
   app.get('/catalog', getCatalog);
   app.post('/catalog/sync', postCatalogSync);
   app.get('/catalog/regions/:slug', regionHandlers.getRegion);
@@ -46,6 +48,7 @@ export const adminRoutes: FastifyPluginCallback<AdminRouteOptions> = (app, optio
   app.get('/cache/:countryId', getCacheDetail);
   app.get('/cache/:countryId/versions', getCacheVersions);
   app.post('/cache/:countryId/versions', cacheSpecificVersion);
+  app.delete('/cache/:countryId/versions/:versionId', cacheVersionDelete);
   app.delete('/cache/:countryId', cacheDelete);
   app.post('/cache/downloads', cacheDownload);
 };

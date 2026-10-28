@@ -8,15 +8,11 @@ import {
   CacheCountryDeleteQuerySchema,
   CacheCountryParamsSchema,
 } from '@mapirror/shared';
-import { sql, type Kysely } from 'kysely';
+import type { Kysely } from 'kysely';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import type { AppConfig } from '../../config/env';
-import {
-  cacheCountryAdvisoryLockKey,
-  findCountryCache,
-  listActiveCountryJobs,
-} from '../../db/repositories/cache';
+import { findCountryCache, listActiveCountryJobs } from '../../db/repositories/cache';
 import { insertAuditLog, AUDIT_ACTIONS } from '../../db/repositories/audit-logs';
 import type { Database } from '../../db/schema';
 import { withTransaction } from '../../db/transaction';
@@ -24,8 +20,8 @@ import { normaliseIp } from '../../lib/client-ip';
 import { AppError } from '../../lib/errors';
 import { createCacheStorage } from '../storage/storage';
 import { requestJobCancellation } from '../jobs/cancellation';
+import { withCacheCountryMutationLock } from './cache-mutation-lock';
 
-const COUNTRY_DELETE_LOCK_WAIT_MS = 5_000;
 const COUNTRY_JOB_CANCEL_WAIT_MS = 3_000;
 const JOB_POLL_INTERVAL_MS = 50;
 
@@ -64,132 +60,93 @@ export function createCacheDeleteHandler(options: CacheDeleteRouteOptions) {
     const countryId = params.data.countryId;
     const confirmation = body.data.confirm ?? query.data.confirm;
     const cancelJobs = query.data.cancelJobs === 'true';
-    const storagePaths = await request.server.db.db.connection().execute(async (connection) => {
-      const lockKey = cacheCountryAdvisoryLockKey(countryId);
-      await acquireCountryDeleteLock(connection, lockKey);
-      try {
-        const cancelDeadline = Date.now() + COUNTRY_JOB_CANCEL_WAIT_MS;
-        while (true) {
-          const result = await withTransaction(connection, async (trx) => {
-            const country = await trx
-              .selectFrom('countries')
-              .select(['id', 'slug'])
-              .where('id', '=', countryId)
-              .forUpdate()
-              .executeTakeFirst();
-            if (country === undefined) {
-              throw new AppError('NOT_FOUND', 'The requested cached country does not exist.');
-            }
-            if (country.slug !== confirmation) throw confirmationRequired(countryId);
+    await request.server.db.db.connection().execute(async (connection) => {
+      await withCacheCountryMutationLock(connection, countryId, request.log, async () => {
+        const storagePaths = await (async () => {
+          const cancelDeadline = Date.now() + COUNTRY_JOB_CANCEL_WAIT_MS;
+          while (true) {
+            const result = await withTransaction(connection, async (trx) => {
+              const country = await trx
+                .selectFrom('countries')
+                .select(['id', 'slug'])
+                .where('id', '=', countryId)
+                .forUpdate()
+                .executeTakeFirst();
+              if (country === undefined) {
+                throw new AppError('NOT_FOUND', 'The requested cached country does not exist.');
+              }
+              if (country.slug !== confirmation) throw confirmationRequired(countryId);
 
-            const cache = await findCountryCache(trx, countryId);
-            if (cache === null) {
-              throw new AppError('NOT_FOUND', 'The requested cached country does not exist.');
-            }
+              const cache = await findCountryCache(trx, countryId);
+              if (cache === null) {
+                throw new AppError('NOT_FOUND', 'The requested cached country does not exist.');
+              }
 
-            const activeJobs = await listActiveCountryJobs(trx, countryId);
-            if (activeJobs.length > 0) {
-              return { kind: 'active' as const, jobIds: activeJobs.map(({ id }) => id) };
-            }
+              const activeJobs = await listActiveCountryJobs(trx, countryId);
+              if (activeJobs.length > 0) {
+                return { kind: 'active' as const, jobIds: activeJobs.map(({ id }) => id) };
+              }
 
-            const versions = await trx
-              .selectFrom('map_versions')
-              .select('storage_path')
-              .where('country_id', '=', countryId)
-              .execute();
+              const versions = await trx
+                .selectFrom('map_versions')
+                .select('storage_path')
+                .where('country_id', '=', countryId)
+                .execute();
 
-            await trx.deleteFrom('map_versions').where('country_id', '=', countryId).execute();
-            await trx.deleteFrom('country_cache').where('country_id', '=', countryId).execute();
-            await insertAuditLog(trx, {
-              actorId: admin.id,
-              actorName: admin.username,
-              action: AUDIT_ACTIONS.cacheDeleteCountry,
-              targetType: 'country',
-              targetId: countryId,
-              ip: normaliseIp(request.ip),
-              metadata: {
-                slug: country.slug,
-                versionCount: versions.length,
-                totalSizeBytes: cache.total_size_bytes,
-                wasPublic: cache.is_public,
-              },
+              await trx.deleteFrom('map_versions').where('country_id', '=', countryId).execute();
+              await trx.deleteFrom('country_cache').where('country_id', '=', countryId).execute();
+              await insertAuditLog(trx, {
+                actorId: admin.id,
+                actorName: admin.username,
+                action: AUDIT_ACTIONS.cacheDeleteCountry,
+                targetType: 'country',
+                targetId: countryId,
+                ip: normaliseIp(request.ip),
+                metadata: {
+                  slug: country.slug,
+                  versionCount: versions.length,
+                  totalSizeBytes: cache.total_size_bytes,
+                  wasPublic: cache.is_public,
+                },
+              });
+              return {
+                kind: 'deleted' as const,
+                storagePaths: versions.map(({ storage_path }) => storage_path),
+              };
             });
-            return {
-              kind: 'deleted' as const,
-              storagePaths: versions.map(({ storage_path }) => storage_path),
-            };
-          });
 
-          if (result.kind === 'deleted') return result.storagePaths;
-          if (!cancelJobs) throw activeJobsConflict(countryId, result.jobIds);
+            if (result.kind === 'deleted') return result.storagePaths;
+            if (!cancelJobs) throw activeJobsConflict(countryId, result.jobIds);
 
-          await Promise.all(
-            result.jobIds.map((jobId) => requestJobCancellation(connection, jobId)),
-          );
-          const stillActive = await waitForCountryJobs(connection, countryId, cancelDeadline);
-          if (stillActive.length > 0) {
-            throw activeJobsConflict(
-              countryId,
-              stillActive.map(({ id }) => id),
-              'Active work has not finished cleanup yet. Try deleting again shortly.',
+            await Promise.all(
+              result.jobIds.map((jobId) => requestJobCancellation(connection, jobId)),
+            );
+            const stillActive = await waitForCountryJobs(connection, countryId, cancelDeadline);
+            if (stillActive.length > 0) {
+              throw activeJobsConflict(
+                countryId,
+                stillActive.map(({ id }) => id),
+                'Active work has not finished cleanup yet. Try deleting again shortly.',
+              );
+            }
+          }
+        })();
+
+        for (const storagePath of storagePaths) {
+          try {
+            await storage.versionFileAt(storagePath).remove();
+          } catch (error) {
+            request.log.warn(
+              { err: error, countryId, storagePath },
+              'cache country was deleted from the database but a file could not be removed; orphan sweep required',
             );
           }
         }
-      } finally {
-        await releaseCountryDeleteLock(connection, lockKey, request);
-      }
+      });
     });
-
-    for (const storagePath of storagePaths) {
-      try {
-        await storage.versionFileAt(storagePath).remove();
-      } catch (error) {
-        request.log.warn(
-          { err: error, countryId, storagePath },
-          'cache country was deleted from the database but a file could not be removed; orphan sweep required',
-        );
-      }
-    }
 
     await reply.code(204).send();
   };
-}
-
-/** Acquires a session advisory lock; unlike a transaction lock, it remains held through file cleanup. */
-async function acquireCountryDeleteLock(
-  database: Kysely<Database>,
-  lockKey: string,
-): Promise<void> {
-  const deadline = Date.now() + COUNTRY_DELETE_LOCK_WAIT_MS;
-  while (Date.now() < deadline) {
-    const result = await sql<{ locked: boolean }>`
-      select pg_try_advisory_lock(hashtextextended(${lockKey}, 0)) as locked
-    `.execute(database);
-    if (result.rows[0]?.locked === true) return;
-    await delay(JOB_POLL_INTERVAL_MS);
-  }
-  throw new AppError(
-    'JOB_ALREADY_RUNNING',
-    'Another cache operation is still in progress. Try again shortly.',
-  );
-}
-
-/** Releases the session advisory lock without turning a committed delete into an HTTP 500. */
-async function releaseCountryDeleteLock(
-  database: Kysely<Database>,
-  lockKey: string,
-  request: FastifyRequest,
-): Promise<void> {
-  try {
-    await sql`
-      select pg_advisory_unlock(hashtextextended(${lockKey}, 0))
-    `.execute(database);
-  } catch (error) {
-    request.log.warn(
-      { err: error },
-      'could not explicitly release cache-delete advisory lock; connection teardown will release it',
-    );
-  }
 }
 
 /** Waits only while cooperative workers clean up; a timed-out delete leaves the cache rows intact. */

@@ -430,11 +430,23 @@ disk preflight, and race-safe queue insert.
 
 #### `DELETE /_admin/api/cache/:countryId/versions/:versionId?confirm=true`
 
-`409 CONFIRMATION_REQUIRED` without `confirm=true` (query param; body also accepted).
-Deleting the last version deletes the cache row and closes public access. `204`.
-Deleting **any** version recomputes `country_cache.total_size_bytes` / `versions_ready_count` and resets
-`update_state` to `unknown` in the same transaction — otherwise the row would keep advertising an update
-that is no longer relevant (or a size that no longer exists).
+Requires explicit confirmation (`?confirm=true` → `204 No Content`); JSON `{ "confirm": true }` is an alternative.
+Missing/false confirmation returns `409 CONFIRMATION_REQUIRED`;
+unknown query/body keys and malformed UUIDs return `400 VALIDATION_ERROR`; uncached countries, unknown versions, and version IDs belonging to
+another country return `404 NOT_FOUND`. A queued/running job for the country returns `409 JOB_ALREADY_RUNNING`;
+the request does not cancel work.
+
+The API hard-deletes the selected version row and writes audit action `version.delete` in the same transaction; audit
+metadata records the version label, origin/status, exact byte count, and stored MD5/SHA-256 checksums. Its safe storage path is unlinked only
+after commit. An unlink failure is logged for orphan cleanup but still returns `204`. A country with no remaining
+version rows loses its `country_cache` row (the catalog country remains). Otherwise the API recomputes ready counts and
+size, clears stale source-update offers, and resets `update_state` to `unknown`. If no ready versions remain, public
+access is automatically closed and `public_since` cleared even when pending/failed rows remain.
+
+A per-country exclusive advisory lock is held from before the transaction through file unlinking. It serializes the
+delete with download admission and admin/public file streams; if a stream or another mutation holds the lock for more
+than five seconds, the request returns `409 JOB_ALREADY_RUNNING` without deleting data. Any public or admin URL
+for the removed version subsequently returns `404 NOT_FOUND`.
 
 #### `GET /_admin/api/cache/:countryId/versions/:versionId/download`
 

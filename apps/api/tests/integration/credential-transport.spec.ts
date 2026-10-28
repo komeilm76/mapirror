@@ -212,6 +212,7 @@ describe.skipIf(skipReason !== null)(
             route === 'GET /_admin/api/cache/:countryId' ||
             route === 'GET /_admin/api/cache/:countryId/versions' ||
             route === 'POST /_admin/api/cache/:countryId/versions' ||
+            route === 'DELETE /_admin/api/cache/:countryId/versions/:versionId' ||
             route === 'POST /_admin/api/cache/downloads' ||
             route === 'DELETE /_admin/api/cache/:countryId'
           ) {
