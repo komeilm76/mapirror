@@ -3,7 +3,7 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 67 passes · 250 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6).
+**Totals:** 68 passes · 258 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
@@ -43,6 +43,27 @@ P2-API-01 replaces the catalog `NOT_READY` stub with an authenticated SQL-backed
 Real-PostgreSQL route tests exercise authentication, row/cache projection, name and both ISO-array searches, filters, all sort keys, pagination, malformed freshness markers, large int8 values, empty results, and the 400-row latency target. Shared-contract tests pin strict query/response shapes and precision-safe integers. Four targeted implementation mutations were killed: removing strict unknown-query rejection; sorting `size` by the wrong database column; converting all PostgreSQL int8 values to `Number`; and changing the catalog default from 50. Separately, the subdivision-ISO regression failed before the search fix (empty result instead of Finland) and passed afterward. The int8 mutation returned `9223372036854776000` instead of the exact decimal string `9223372036854775807`. Full non-Docker `bun run check` passes: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint and formatting; **1,362 passed across 101 files, 0 skipped** with the local PostgreSQL 16.2 test database. Docker runtime/operator tests remain excluded per operator direction.
 
 **Totals after this pass: 66 passes · 244 defects fixed · 0 open.**
+
+## Pass 68 — 2026-10-28 (catalog region reads needed local identity, bounded source data, and cached fallback)
+
+P2-API-03 implements the two authenticated region catalog reads. The detail route resolves the local slug, constructs a root-first parent chain, and returns source facts plus ready local versions. Snapshot reads use bounded, path-safe Geofabrik region-page HTTP and degrade to cached Geofabrik versions when upstream is unavailable.
+
+| # | Bug found in contract/code review | Fix |
+|---|---|---|
+| 1 | The region detail and snapshot routes were still unimplemented, despite the documented source parser and route contracts | Add the authenticated handlers and strict shared-Zod request/response contracts; use the local URL slug to load source identity from PostgreSQL |
+| 2 | Region parsing had no production HTTP adapter, so page requests lacked a timeout, body-size bound, and safe handling of source IDs as URL paths | Add a 10-second/2-MiB bounded client (with strict configurable caps), encode validated path components under the configured base URL, and reject redirects |
+| 3 | A source outage would otherwise make the version picker unusable, even when usable files were already cached | Return `200` with `sourceReachable:false`, `latest:null`, and only ready cached Geofabrik versions; detail still includes local identity and cache data |
+| 4 | The recursive ancestor query returned PostgreSQL `source_id`, while the shared response schema requires `sourceId`; the first real route probe returned `400` for a valid region | Explicitly project database names to the API contract; cycle guard uses `array_position` and the route test pins the root-first parent chain |
+| 5 | PostgreSQL sorts nulls first for `DESC`, which placed date-less uploads ahead of real cached snapshots | Order nullable data/ready timestamps with explicit `NULLS LAST`; a route fixture includes an upload and dated rows |
+| 6 | A malformed persisted MD5 could fail the strict response schema and turn otherwise valid region/cache data into an error | Normalize valid case-insensitive MD5 digests and expose malformed values as `null`; the PostgreSQL fixture probes malformed MD5 on cached records |
+| 7 | The docs claimed `422` for malformed slugs even though the shared error law maps Zod validation to `400`; the snapshot sample also used an invalid ellipsis for an MD5 digest | Correct the status and example digest; update the credential-transport sweep to expect the new live route's validation response instead of `503 NOT_READY` |
+| 8 | Unreachable-source behavior was underspecified about `data`/`latest`, so a client could accidentally offer uploads or cached versions as current upstream offers | Pin outage fallback semantics in API/flow/task docs and return only the documented source-cache subset |
+
+Real PostgreSQL route tests cover local-slug resolution, parent/ISO/PBF projection, ready cached versions, current source snapshots, 400/404 validation paths, unreachable-source detail and snapshot behavior, uploaded-version exclusion, and malformed cached checksums. Offline source-client tests cover URL construction/traversal, bounds, upstream status, and timeout. Two targeted mutations were killed: forcing `sourceReachable:true` during a 503 outage, and including uploads in the outage fallback. The first live route probe also caught the snake/camel parent-row mismatch; the cached ordering probe showed null-first order before `NULLS LAST` was added.
+
+Full non-Docker `bun run check` passes: 22 workspace checks, 54 hygiene checks, package typechecks, ESLint, formatting, and **1,373 passed / 7 skipped across 105 test files** with the local PostgreSQL 16.2 test database. The seven skips are the server-absent cases intentionally disabled while the database is available. Docker runtime/operator tests remain excluded per operator direction.
+
+**Totals after this pass: 68 passes · 258 defects fixed · 0 open.**
 
 ## Pass 67 — 2026-10-28 (catalog sync needed an authenticated, idempotent queue trigger)
 

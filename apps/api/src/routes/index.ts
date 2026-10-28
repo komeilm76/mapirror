@@ -54,6 +54,9 @@ export const registerRoutes: FastifyPluginAsync<RouteOptions> = async (app, opti
     config: options.config,
     throttle: options.loginThrottle,
   });
-  await app.register(adminRoutes, { prefix: ROUTE_PREFIXES.adminApi });
+  await app.register(adminRoutes, {
+    prefix: ROUTE_PREFIXES.adminApi,
+    config: options.config,
+  });
   await app.register(publicRoutes, { prefix: ROUTE_PREFIXES.publicApi });
 };

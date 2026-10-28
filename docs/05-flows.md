@@ -228,7 +228,7 @@ sequenceDiagram
   A->>API: GET /catalog?q=fin&cache=uncached
   API-->>A: rows with cache.cached=false → Download button
   A->>API: GET /catalog/regions/finland/snapshots
-  API-->>A: versions + sizes (or sourceReachable=false)
+  API-->>A: current snapshots + cached flags; on outage, cached source versions only + sourceReachable=false
   A->>API: POST /cache/downloads {countryId, version}
   API->>API: validate + statfs preflight (ceil(size × 1.1) + reserve)
   API->>Q: INSERT job (queued)

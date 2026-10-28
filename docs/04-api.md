@@ -251,7 +251,13 @@ Uses the **local slug** (`finland`, `europe-finland`), never the raw `europe/fin
 slash (`%2F`) in a path segment is normalized differently by proxies and can 404 unpredictably.
 The `sourceId` is still returned in the payload for reference.
 
-Returns: name, parent chain, ISO, pbf URL, size, "data up to" timestamp, and the cached versions.
+Returns the local catalog identity plus its parent chain (root first), ISO codes, source PBF URL and catalog size hint,
+current source version/size/“data up to” timestamp, and every ready cached version. Source-page fields are `null` when
+Geofabrik cannot be reached; `sourceReachable` is `false` and locally cached versions remain available. The response is
+`{ country: { countryId, sourceId, slug, name, parentChain, iso, pbfUrl, sizeHintBytes }, source:
+{ version, sizeBytes, dataTimestamp }, sourceReachable, cachedVersions }`. `parentChain` entries have `sourceId`,
+`slug` and `name`; cached versions include `id`, `version`, `origin`, `dataTimestamp`, `sizeBytes`, `checksumMd5` and
+`createdAt`. Unknown valid slugs return `404 NOT_FOUND`; malformed slugs return `400 VALIDATION_ERROR`.
 
 #### `GET /_admin/api/catalog/regions/:slug/snapshots`
 
@@ -263,7 +269,7 @@ Lists what the source offers **right now** (GEO-4):
     { "version": "261024", "dataTimestamp": "2026-10-23T20:20:51.000Z",
       "sizeBytes": 774000000, "checksumMd5": null, "cached": false },
     { "version": "261023", "dataTimestamp": "2026-10-22T20:19:04.000Z",
-      "sizeBytes": 773465008, "checksumMd5": "…", "cached": true }
+      "sizeBytes": 773465008, "checksumMd5": "0123456789abcdef0123456789abcdef", "cached": true }
   ],
   "latest": { "version": "261024", "sizeBytes": 774000000 },
   "fetchedAt": "2026-10-24T09:12:00.000Z",
@@ -271,7 +277,11 @@ Lists what the source offers **right now** (GEO-4):
 }
 ```
 
-`sourceReachable: false` ⇒ UI shows a warning and offers only already-cached versions.
+`sourceReachable: false` ⇒ UI shows a warning and offers only already-cached versions. In that case `data` contains the
+ready, locally cached Geofabrik versions (uploads are not source snapshots), `latest` is `null`, and the response is
+still `200`; when reachable, `data` contains the current source offers and `cached` indicates which are ready locally.
+A cached MD5 is included when the upstream page does not advertise one. `fetchedAt` is the completion time of the
+upstream attempt. Missing valid slugs return `404 NOT_FOUND`; malformed slugs return `400 VALIDATION_ERROR`.
 
 #### `POST /_admin/api/cache/downloads`
 

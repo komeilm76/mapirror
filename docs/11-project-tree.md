@@ -55,6 +55,7 @@ mapirror/
 │  │  │  │  ├─ admin/              # /_admin/api: catalog, cache, versions, imports,
 │  │  │  │  │  │                   # intervals, jobs, metrics, settings, audit
 │  │  │  │  │  ├─ catalog-route.ts # Authenticated search/filter/page + consistent freshness snapshot
+│  │  │  │  │  ├─ catalog-region-route.ts # Slug detail, parent chain, cached versions and outage-safe snapshots
 │  │  │  │  │  ├─ catalog-sync-route.ts # Authenticated, idempotent catalog-job trigger
 │  │  │  │  ├─ routes/{catalog,cache,versions,imports,intervals,jobs,system,settings,audit}.ts
 │  │  │  │  │  └─ services/{cache,versions,publication,intervals,metrics}.ts
@@ -63,6 +64,7 @@ mapirror/
 │  │  │  │  │  ├─ source.ts        # MapSource interface (thin, 4 methods)
 │  │  │  │  │  ├─ index-client.ts  # Zod-validated, bounded/cancelable index-v1-nogeom fetch + mapping
 │  │  │  │  │  ├─ region-page.ts   # HTML5 parser: dated PBF snapshots, sizes, and “data up to”
+│  │  │  │  │  ├─ region-page-client.ts # Path-safe, bounded region-page fetch + detail/snapshot adapter
 │  │  │  │  │  ├─ file-metadata.ts # Bounded HEAD metadata and .md5 requests
 │  │  │  │  ├─ slug.ts           # Name-based local slugs and deterministic collision resolution
 │  │  │  │  └─ fixtures/          # Saved upstream-shaped samples for offline tests
@@ -88,7 +90,7 @@ mapirror/
 │  │  │  │  └─ repositories/       # Typed queries accept the process DB or a caller-owned transaction
 │  │  │  │     ├─ executor.ts      # Shared Kysely/Transaction executor type
 │  │  │  │     ├─ admin-tokens.ts  # Token rows: insert, find-with-admin, touch, revoke, prune
-│  │  │  │     ├─ catalog.ts       # Catalog upsert, lookup, SQL search/filter/sort/count/pagination
+│  │  │  │     ├─ catalog.ts       # Catalog upsert, lookup, parents/ready versions, SQL search/filter/page
 │  │  │  │     ├─ cache.ts         # Cached-only lists and cache summaries
 │  │  │  │     └─ map-versions.ts  # Country versions: ready-first list and lookups
 │  │  │  └─ lib/
@@ -103,8 +105,10 @@ mapirror/
 │  │  └─ tests/                    # API, integration, and source-adapter tests
 │  │     ├─ integration/catalog-repositories.spec.ts # Real-Postgres search, filters, cache, paging and versions
 │  │     ├─ integration/catalog-route.spec.ts # Authenticated API projection, contract, filtering and 400-row budget
+│  │     ├─ integration/catalog-region-route.spec.ts # Slug detail, source snapshots, cache fallback and validation
 │  │     ├─ integration/catalog-sync-route.spec.ts # Auth, attributed 202, concurrency and active-job reuse
 │  │     ├─ geofabrik-region-page.spec.ts   # Three offline HTML fixtures + size/date edge cases
+│  │     ├─ geofabrik-region-page-client.spec.ts # URL safety, bounded fetch, status and timeout
 │  │     ├─ geofabrik-file-metadata.spec.ts # Bounded HEAD and MD5 request cases
 │  │     ├─ geofabrik-slug.spec.ts          # Normalization, collisions, stability, path constraints
 │  │     ├─ integration/jobs-enqueue.spec.ts # PostgreSQL duplicate, race, terminal reuse, and 409 mapping
@@ -187,6 +191,7 @@ mapirror/
 │     │  ├─ license.ts             # ODbL + Geofabrik attribution strings
 │     │  ├─ constants.ts           # Token format, sort fields, 9 DB-mirrored vocabularies
 │     │  ├─ catalog.ts             # Catalog listing and sync-trigger request/response contracts
+│     │  ├─ catalog-region.ts      # Region detail and snapshot request/response contracts
 │     │  ├─ schemas/               # Zod request/response schemas (with the API contract tasks)
 │     │  ├─ types/                 # z.infer exports (no hand-written duplicates)
 │     │  └─ index.ts

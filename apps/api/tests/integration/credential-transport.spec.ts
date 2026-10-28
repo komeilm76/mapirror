@@ -206,6 +206,14 @@ describe.skipIf(skipReason !== null)(
           } else if (route === 'POST /_admin/api/catalog/sync') {
             expect(response.statusCode, route).toBe(202);
             expect(response.json<{ jobId: string }>().jobId).toMatch(/^[0-9a-f-]{36}$/u);
+          } else if (
+            route === 'GET /_admin/api/catalog/regions/:slug' ||
+            route === 'GET /_admin/api/catalog/regions/:slug/snapshots'
+          ) {
+            expect(response.statusCode, route).toBe(400);
+            expect(response.json<{ error: { code: string } }>().error.code, route).toBe(
+              'VALIDATION_ERROR',
+            );
           } else {
             expect(response.statusCode, route).toBe(503);
             expect(response.json<{ error: { code: string } }>().error.code, route).toBe(

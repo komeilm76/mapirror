@@ -31,8 +31,8 @@ export interface SourceRegion {
 
 /** Current source identity and available metadata for one region's extract. */
 export interface SourceRegionDetail {
-  /** Current offered source version identifier, commonly a dated snapshot such as `261024`. */
-  readonly version: string;
+  /** Current offered source version identifier, commonly a dated snapshot such as `261024`, or `null` when absent. */
+  readonly version: string | null;
   /** OSM data freshness timestamp (“data up to”), or `null` when the page does not state one. */
   readonly dataTimestamp: Date | null;
   /** Extract length in bytes, or `null` until known from source metadata. */

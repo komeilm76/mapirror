@@ -183,6 +183,77 @@ export async function findCatalogCountryById(
   return row ?? null;
 }
 
+/** One persisted ancestor in a region's source-parent chain. */
+export interface CatalogParentRow {
+  readonly source_id: string;
+  readonly slug: string;
+  readonly name: string;
+}
+
+/** One ready cached region version, in database naming. */
+export interface CatalogCachedVersionRow {
+  readonly id: string;
+  readonly version: string;
+  readonly origin: 'geofabrik_snapshot' | 'geofabrik_latest' | 'upload';
+  readonly data_timestamp: Date | null;
+  readonly file_size_bytes: string;
+  readonly checksum_md5: string | null;
+  readonly created_at: Date;
+}
+
+/** Lists known ancestors, from the root toward the region's immediate parent. Cycles are bounded defensively. */
+export async function findCountryParentChain(
+  executor: RepositoryExecutor,
+  countryId: string,
+): Promise<CatalogParentRow[]> {
+  const result = await sql<CatalogParentRow>`
+    with recursive parent_chain as (
+      select c.source, c.source_id, c.parent_id, c.name, c.slug,
+        0 as depth, array[c.source_id]::text[] as visited
+      from countries c
+      where c.id = ${countryId}
+
+      union all
+
+      select parent.source, parent.source_id, parent.parent_id, parent.name, parent.slug,
+        chain.depth + 1, chain.visited || parent.source_id
+      from countries parent
+      join parent_chain chain
+        on parent.source = chain.source and parent.source_id = chain.parent_id
+      where chain.depth < 255 and array_position(chain.visited, parent.source_id) is null
+    )
+    select source_id, slug, name
+    from parent_chain
+    where depth > 0
+    order by depth desc
+  `.execute(executor);
+  return result.rows;
+}
+
+/** Lists the region's ready cached versions, newest data first. */
+export async function listCachedRegionVersions(
+  executor: RepositoryExecutor,
+  countryId: string,
+): Promise<CatalogCachedVersionRow[]> {
+  return executor
+    .selectFrom('map_versions')
+    .select([
+      'id',
+      'version',
+      'origin',
+      'data_timestamp',
+      'file_size_bytes',
+      'checksum_md5',
+      'created_at',
+    ])
+    .where('country_id', '=', countryId)
+    .where('status', '=', 'ready')
+    .orderBy(sql`data_timestamp desc nulls last`)
+    .orderBy(sql`ready_at desc nulls last`)
+    .orderBy('id', 'desc')
+    .execute();
+}
+
 /** Reads the durable successful-sync timestamp, ignoring missing or malformed system-owned values. */
 export async function findCatalogSyncedAt(executor: RepositoryExecutor): Promise<Date | null> {
   const setting = await executor

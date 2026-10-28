@@ -25,6 +25,7 @@
 
 export * from './auth';
 export * from './catalog';
+export * from './catalog-region';
 export * from './constants';
 export * from './errors';
 export * from './license';
