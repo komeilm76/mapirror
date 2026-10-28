@@ -1,8 +1,8 @@
 /**
- * Kysely types for the phase-1 and phase-2 foundation tables (`P1-DB-02`, `P2-DB-01`).
+ * Kysely types for the phase-1/2 foundation and cache-download event tables (`P1-DB-02`, `P2-DB-01`, `P2-API-09`).
  *
- * The columns here mirror `03-data-model.md` §§2.1–2.6 and §2.11, and migrations `0001_init.sql` and
- * `0002_catalog.sql`. Repositories import these types — never `any`, never `unknown` for a row — so queries against
+ * The columns here mirror `03-data-model.md` §§2.1–2.6, §2.10 and §2.11, and migrations `0001_init.sql`,
+ * `0002_catalog.sql` and `0003_download_events.sql`. Repositories import these types — never `any`, never `unknown` for a row — so queries against
  * nonexistent columns fail to compile instead of at 3 a.m. (`10-laws.md` L5).
  *
  * **Every select type below was measured, not assumed.** `pg` does not hand back what the SQL type suggests:
@@ -225,6 +225,19 @@ export interface Settings {
  * the account is gone, and `actor_id` is `ON DELETE SET NULL` — the two behave differently on purpose, and a test
  * proves both.
  */
+/** Completed or interrupted file transfer (`03-data-model.md` §2.10, `P2-API-09`). */
+export interface DownloadEvents {
+  /** `bigserial PRIMARY KEY`; PostgreSQL int8 values arrive as decimal strings. */
+  id: GeneratedAlways<string>;
+  country_id: string;
+  version_id: string | null;
+  channel: 'public' | 'admin';
+  bytes_sent: GeneratedInt8Column;
+  ip_hash: string | null;
+  user_agent: string | null;
+  created_at: CreatedTimestamp;
+}
+
 export interface AuditLogs {
   /**
    * `bigserial PRIMARY KEY`. **A `string` at runtime** — `pg` returns int8 as text so ids past 2^53 survive.
@@ -264,6 +277,8 @@ export type Job = SelectRow<Jobs>;
 export type Setting = SelectRow<Settings>;
 /** A row of `audit_logs`, as selected. */
 export type AuditLog = SelectRow<AuditLogs>;
+/** A row of `download_events`, as selected. */
+export type DownloadEvent = SelectRow<DownloadEvents>;
 
 /**
  * The shape Kysely hands back for a table interface.
@@ -278,9 +293,9 @@ export type SelectRow<T> = {
 /**
  * Every table Kysely knows about.
  *
- * `P2-DB-01` adds the catalog, cache, version and job tables. Interval, upload, metrics and download-event tables
- * remain future tasks. Until a table is listed here, a query against it does not compile — which is the property that
- * makes this file worth having.
+ * `P2-DB-01` adds the catalog, cache, version and job tables; `P2-API-09` adds download events. Interval, upload and
+ * metrics tables remain future tasks. Until a table is listed here, a query against it does not compile — which is the
+ * property that makes this file worth having.
  */
 export interface Database {
   admins: Admins;
@@ -291,4 +306,5 @@ export interface Database {
   jobs: Jobs;
   settings: Settings;
   audit_logs: AuditLogs;
+  download_events: DownloadEvents;
 }

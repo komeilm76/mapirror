@@ -181,7 +181,7 @@ recorded here so a future reviewer does not "fix" the missing token check.
 
 - Redacted at the logger level: `authorization`, `cookie`, `set-cookie`, `password`, `token`.
 - Never log full tokens, password hashes, or raw upload content.
-- Public download events store `sha256(ip + IP_HASH_SALT)`, never the raw IP.
+- Download events store `sha256(ip + IP_HASH_SALT)` when the validated client address is available, never the raw IP; the `IP_HASH_SALT` fallback is generated once and persisted in `settings`.
 - Cached artifacts contain no OSM user metadata (Geofabrik public extracts omit `user`/`uid`/
   `changeset`), so MapMirror holds no PII from map data.
 - Audit log retains actor name snapshot, action, target, and timestamps.

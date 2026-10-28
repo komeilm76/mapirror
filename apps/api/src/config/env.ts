@@ -433,7 +433,7 @@ export interface AppConfig {
   readonly dbPoolMax: number;
   /** Cross-origin allow-list; empty means same-origin only. */
   readonly corsOrigins: readonly string[];
-  /** Salt for hashed download IPs; empty until first boot generates one. */
+  /** Salt for hashed download IPs; empty until the first transfer event persists one in settings. */
   readonly ipHashSalt?: string;
   /**
    * Which peers may assert a client address in `X-Forwarded-For`, or `false` for none.

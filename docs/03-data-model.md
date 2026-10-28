@@ -385,6 +385,8 @@ CREATE TABLE metrics_samples (
 
 ### 2.10 `download_events` (usage + analytics)
 
+Created by `0003_download_events.sql` for admin streams (`P2-API-09`); the public stream task adds `channel=public` writes later.
+
 ```sql
 CREATE TABLE download_events (
   id           bigserial PRIMARY KEY,
@@ -428,7 +430,7 @@ CREATE INDEX audit_logs_action_idx ON audit_logs (action, created_at DESC);
 
 `settings` keys (initial): `branding.displayName`, `cache.keepVersions`, `cache.diskReserveBytes`,
 `public.downloadsPerMinute`, `source.catalogTtlMinutes`, `source.baseUrl`, `privacy.ipHashSalt`
-(generated on first boot; used only for hashed download IPs — never exposed by any endpoint). The system-owned
+(generated on the first recorded transfer if `IP_HASH_SALT` is unset; used only for hashed download IPs — never exposed by any endpoint). The system-owned
 `source.catalogSyncedAt` key is written transactionally with catalog rows/audit, is not editable, and keeps freshness
 available after job-history pruning.
 
@@ -449,7 +451,8 @@ available after job-history pruning.
 - Every migration must be re-runnable on a fresh DB and safe on a populated one (additive first,
   backfills in a follow-up migration, destructive changes last).
 - `schema.ts` (Kysely types) is updated **in the same commit** as the migration; a startup check
-  compares migration count with an expected constant to catch version skew.
+  compares the ordered migration list with an expected constant to catch version skew. Migrations currently include
+  `0001_init.sql`, `0002_catalog.sql`, and `0003_download_events.sql`.
 - The TypeScript types describe what the **driver returns**, which is not always what the SQL type suggests — the
   measured table lives in `apps/api/src/db/schema.ts` (`bigserial` → `string`, `timestamptz` → `Date`,
   `bytea` → `Buffer`, `jsonb` → parsed value, `inet` → `string`). A column's SQL type here and its JS type there are

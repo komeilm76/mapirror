@@ -31,7 +31,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
   it('creates the phase-1 and phase-2 core tables, enums, and indexes', async () => {
     await withFreshDatabase(async (database) => {
       const outcome = await migrateToLatest(database.db);
-      expect(outcome.applied).toEqual(['0001_init', '0002_catalog']);
+      expect(outcome.applied).toEqual(['0001_init', '0002_catalog', '0003_download_events']);
 
       const tables = await sql<{ table_name: string }>`
         select table_name from information_schema.tables
@@ -48,6 +48,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
         'jobs',
         'settings',
         'audit_logs',
+        'download_events',
       ]) {
         expect(names, table).toContain(table);
       }
@@ -75,6 +76,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
         'jobs_running_idx',
         'jobs_recent_idx',
         'jobs_one_active_download',
+        'download_events_country_idx',
       ]) {
         expect(indexNames, index).toContain(index);
       }
@@ -137,7 +139,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
       // Pinned here because "fails quietly" is only acceptable while a test is asserting that it fails at all.
       expect(error).toBeUndefined();
       expect(results).toEqual([
-        { migrationName: '0002_catalog', direction: 'Down', status: 'NotExecuted' },
+        { migrationName: '0003_download_events', direction: 'Down', status: 'NotExecuted' },
       ]);
       const tables = await sql<{ n: number }>`
         select count(*)::int as n from information_schema.tables
@@ -337,7 +339,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
 
         // And the real migrations still apply cleanly afterwards.
         const outcome = await migrateToLatest(database.db);
-        expect(outcome.applied).toEqual(['0001_init', '0002_catalog']);
+        expect(outcome.applied).toEqual(['0001_init', '0002_catalog', '0003_download_events']);
       });
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -366,7 +368,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
       // Reset must also clear Kysely's bookkeeping, or the next migration run would believe the schema exists.
       const outcome = await migrateToLatest(database.db);
 
-      expect(outcome.applied).toEqual(['0001_init', '0002_catalog']);
+      expect(outcome.applied).toEqual(['0001_init', '0002_catalog', '0003_download_events']);
       const settings = await sql<{ n: number }>`select count(*)::int as n from settings`.execute(
         database.db,
       );

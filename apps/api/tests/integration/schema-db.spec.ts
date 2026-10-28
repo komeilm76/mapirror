@@ -32,6 +32,7 @@ const TABLE_INTERFACES = {
   jobs: 'Jobs',
   settings: 'Settings',
   audit_logs: 'AuditLogs',
+  download_events: 'DownloadEvents',
 } as const;
 
 /** Document sections whose tables are created by the first two migrations. */
@@ -42,6 +43,7 @@ const MIGRATED_HEADINGS = [
   '### 2.4 ',
   '### 2.5 ',
   '### 2.6 ',
+  '### 2.10 ',
   '### 2.11 ',
 ] as const;
 

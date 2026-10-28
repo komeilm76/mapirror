@@ -133,7 +133,7 @@ describe.skipIf(skipReason !== null)('checkSchemaVersion', () => {
   it('refuses a migration file that the constant does not know about', async () => {
     // A file added without updating EXPECTED_MIGRATIONS. Applying it would record a name the *next* build also
     // rejects, so the boot stops with the inconsistency rather than baking it into the database.
-    const dir = await tempMigrations([...EXPECTED_MIGRATIONS, '0003_unannounced']);
+    const dir = await tempMigrations([...EXPECTED_MIGRATIONS, '0004_unannounced']);
     try {
       await withFreshDatabase(
         async (database) => {
@@ -142,7 +142,7 @@ describe.skipIf(skipReason !== null)('checkSchemaVersion', () => {
           );
 
           expect(error).toBeInstanceOf(SchemaSkewError);
-          expect((error as SchemaSkewError).report.unexpectedOnDisk).toEqual(['0003_unannounced']);
+          expect((error as SchemaSkewError).report.unexpectedOnDisk).toEqual(['0004_unannounced']);
           expect(await appliedMigrations(database)).toEqual([]);
         },
         { prefix: 'vc' },

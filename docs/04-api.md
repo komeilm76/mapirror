@@ -356,8 +356,8 @@ ready versions, and only queued/running jobs whose payload identifies this count
 }
 ```
 
-Per-version download counts are not available yet: `download_events` is introduced with the later public-download
-recording task (P3-API-06), so this response deliberately does not fabricate a count.
+Download events are recorded for completed or interrupted admin streams, but per-version counts are not exposed here;
+that read model remains part of the later public-download analytics task (P3-API-06).
 
 #### `DELETE /_admin/api/cache/:countryId?confirm=<slug>`
 
@@ -372,10 +372,9 @@ and uncached/unknown countries return `404 NOT_FOUND`.
   reached a terminal state within 3 seconds, the endpoint still returns `409` and leaves cache rows/files intact.
 - Download admission and deletion share a per-country PostgreSQL advisory lock through post-commit file cleanup, so a
   new download cannot install a file at a path being unlinked. If another cache mutation/stream still holds its lock
-  after 5 seconds, deletion returns `409 JOB_ALREADY_RUNNING` without changing data. Admin/public streaming routes are
-  not implemented yet; P2-API-09 and P3-API-05 must take a shared lock on the same country key before opening a file and
-  hold it until the response stream closes. The delete-side exclusive lock then waits for active transfers, preserving
-  CACHE-5.
+  after 5 seconds, deletion returns `409 JOB_ALREADY_RUNNING` without changing data. The admin stream (P2-API-09) and future public stream (P3-API-05) take a shared lock on the same country key before
+  opening a file and hold it until the response closes. The delete-side exclusive lock then waits for active transfers,
+  preserving CACHE-5.
 - The database deletes and audit `cache.delete_country` commit together; validated version paths are unlinked afterward
   through the storage boundary. An unlink failure is logged as an orphan for the sweep and does not turn a committed
   deletion into a `500`.
@@ -450,9 +449,12 @@ for the removed version subsequently returns `404 NOT_FOUND`.
 
 #### `GET /_admin/api/cache/:countryId/versions/:versionId/download`
 
-Admin-only file download (default access, PUB-3). Same streaming semantics as the public download
-(§3.4) plus `channel=admin` in `download_events`.
-`410 VERSION_FILE_MISSING` if the row exists but the file is gone (L6).
+Admin-only file download (default access, PUB-3). Uses the public representation headers and single-range/conditional
+semantics (§3.4), but sends `Cache-Control: private, no-store`: this endpoint can return unpublished files, which must
+never enter a shared cache. Completed and interrupted transfers record `channel=admin` and bytes sent in
+`download_events`; raw IP addresses are never stored. A shared per-country advisory lock is acquired before the file is
+opened and held until the response closes, so cache deletion cannot unlink an active transfer.
+`410 VERSION_FILE_MISSING` if the ready row exists but the file is gone (L6). HEAD and `304` responses do not create events.
 
 ---
 

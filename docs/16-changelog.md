@@ -3,7 +3,7 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 74 passes · 292 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1).
+**Totals:** 75 passes · 296 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
@@ -62,6 +62,23 @@ P2-API-08 implements `DELETE /_admin/api/cache/:countryId/versions/:versionId`. 
 Four targeted mutation probes were killed by integration tests: releasing the lock before cleanup, retaining the empty `country_cache` row, failing to unpublish with zero ready versions, and bypassing the active-job guard. The lock regression test was made failure-safe so a deliberate early release fails as an assertion rather than hanging its cleanup. Real-PostgreSQL targeted tests pass: **24 across the cache-delete and credential-transport specs**, including an audit-write failure probe that proves the file and row remain when the transaction rolls back. Full non-Docker `bun run check` passes: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint, formatting, and **1,419 tests across 109 files, 0 skipped**. Docker runtime/operator tests remain excluded per operator direction. The public download handler itself remains scheduled for P3-API-03; this task removes the persisted version and documents the required 404 behavior for that handler.
 
 **Totals after this pass: 73 passes · 291 defects fixed · 0 open.**
+
+## Pass 75 — 2026-10-28 (admin map-version downloads needed a locked stream)
+
+P2-API-09 implements the authenticated version download route with Range/ETag/HEAD support, safe cache storage reads,
+admin-channel event logging, and the shared country stream lock. Migration `0003_download_events.sql` brings the event
+store into the live schema and Kysely model.
+
+| # | Bug found in contract/code review | Fix |
+|---|---|---|
+| 1 | The documented admin download URL had no handler, so administrators could list and delete cached versions but not retrieve one | Add the authenticated stream route with public-compatible representation headers, single byte ranges, conditional requests, `HEAD`, and `410 VERSION_FILE_MISSING` |
+| 2 | The contract required `channel=admin` transfer records, but `download_events` existed only in the data-model document and had no migration or typed table | Add `0003_download_events.sql` and `DownloadEvents`; record completed and interrupted admin streams with bytes sent, user agent, and only a salted IP hash; do not record `HEAD` or `304` |
+| 3 | Reusing the public stream's `Cache-Control: public` policy on an admin route could place unpublished maps in a shared cache | Admin streams use `Cache-Control: private, no-store` while retaining representation, Range, and validator headers |
+| 4 | The first-transfer salt initializer sent an unquoted hex string to PostgreSQL `jsonb`, and the route transport sweep still expected the new authenticated path to be a `503` stub | JSON-encode the persisted salt, verify that an unavailable client address leaves only `ip_hash` null, and classify the new authenticated route's template-path response as `400` validation |
+
+PostgreSQL integration tests verify authenticated delivery, headers, Range bytes, ETag/HEAD, missing-file 410, salted event metadata, aborted-transfer event logging, and that a real slow client holds the shared lock until it closes before cache deletion can unlink the file. Targeted route/migration/security transport tests pass **30 tests across 3 files**. The first full check exposed the missing route-matrix expectation; it was corrected and the final non-Docker `bun run check` passes: **22 workspace checks, 54 hygiene checks, all package typechecks, ESLint, formatting, and 1,427 tests across 110 files, 0 skipped**. Docker runtime/operator tests remain excluded per operator direction.
+
+**Totals after this pass: 75 passes · 296 defects fixed · 0 open.**
 
 ## Pass 74 — 2026-10-28 (safe unlink needed to report an ancestor-symlink skip)
 

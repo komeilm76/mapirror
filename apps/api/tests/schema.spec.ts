@@ -10,6 +10,7 @@ import {
   type Admin,
   type AdminToken,
   type AuditLog,
+  type DownloadEvent,
   type Country,
   type CountryCacheRow,
   type Database,
@@ -39,6 +40,7 @@ const TABLE_INTERFACES = {
   jobs: 'Jobs',
   settings: 'Settings',
   audit_logs: 'AuditLogs',
+  download_events: 'DownloadEvents',
 } as const;
 
 /**
@@ -73,6 +75,7 @@ const MIGRATED_HEADINGS = [
   '### 2.4 ',
   '### 2.5 ',
   '### 2.6 ',
+  '### 2.10 ',
   '### 2.11 ',
 ] as const;
 
@@ -140,6 +143,7 @@ describe('the migrated table interfaces', () => {
       'audit_logs',
       'countries',
       'country_cache',
+      'download_events',
       'jobs',
       'map_versions',
       'settings',
@@ -165,6 +169,8 @@ describe('the selected row types match what the driver returns', () => {
     expectTypeOf<Admin['id']>().toEqualTypeOf<string>();
     expectTypeOf<AdminToken['id']>().toEqualTypeOf<string>();
     expectTypeOf<AuditLog['id']>().toEqualTypeOf<string>();
+    expectTypeOf<DownloadEvent['id']>().toEqualTypeOf<string>();
+    expectTypeOf<DownloadEvent['bytes_sent']>().toEqualTypeOf<string>();
   });
 
   it('types timestamptz as Date, bytea as Buffer, jsonb as the parsed value, inet as string', () => {
