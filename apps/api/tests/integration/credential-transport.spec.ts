@@ -210,7 +210,8 @@ describe.skipIf(skipReason !== null)(
             route === 'GET /_admin/api/catalog/regions/:slug' ||
             route === 'GET /_admin/api/catalog/regions/:slug/snapshots' ||
             route === 'GET /_admin/api/cache/:countryId' ||
-            route === 'POST /_admin/api/cache/downloads'
+            route === 'POST /_admin/api/cache/downloads' ||
+            route === 'DELETE /_admin/api/cache/:countryId'
           ) {
             expect(response.statusCode, route).toBe(400);
             expect(response.json<{ error: { code: string } }>().error.code, route).toBe(

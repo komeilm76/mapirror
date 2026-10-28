@@ -277,25 +277,38 @@ sequenceDiagram
   participant A as Admin UI
   participant API as /_admin/api
   participant DB as PostgreSQL
+  participant Q as jobs
   participant FS as storage
   A->>A: click Delete → ConfirmDialog (type slug)
-  A->>API: DELETE /cache/:id {confirm:"finland"}
-  API->>DB: BEGIN
-  API->>DB: check active jobs (409 if any)
-  API->>DB: delete versions, cache row, interval links
-  API->>DB: audit cache.delete_country
+  A->>API: DELETE /cache/:id?confirm=finland
+  API->>DB: acquire per-country session advisory lock
+  API->>DB: BEGIN; lock catalog row FOR UPDATE
+  API->>DB: check active jobs (409 unless cancelJobs=true)
+  opt cancelJobs=true
+    API->>Q: request cooperative cancellation
+    loop until terminal or 3 s deadline
+      API->>DB: wait for cleanup-complete job status
+    end
+  end
+  API->>DB: delete versions + cache row; audit cache.delete_country
   API->>DB: COMMIT
-  API->>FS: unlink files (idempotent, outside the transaction)
-  API-->>A: 204 → row disappears
+  API->>FS: unlink each validated file (idempotent)
+  API->>DB: release advisory lock
+  API-->>A: 204 → cache row disappears; catalog country remains
 ```
 
-**Rules:** DB first, files second (a failed unlink leaves a sweepable orphan, never a dangling row that
-looks valid). All cache paths and unlinks go through `modules/storage/storage.ts`: parent symlinks are never followed,
-only a named file or encountered link component is unlinked, and directories are never recursively deleted. Deleting the
-last version auto-unpublishes.
-Public URLs for deleted versions ⇒ `404`.
-**Tests:** country delete, last-version delete closes public, file-unlink failure reports an orphan
-without 500-ing the API, in-flight job blocks deletion.
+**Rules:** DB first, files second (a failed unlink leaves a sweepable orphan, never a dangling row that looks valid).
+The per-country advisory lock is shared with download admission and remains held across the commit and file cleanup, so a
+new worker cannot install into a path while it is being unlinked. When admin/public stream routes are implemented
+(P2-API-09/P3-API-05), they must hold the matching shared lock for the entire response so deletion cannot unlink an
+active transfer's file. All cache paths and unlinks go through
+`modules/storage/storage.ts`: parent symlinks are never followed, only a named file or encountered link component is
+unlinked, and directories are never recursively deleted. A file-unlink failure is logged for the orphan sweep but does
+not change the committed `204`. The catalog row remains; P4-INT-01 must add cleanup for interval memberships when that
+table is introduced. Deleting the last version auto-unpublishes. Public URLs for deleted versions ⇒ `404`.
+**Tests:** typed confirmation and audit, cache removal while catalog identity remains, queued cancellation, running-job
+cleanup timeout leaves files intact, unlink failure leaves a sweepable orphan while retaining `204`, and download-enqueue
+serialization against deletion.
 
 ---
 

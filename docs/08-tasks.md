@@ -145,10 +145,10 @@ prove L1–L3.
 | P2-API-03 | `GET /catalog/regions/:slug` + `/snapshots` | GEO-4 | P2-SRC-03 | ✅ | Local-slug lookup returns identity, root-first parent chain, ISO/PBF/size, source freshness and ready cached versions; bounded source-page reads. Snapshot outage returns `200 sourceReachable:false`, cached Geofabrik versions only, `latest:null`. PostgreSQL route tests cover local-slug routing, parent/cache projection, source offers, outage fallback, malformed/unknown slugs; offline client tests cover URL safety, response bounds, HTTP errors and timeout |
 | P2-API-04 | `POST /_admin/api/cache/downloads` (latest or explicit) | GEO-3/4 | P2-JOB-04, P2-JOB-05, P2-JOB-07 | ✅ | Strict Bearer-authenticated `{countryId, version}`; Geofabrik latest/date resolution + HEAD size/validators; 202 `{jobId,resolvedVersion}`; 409 ready/active duplicates; 410 deleted dated source; 502 bounded source failure; 503 disk details. Creates cache root and runs source + reserve-aware disk preflights before race-safe insert. Production registers the concrete MapSource-backed worker. PostgreSQL route tests and offline source fixtures cover success, auth/validation, cached/active duplicate, gone, unavailable and disk-full paths |
 | P2-API-05 | `GET /_admin/api/cache` + `/:countryId` | CACHE-2 | P2-DB-02 | ✅ | Shared strict Zod contracts; cached-only catalog-shaped list with SQL filters/count/page and cache/download timestamps; UUID detail with cache/update state, ready versions and country-scoped queued/running jobs. Repeatable-read snapshots, JSON-safe int8 values, Bearer auth, documented 400/404 errors; PostgreSQL route tests include uncached exclusion, update filtering, upload/pending timestamp exclusion, active-job scope/status, oversized byte counts, and the credential-transport sweep |
-| P2-API-06 | `DELETE /_admin/api/cache/:countryId` (typed confirm) | CACHE-3 | P2-JOB-06 | ⬜ | 409 if job active; files removed; audited |
+| P2-API-06 | `DELETE /_admin/api/cache/:countryId` (typed confirm) | CACHE-3 | P2-JOB-06 | ✅ | Strict query/body confirmation; removes version/cache rows but preserves catalog identity; audit commits with DB delete before safe file cleanup; active jobs → 409 or `cancelJobs=true` with cooperative cleanup wait; per-country advisory lock serializes deletion with download enqueue through unlink. PostgreSQL route tests cover 204/files/audit, 400/404/409 paths, queued cancel, running cleanup timeout, unlink failure leaves a sweepable orphan with `204`, active-stream/delete contention, and enqueue/delete contention |
 | P2-API-07 | Version list + `POST .../versions` (specific version) | CACHE-1/4 | P2-JOB-05 | ⬜ | Rejects `latest`, accepts only offered snapshots |
 | P2-API-08 | `DELETE .../versions/:versionId` | CACHE-4 | P2-API-07 | ⬜ | Last version → cache row removed |
-| P2-API-09 | Admin version download stream | CACHE-1 | P2-JOB-06 | ⬜ | Same headers as public; admin channel logged |
+| P2-API-09 | Admin version download stream | CACHE-1, CACHE-5 | P2-JOB-06 | ⬜ | Same headers as public; admin channel logged; acquire the shared per-country cache advisory lock before opening the file and hold it through response close so cache deletion cannot unlink an active transfer |
 | P2-API-10 | Jobs endpoints (list/detail/cancel) | CACHE-1 | P2-JOB-03 | ⬜ | Progress monotonic, ETA sane |
 
 ### Admin UI
@@ -184,7 +184,7 @@ prove L1–L3.
 | P3-API-02 | `POST /_admin/api/cache/:countryId/public` + audit | PUB-1/2/4 | P3-API-01 | ⬜ | 422 without ready version |
 | P3-API-03 | `GET /_public/api/countries` (+search/filter/pagination) | WEB-3a | P3-API-01 | ⬜ | Only published, only ready versions |
 | P3-API-04 | `GET /_public/api/countries/:slug` + `/versions` | WEB-3b | P3-API-01 | ⬜ | No internal fields leaked |
-| P3-API-05 | Public streaming download (Range/ETag/304/410) | WEB-3c | P2-API-09 | ⬜ | All header cases tested |
+| P3-API-05 | Public streaming download (Range/ETag/304/410) | WEB-3c, CACHE-5 | P2-API-09 | ⬜ | All header cases tested; acquire the shared per-country cache advisory lock before opening the file and hold it through response close so cache deletion cannot unlink an active transfer |
 | P3-API-06 | `GET /_public/api/stats` + `download_events` recording | WEB-3d | P3-API-05 | ⬜ | Hashed IPs only |
 | P3-API-07 | Public rate limiting — *the limiter shipped in `P1-API-09`* | ENG-6 | P1-API-09 | ⬜ | Left: a per-country override, only if the settings model gains one |
 | P3-WEB-01 | Public home: hero-free catalog, search, continent filter, cards | WEB-1 | P3-API-03 | ⬜ | LCP < 2.5 s, light theme |
@@ -216,7 +216,7 @@ prove L1–L3.
 
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
-| P4-INT-01 | Schema: intervals, interval_countries, runs, run_items | INT-1 | P2-DB-01 | ⬜ | CHECK constraints from `03` |
+| P4-INT-01 | Schema: intervals, interval_countries, runs, run_items | INT-1 | P2-DB-01 | ⬜ | CHECK constraints from `03`; P2-API-06 cache deletion must also remove the country's interval memberships once this schema exists |
 | P4-INT-02 | Schedule math (`nextRunAt`, UTC, month-end) + unit tests | INT-4 | P4-INT-01 | ⬜ | Table-driven cases incl. Feb 28, leap year |
 | P4-INT-03 | Scheduler loop: claim + run row + enqueue + `next_run_at` in one tx | INT-4 | P4-INT-02, P2-JOB-01 | ⬜ | Concurrent ticks never double-fire; a failed enqueue rolls back; an active previous run skips the occurrence |
 | P4-INT-04 | Interval CRUD API + validation | INT-1 | P4-INT-01 | ⬜ | 422 on wrong shape (weekday for daily, etc.) |

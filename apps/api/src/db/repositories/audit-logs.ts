@@ -36,6 +36,7 @@ export const AUDIT_ACTIONS = {
   adminCreated: 'auth.admin_created',
   passwordReset: 'auth.password_reset',
   catalogSync: 'catalog.sync',
+  cacheDeleteCountry: 'cache.delete_country',
 } as const;
 
 /** One documented audit action. */

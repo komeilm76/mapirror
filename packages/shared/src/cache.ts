@@ -87,8 +87,21 @@ export const CacheActiveJobSchema = z
   })
   .strict();
 
-/** Params accepted by `GET /_admin/api/cache/:countryId`. */
+/** Params accepted by `GET` and `DELETE /_admin/api/cache/:countryId`. */
 export const CacheCountryParamsSchema = z.object({ countryId: z.uuid() }).strict();
+
+/** Query accepted by `DELETE /_admin/api/cache/:countryId`. */
+export const CacheCountryDeleteQuerySchema = z
+  .object({
+    confirm: z.string().max(64).optional(),
+    cancelJobs: z.enum(['true', 'false']).optional(),
+  })
+  .strict();
+
+/** Optional JSON-body confirmation for `DELETE /_admin/api/cache/:countryId`. */
+export const CacheCountryDeleteBodySchema = z
+  .object({ confirm: z.string().max(64).optional() })
+  .strict();
 
 /** Successful `GET /_admin/api/cache/:countryId` response. */
 export const CacheDetailResponseSchema = z
@@ -104,3 +117,5 @@ export type CacheQuery = z.infer<typeof CacheQuerySchema>;
 export type CacheListItem = z.infer<typeof CacheListItemSchema>;
 export type CacheListResponse = z.infer<typeof CacheListResponseSchema>;
 export type CacheDetailResponse = z.infer<typeof CacheDetailResponseSchema>;
+export type CacheCountryDeleteQuery = z.infer<typeof CacheCountryDeleteQuerySchema>;
+export type CacheCountryDeleteBody = z.infer<typeof CacheCountryDeleteBodySchema>;

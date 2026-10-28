@@ -7,9 +7,9 @@
  * @module db/repositories/cache
  */
 
-import { sql } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 
-import type { CountryCacheRow, JobType } from '../schema';
+import type { CountryCacheRow, Database, JobType } from '../schema';
 import {
   findCatalogCountryById,
   listCatalogCountries,
@@ -17,6 +17,41 @@ import {
   type CatalogListOptions,
 } from './catalog';
 import type { RepositoryExecutor } from './executor';
+
+/** Stable per-country advisory-lock namespace shared by cache deletion, job admission, and file streams. */
+export function cacheCountryAdvisoryLockKey(countryId: string): string {
+  return `mapirror.cache-country:${countryId}`;
+}
+
+/** Acquires a transaction-scoped shared lock for download admission; cache deletion takes the exclusive session lock. */
+export async function lockCountryCacheForEnqueue(
+  executor: RepositoryExecutor,
+  countryId: string,
+): Promise<void> {
+  await sql`
+    select pg_advisory_xact_lock_shared(hashtextextended(${cacheCountryAdvisoryLockKey(countryId)}, 0))
+  `.execute(executor);
+}
+
+/** Holds a shared session lock while a cache file is being streamed to a client. */
+export async function acquireCountryCacheStreamLock(
+  connection: Kysely<Database>,
+  countryId: string,
+): Promise<void> {
+  await sql`
+    select pg_advisory_lock_shared(hashtextextended(${cacheCountryAdvisoryLockKey(countryId)}, 0))
+  `.execute(connection);
+}
+
+/** Releases the shared session lock after a cache-file response stream closes. */
+export async function releaseCountryCacheStreamLock(
+  connection: Kysely<Database>,
+  countryId: string,
+): Promise<void> {
+  await sql`
+    select pg_advisory_unlock_shared(hashtextextended(${cacheCountryAdvisoryLockKey(countryId)}, 0))
+  `.execute(connection);
+}
 
 /** Cache-list options; a cache query is always restricted to countries with a cache row. */
 export type CacheListOptions = Omit<CatalogListOptions, 'cache'>;

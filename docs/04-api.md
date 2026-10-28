@@ -361,14 +361,26 @@ recording task (P3-API-06), so this response deliberately does not fabricate a c
 
 #### `DELETE /_admin/api/cache/:countryId?confirm=<slug>`
 
-`confirm` must equal the country slug (typed confirmation, L10). A JSON body `{ "confirm": "finland" }`
-is also accepted, but the query form is canonical: `DELETE` bodies are stripped by some proxies and
-HTTP clients.
+`confirm` must exactly equal the country slug (typed confirmation, L10). A JSON body `{ "confirm": "finland" }`
+is also accepted, but the query form is canonical: `DELETE` bodies are stripped by some proxies and HTTP clients.
+Missing or mismatched confirmation returns `409 CONFIRMATION_REQUIRED`; malformed UUIDs return `400 VALIDATION_ERROR`,
+and uncached/unknown countries return `404 NOT_FOUND`.
 
-- Deletes all versions + files, the cache row, interval memberships; closes public access.
-- Refuses with `409 JOB_ALREADY_RUNNING` if a job for that country is active (or cancels first with
-  `?cancelJobs=true`).
-- `204 No Content`; audit `cache.delete_country`.
+- Deletes all map-version rows and the `country_cache` row, removing public access; the catalog `countries` row remains.
+- By default, an active queued/running country job returns `409 JOB_ALREADY_RUNNING`. `?cancelJobs=true` requests
+  cooperative cancellation and waits for worker cleanup (queued jobs cancel immediately). If a running job has not
+  reached a terminal state within 3 seconds, the endpoint still returns `409` and leaves cache rows/files intact.
+- Download admission and deletion share a per-country PostgreSQL advisory lock through post-commit file cleanup, so a
+  new download cannot install a file at a path being unlinked. If another cache mutation/stream still holds its lock
+  after 5 seconds, deletion returns `409 JOB_ALREADY_RUNNING` without changing data. Admin/public streaming routes are
+  not implemented yet; P2-API-09 and P3-API-05 must take a shared lock on the same country key before opening a file and
+  hold it until the response stream closes. The delete-side exclusive lock then waits for active transfers, preserving
+  CACHE-5.
+- The database deletes and audit `cache.delete_country` commit together; validated version paths are unlinked afterward
+  through the storage boundary. An unlink failure is logged as an orphan for the sweep and does not turn a committed
+  deletion into a `500`.
+- `204 No Content`. The current P2 schema has no interval-membership tables; when P4-INT-01 adds them, its integration
+  must also remove a country from those memberships when this cache-delete operation runs.
 
 #### `POST /_admin/api/cache/:countryId/public`
 

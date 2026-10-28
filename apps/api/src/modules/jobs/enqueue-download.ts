@@ -9,7 +9,9 @@
 
 import type { Kysely } from 'kysely';
 
+import { lockCountryCacheForEnqueue } from '../../db/repositories/cache';
 import type { Database } from '../../db/schema';
+import { withTransaction } from '../../db/transaction';
 import { AppError } from '../../lib/errors';
 
 /** Validated values needed to create a queued download job. */
@@ -53,16 +55,31 @@ export async function enqueueDownloadJob(
   };
 
   try {
-    const job = await database
-      .insertInto('jobs')
-      .values({
-        type: 'download',
-        payload,
-        ...(input.createdBy === undefined ? {} : { created_by: input.createdBy }),
-      })
-      .returning('id')
-      .executeTakeFirstOrThrow();
-    return job.id;
+    return await withTransaction(database, async (trx) => {
+      // Cache deletion holds the matching session advisory lock through post-commit file cleanup. This short
+      // transaction-scoped lock serializes the final admission step with deletion across API processes.
+      await lockCountryCacheForEnqueue(trx, input.countryId);
+      const country = await trx
+        .selectFrom('countries')
+        .select('id')
+        .where('id', '=', input.countryId)
+        .forKeyShare()
+        .executeTakeFirst();
+      if (country === undefined) {
+        throw new AppError('NOT_FOUND', 'The requested catalog region does not exist.');
+      }
+
+      const job = await trx
+        .insertInto('jobs')
+        .values({
+          type: 'download',
+          payload,
+          ...(input.createdBy === undefined ? {} : { created_by: input.createdBy }),
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      return job.id;
+    });
   } catch (error) {
     if (isUniqueViolation(error, 'jobs_one_active_download')) {
       throw new AppError(
