@@ -41,7 +41,7 @@ export const JOB_TYPES = ['download', 'import', 'update_check', 'catalog_sync', 
 export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed', 'canceled'] as const;
 
 /** Job phases inside a `running` job; finer than the status, so the UI can show real progress. */
-export const JOB_PHASES = ['downloading', 'verifying', 'installing'] as const;
+export const JOB_PHASES = ['fetching_index', 'downloading', 'verifying', 'installing'] as const;
 
 /** Where a cached version came from (`map_versions.origin`). */
 export const VERSION_ORIGINS = ['geofabrik_snapshot', 'geofabrik_latest', 'upload'] as const;

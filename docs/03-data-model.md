@@ -193,7 +193,7 @@ CREATE INDEX mv_status_idx ON map_versions (status) WHERE status <> 'ready';
   `metadata`) — the table keeps no tombstone column, so `mv_unique_version` correctly allows
   re-importing the same version later.
 - Only `status='ready'` rows are ever served. `pending` means "a job owns this slot"; the fine-grained
-  progress (`downloading → verifying → installing`) lives on the job's `phase`, not duplicated here — one
+  progress (`fetching_index → downloading → verifying → installing`) lives on the job's `phase`, not duplicated here — one
   state machine per concept.
 - `mv_ready_needs_checksum` enforces the "no unverified files" rule in the database, not just in code.
 

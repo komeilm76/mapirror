@@ -201,7 +201,11 @@ describe.skipIf(skipReason !== null)(
             headers: { authorization: `Bearer ${token}` },
           });
 
-          if (route === 'GET /_admin/api/catalog' || route === 'GET /_admin/api/cache') {
+          if (
+            route === 'GET /_admin/api/catalog' ||
+            route === 'GET /_admin/api/cache' ||
+            route === 'GET /_admin/api/jobs'
+          ) {
             expect(response.statusCode, route).toBe(200);
           } else if (route === 'POST /_admin/api/catalog/sync') {
             expect(response.statusCode, route).toBe(202);
@@ -215,7 +219,9 @@ describe.skipIf(skipReason !== null)(
             route === 'POST /_admin/api/cache/:countryId/versions' ||
             route === 'DELETE /_admin/api/cache/:countryId/versions/:versionId' ||
             route === 'POST /_admin/api/cache/downloads' ||
-            route === 'DELETE /_admin/api/cache/:countryId'
+            route === 'DELETE /_admin/api/cache/:countryId' ||
+            route === 'GET /_admin/api/jobs/:jobId' ||
+            route === 'POST /_admin/api/jobs/:jobId/cancel'
           ) {
             expect(response.statusCode, route).toBe(400);
             expect(response.json<{ error: { code: string } }>().error.code, route).toBe(

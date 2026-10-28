@@ -47,7 +47,7 @@ describe('enums mirror the database', () => {
     expect([...INTERVAL_FREQUENCIES]).toEqual(['daily', 'weekly', 'monthly']);
     expect([...JOB_TYPES]).toEqual(['download', 'import', 'update_check', 'catalog_sync', 'prune']);
     expect([...JOB_STATUSES]).toEqual(['queued', 'running', 'succeeded', 'failed', 'canceled']);
-    expect([...JOB_PHASES]).toEqual(['downloading', 'verifying', 'installing']);
+    expect([...JOB_PHASES]).toEqual(['fetching_index', 'downloading', 'verifying', 'installing']);
     expect([...VERSION_ORIGINS]).toEqual(['geofabrik_snapshot', 'geofabrik_latest', 'upload']);
     expect([...VERSION_STATUSES]).toEqual(['pending', 'ready', 'failed']);
     expect([...UPDATE_STATES]).toEqual(['unknown', 'up_to_date', 'update_available']);

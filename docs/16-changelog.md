@@ -3,7 +3,7 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 75 passes · 296 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4).
+**Totals:** 76 passes · 300 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4, pass 76: 4).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
@@ -62,6 +62,21 @@ P2-API-08 implements `DELETE /_admin/api/cache/:countryId/versions/:versionId`. 
 Four targeted mutation probes were killed by integration tests: releasing the lock before cleanup, retaining the empty `country_cache` row, failing to unpublish with zero ready versions, and bypassing the active-job guard. The lock regression test was made failure-safe so a deliberate early release fails as an assertion rather than hanging its cleanup. Real-PostgreSQL targeted tests pass: **24 across the cache-delete and credential-transport specs**, including an audit-write failure probe that proves the file and row remain when the transaction rolls back. Full non-Docker `bun run check` passes: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint, formatting, and **1,419 tests across 109 files, 0 skipped**. Docker runtime/operator tests remain excluded per operator direction. The public download handler itself remains scheduled for P3-API-03; this task removes the persisted version and documents the required 404 behavior for that handler.
 
 **Totals after this pass: 73 passes · 291 defects fixed · 0 open.**
+
+## Pass 76 — 2026-10-28 (admin job reads and cancellation needed API contracts)
+
+P2-API-10 adds the authenticated jobs list, detail and cancel endpoints, with shared request/response schemas and PostgreSQL integration coverage. The route reuses the durable cancellation service rather than writing worker terminal state itself.
+
+| # | Bug found in contract/code review | Fix |
+|---|---|---|
+| 1 | The documented job list/detail/cancel paths had no handlers or strict shared contracts | Register all three under the global admin guard; add status/type filters, bounded paging, UUID validation, and explicit cancel acknowledgement/no-op outcomes |
+| 2 | Returning arbitrary job JSON or persisted exception text could disclose internal payloads, worker ownership, or raw failures; PostgreSQL `bigint` progress can also exceed JavaScript's exact integer range | Select only response fields, project payload keys by job type, map errors to the safe `JOB_HANDLER_FAILED`/`WORKER_LOST` messages, and serialize large byte counts as decimal strings |
+| 3 | A retrying queued row retains its last speed/progress, so applying that speed as an active ETA would mislead the UI | Derive ETA only for a running, non-canceling job and retain the existing 30-day bound; queued and terminal jobs report `null` |
+| 4 | The worker progress type included `fetching_index`, but the shared enum and data-model progress list omitted it | Add the phase to the shared `JOB_PHASES` tuple and data-model contract, then derive the worker progress type from that source |
+
+PostgreSQL tests cover newest-first ordering, status/type filtering, pagination and clamping, strict validation/auth/404s, precision-safe progress, active versus queued ETA, safe payload/error projection, queued immediate cancellation, durable running cancellation without stealing the worker lock, idempotent canceled requests and terminal no-op behavior. The focused jobs-schema/route/security-transport run passes **21 tests across 4 files**. Full non-Docker `bun run check` passes: **22 workspace checks, 54 hygiene checks, all package typechecks, ESLint, formatting, and 1,435 tests across 112 files, 0 skipped**. Docker runtime/operator tests remain excluded per operator direction.
+
+**Totals after this pass: 76 passes · 300 defects fixed · 0 open.**
 
 ## Pass 75 — 2026-10-28 (admin map-version downloads needed a locked stream)
 

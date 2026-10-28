@@ -3,7 +3,7 @@
  *
  * Registered by {@link registerRoutes}. Every route under this prefix must be protected by the **global**
  * guard (`P1-AUTH-05`) rather than by per-route checks; an unprotected admin route is exactly the failure
- * mode L2 exists to prevent. Catalog listing is implemented here; other admin routes remain owned by their task stubs.
+ * mode L2 exists to prevent. Catalog, cache, version and job routes register here as their tasks are implemented.
  *
  * @module modules/admin/routes
  */
@@ -19,6 +19,7 @@ import {
 import { createCacheDeleteHandler } from './cache-delete-route';
 import { createCacheVersionDeleteHandler } from './cache-version-delete-route';
 import { createCacheVersionDownloadHandler } from './cache-version-download-route';
+import { cancelJob, getJob, getJobs } from './jobs-route';
 import { getCacheDetail, getCacheList } from './cache-route';
 import { getCacheVersions } from './cache-versions-route';
 import { createCatalogRegionHandlers } from './catalog-region-route';
@@ -54,4 +55,7 @@ export const adminRoutes: FastifyPluginCallback<AdminRouteOptions> = (app, optio
   app.get('/cache/:countryId/versions/:versionId/download', cacheVersionDownload);
   app.delete('/cache/:countryId', cacheDelete);
   app.post('/cache/downloads', cacheDownload);
+  app.get('/jobs', getJobs);
+  app.get('/jobs/:jobId', getJob);
+  app.post('/jobs/:jobId/cancel', cancelJob);
 };

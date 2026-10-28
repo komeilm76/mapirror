@@ -9,6 +9,7 @@
 
 import { performance } from 'node:perf_hooks';
 
+import type { JOB_PHASES } from '@mapirror/shared';
 import { sql, type Kysely } from 'kysely';
 
 import type { Database, Job } from '../../db/schema';
@@ -20,8 +21,8 @@ export const MAX_JOB_ETA_SECONDS = 30 * 24 * 60 * 60;
 /** PostgreSQL `bigint` columns are signed 64-bit values. */
 const MAX_POSTGRES_INT8 = 9_223_372_036_854_775_807n;
 
-/** Named phases the first download handler reports. */
-export type JobProgressPhase = 'fetching_index' | 'downloading' | 'verifying' | 'installing';
+/** Progress phases shared with the API and browser response contract. */
+export type JobProgressPhase = (typeof JOB_PHASES)[number];
 
 /** A progress snapshot. Byte counts use `bigint` to match PostgreSQL's int8 range without rounding. */
 export interface JobProgressUpdate {

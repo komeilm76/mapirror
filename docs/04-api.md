@@ -505,13 +505,26 @@ The UI switches to a job progress view after `202`; the upload itself shows a br
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` | `/_admin/api/jobs?status=&type=&page=&limit=` | Newest first |
-| `GET` | `/_admin/api/jobs/:jobId` | Includes `phase`, `progressBytes`, `totalBytes`, `speedBps`, `etaSeconds`, `error` |
-| `POST` | `/_admin/api/jobs/:jobId/cancel` | `202`; queued jobs cancel immediately; running jobs cooperate with the owner worker |
+| `GET` | `/_admin/api/jobs?status=&type=&page=&limit=` | Newest first; optional exact status/type filters |
+| `GET` | `/_admin/api/jobs/:jobId` | Returns the same safe job projection as one list item |
+| `POST` | `/_admin/api/jobs/:jobId/cancel` | `202` when accepted; queued jobs cancel immediately and running jobs cooperate with the owner worker |
 
-A running cancellation sets a durable request flag; the worker aborts the handler signal, waits for `.part` cleanup,
-then marks the row canceled. The `202` acknowledges the request, not completed cleanup. Progress bytes are monotonic,
-updates are throttled to one write per second, and ETA is derived safely rather than stored.
+The list returns `{data, meta}` with page 1/limit 25 by default and a maximum limit of 100; values clamp using the
+shared pagination law. Unknown query keys and invalid `status`/`type` values are `400 VALIDATION_ERROR`. Results sort by
+`createdAt DESC, id DESC`; rows and total come from one repeatable-read snapshot. Progress bytes are monotonic and
+writes are throttled to one database write per second. When known, `phase` is `fetching_index`, `downloading`,
+`verifying`, or `installing`. Progress byte fields preserve large PostgreSQL integers as decimal strings instead of rounding.
+`etaSeconds` is derived from progress and speed, only shown
+for a running job that is not canceling, and is `null` when unknown, stale on queued work, or beyond 30 days. `payload`
+is a type-specific allow-list (unknown fields are omitted), `error` contains only the safe `JOB_HANDLER_FAILED` or
+`WORKER_LOST` message, and worker ownership or raw exception text is never returned. A missing detail id returns `404` with `NOT_FOUND`.
+
+Cancellation accepts an empty JSON body (or no body). `202 {jobId,status,accepted:true,cancelRequested:true}` means
+the request was accepted, not that running cleanup has finished. For queued work the row becomes `canceled` immediately;
+for running work it stays `running` with the durable request flag and its owner lock until the handler has cleaned up and
+returned, after which the worker marks it canceled. Repeating cancellation on a canceled job is idempotently `202`. A
+succeeded or failed job cannot be canceled: the route returns `200 {jobId,status,accepted:false,cancelRequested:false}`
+without changing it. An unknown job returns `404 NOT_FOUND`.
 
 ```json
 200 {
@@ -519,10 +532,13 @@ updates are throttled to one write per second, and ETA is derived safely rather 
   "phase": "downloading", "progressBytes": 402653184, "totalBytes": 774000000,
   "speedBps": 10485760, "etaSeconds": 35,
   "payload": { "countryId": "…", "version": "261024" },
-  "attempts": 1, "maxAttempts": 3, "createdAt": "…", "startedAt": "…", "finishedAt": null,
-  "error": null
+  "cancelRequested": false, "attempts": 1, "maxAttempts": 3,
+  "createdAt": "…", "startedAt": "…", "finishedAt": null, "error": null
 }
 ```
+
+Errors on a retrying job remain visible with the generic safe message; `WORKER_LOST` distinguishes recovered process
+loss and may remain on a queued retry or become terminal when attempts are exhausted.
 
 ---
 

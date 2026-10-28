@@ -18,6 +18,7 @@
  * | `auth` | login request/response shapes and their bounds (`P1-AUTH-03`) |
  * | `catalog` | admin catalog query, row and sync response contracts (`P2-API-01`) |
  * | `cache` | admin cache-list/detail query and response contracts (`P2-API-05`) |
+ * | `jobs` | admin job list/detail/cancel contracts (`P2-API-10`) |
  *
  * Request/response schemas are added alongside their owning API contract tasks, so each implemented endpoint exports
  * one strict, reusable Zod shape instead of a prose-only or server-private contract.
@@ -34,5 +35,6 @@ export * from './catalog-region';
 export * from './constants';
 export * from './errors';
 export * from './license';
+export * from './jobs';
 export * from './pagination';
 export * from './routes';
