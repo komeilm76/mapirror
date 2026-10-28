@@ -95,10 +95,7 @@ export function createDownloadHandler(options: DownloadHandlerOptions): JobHandl
     } catch (error) {
       // Cancellation may happen before source resolution or checksum lookup, before the main transfer cleanup scope.
       if ((context.signal.aborted || isCancellation(error)) && UUID_PATTERN.test(job.id)) {
-        await storage
-          .partFile(job.id)
-          .remove()
-          .catch(() => undefined);
+        await removeForCleanup(storage.partFile(job.id), context, job.id, 'partial download');
         await context.database
           .updateTable('map_versions')
           .set({ status: 'failed', failure_reason: 'CANCELED', ready_at: null })
@@ -227,8 +224,10 @@ async function runDownload(
     return { versionId, version: prepared.version };
   } catch (error) {
     if (context.signal.aborted || isCancellation(error) || isNoSpace(error)) partMayBeKept = false;
-    if (!partMayBeKept) await prepared.partFile.remove().catch(() => undefined);
-    if (installed) await prepared.storageFile.remove().catch(() => undefined);
+    if (!partMayBeKept)
+      await removeForCleanup(prepared.partFile, context, job.id, 'partial download');
+    if (installed)
+      await removeForCleanup(prepared.storageFile, context, job.id, 'installed download');
     await failVersion(
       context.database,
       job.id,
@@ -246,6 +245,24 @@ async function runDownload(
       );
     }
     throw error;
+  }
+}
+
+async function removeForCleanup(
+  file: StorageFile,
+  context: JobHandlerContext,
+  jobId: string,
+  description: 'partial download' | 'installed download',
+): Promise<void> {
+  const message = `download ${description} cleanup incomplete; orphan file may remain`;
+  const details = {
+    jobId,
+    storagePath: file.relativePath || `.partial/${jobId}.part`,
+  };
+  try {
+    if (!(await file.remove())) context.log?.warn(details, message);
+  } catch (error) {
+    context.log?.warn({ ...details, err: error }, message);
   }
 }
 

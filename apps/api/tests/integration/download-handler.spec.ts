@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -541,7 +541,7 @@ describe.skipIf(skipReason !== null)('PostgreSQL download handler', () => {
     );
   });
 
-  it('cleans an existing partial file when the worker enters the handler already canceled', async () => {
+  it('logs incomplete cleanup when a pre-canceled job finds a symlinked partial directory', async () => {
     await withFreshDatabase(
       async ({ db }) => {
         await withWorkspace(async (cacheDirectory) => {
@@ -576,9 +576,13 @@ describe.skipIf(skipReason !== null)('PostgreSQL download handler', () => {
             .execute();
           await db.insertInto('country_cache').values({ country_id: country.id }).execute();
           const partialDirectory = join(cacheDirectory, '.partial');
-          await mkdir(partialDirectory, { recursive: true });
+          const externalDirectory = join(cacheDirectory, 'external');
+          await mkdir(externalDirectory, { recursive: true });
+          const externalPartPath = join(externalDirectory, `${job.id}.part`);
+          await writeFile(externalPartPath, payloadBytes.slice(0, 7));
+          await symlink(externalDirectory, partialDirectory, 'dir');
           const partialPath = join(partialDirectory, `${job.id}.part`);
-          await writeFile(partialPath, payloadBytes.slice(0, 7));
+          const cleanupWarn = vi.fn();
           const controller = new AbortController();
           controller.abort(new Error('canceled before handler start'));
           const handler = createDownloadHandler({ source: source(), cacheDirectory });
@@ -588,9 +592,15 @@ describe.skipIf(skipReason !== null)('PostgreSQL download handler', () => {
               database: db,
               signal: controller.signal,
               reportProgress: () => Promise.resolve(),
+              log: { info: vi.fn(), warn: cleanupWarn, error: vi.fn() },
             }),
           ).rejects.toThrow('canceled before handler start');
           await expect(stat(partialPath)).rejects.toMatchObject({ code: 'ENOENT' });
+          await expect(stat(externalPartPath)).resolves.toMatchObject({ size: 7 });
+          expect(cleanupWarn).toHaveBeenCalledWith(
+            { jobId: job.id, storagePath: `.partial/${job.id}.part` },
+            'download partial download cleanup incomplete; orphan file may remain',
+          );
           await expect(
             db
               .selectFrom('map_versions')

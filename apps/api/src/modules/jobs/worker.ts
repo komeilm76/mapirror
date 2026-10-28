@@ -25,6 +25,8 @@ export interface JobHandlerContext {
   readonly signal: AbortSignal;
   /** Reports monotonic byte progress, phase and total-size metadata (writes are throttled). */
   readonly reportProgress: (update: JobProgressUpdate) => Promise<void>;
+  /** Worker logger for handler-owned best-effort cleanup. */
+  readonly log?: WorkerLog;
 }
 
 /** A handler receives a claimed row and may return JSON to store as its result. */
@@ -258,6 +260,7 @@ async function processClaimedJob(
         database: session,
         signal: ownership.signal,
         reportProgress: progress.report,
+        log: options.log,
       });
     } catch (error) {
       handlerFailed = true;
