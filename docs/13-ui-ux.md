@@ -187,8 +187,8 @@ The admin detail URL carries the local country UUID because the cache detail/ver
 | **Job progress** | Indeterminate → determinate bar, `12.3 MB/s · 35 s left`, phase label, cancel button. On failure: error code + human message + retry. |
 | **Charts** | One y-axis, gridlines at 25 %, area fill at 12 % opacity, tooltip on hover showing exact values + time. Colors from the palette; never rely on color alone (label + value). |
 | **Empty states** | Icon + one sentence + the next action as a button. Never a bare table with "No data". |
-| **Error states** | What failed, why (if known), what to do. Retry button. Request id in small mono text for support. |
-| **Toasts** | Bottom-right (admin), success 3 s, error persists with a close button; one toast at a time per action. |
+| **Error states** | What failed, why (if known), what to do. Retry button. Request id in small mono text for support. `apps/web/src/api/error-copy.ts` maps every documented HTTP, browser, job and operational code to human copy plus a next step; inline errors, login refusals and job failure details use that map. |
+| **Toasts** | Bottom-right (admin), success 3 s, error persists with a close button; one toast at a time per action. `notifyApiError()` uses the same code map and carries the request id in small monospace text. |
 | **Skeletons** | Match final layout (same heights) to avoid shift; no spinners for tables. |
 | **Icons** | Material Design Icons only, 20/24 px, consistent stroke; **never emoji** as UI icons. **Not installed yet** (`P1-WEB-07`/`P5-UX-05` choose and add the set): the built CSS has no `.mdi` rule, so an icon name renders an empty `<i>` — an invisible control, or a gap where a glyph should be. Until then, controls that would wear an icon carry a visible text label ("Dismiss", "Show"/"Hide"), Vuetify's default icons are turned off (`:icon="false"`), and a `.mdi` element in the DOM is a **defect** — `tests/login-page.spec.ts` asserts its page renders none (pass 35). |
 

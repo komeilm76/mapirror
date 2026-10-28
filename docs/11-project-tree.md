@@ -139,6 +139,8 @@ mapirror/
 │     │  ├─ api/
 │     │  │  ├─ client.ts           # Bearer JSON client + timeout-free authenticated file streaming
 │     │  │  ├─ errors.ts           # ApiError (server + client codes), endsSession, validationIssues()
+│     │  │  ├─ error-copy.ts       # Exhaustive HTTP/client/job/operational human copy + next steps (P2-WEB-07)
+│     │  │  ├─ notify-error.ts     # Persistent mapped API-error toast with request id (P2-WEB-07)
 │     │  │  └─ index.ts            # createAppApiClient(): the sign-out policy; provideApiClient()
 │     │  ├─ composables/useApi.ts  # useApi(): the client, injected — throws if the app provided none
 │     │  ├─ stores/auth.ts         # The session: token + profile + expiry; signIn/signOut/forget/restore (D-13)

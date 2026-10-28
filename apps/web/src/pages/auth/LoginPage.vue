@@ -36,6 +36,7 @@ import { useIntervalFn } from '@vueuse/core';
 import { computed, onMounted, reactive, ref, useTemplateRef } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+import { errorCopyFor } from '@/api/error-copy';
 import { ApiError, validationIssues } from '@/api/errors';
 import { useApi } from '@/composables/useApi';
 import { safeRedirectTarget } from '@/router/redirect';
@@ -160,13 +161,13 @@ const failureText = computed(() => {
 /** What the reader is told after a refusal: the plain sentence, then the next step. */
 const REFUSALS: Readonly<Record<string, Failure>> = {
   INVALID_CREDENTIALS: {
-    message: 'That username and password do not match.',
-    detail: 'Check the spelling, then try again. An administrator can reset the password.',
+    message: errorCopyFor('INVALID_CREDENTIALS').message,
+    detail: errorCopyFor('INVALID_CREDENTIALS').action,
     requestId: null,
   },
   ACCOUNT_DISABLED: {
-    message: 'This account has been deactivated.',
-    detail: 'Ask an administrator to re-enable it.',
+    message: errorCopyFor('ACCOUNT_DISABLED').message,
+    detail: errorCopyFor('ACCOUNT_DISABLED').action,
     requestId: null,
   },
 };
@@ -178,7 +179,8 @@ const REFUSALS: Readonly<Record<string, Failure>> = {
  */
 function showFailure(cause: unknown): void {
   if (!(cause instanceof ApiError)) {
-    failure.value = { message: 'Signing in did not work.', detail: 'Try again.', requestId: null };
+    const copy = errorCopyFor('UNKNOWN');
+    failure.value = { message: copy.message, detail: copy.action, requestId: null };
     return;
   }
 
@@ -212,8 +214,9 @@ function showFailure(cause: unknown): void {
     return;
   }
 
-  // `NETWORK`, `TIMEOUT`, and anything from a newer server: the client's own sentence already says what to do.
-  failure.value = { message: cause.message, detail: null, requestId: cause.requestId };
+  // Every remaining documented code uses the shared human copy and next-step guidance; the machine code stays hidden.
+  const copy = errorCopyFor(cause.code);
+  failure.value = { message: copy.message, detail: copy.action, requestId: cause.requestId };
 }
 
 /** Clears the server's field errors as soon as the reader changes the field they describe. */

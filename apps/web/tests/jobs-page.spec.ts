@@ -269,7 +269,7 @@ describe('admin job queue and persistent progress drawer', () => {
     );
   });
 
-  it('renders only the safe error detail returned by the job projection', async () => {
+  it('maps a safe job error code to human copy without exposing raw details', async () => {
     const failed: JobView = {
       ...JOB,
       status: 'failed',
@@ -290,9 +290,11 @@ describe('admin job queue and persistent progress drawer', () => {
     await flushPromises();
 
     expect(document.body.textContent).toContain('JOB_HANDLER_FAILED');
+    expect(document.body.textContent).toContain('The job could not be completed.');
     expect(document.body.textContent).toContain(
-      'The job could not be completed. It may be retried.',
+      'The worker retries with backoff while attempts remain; if it ends in failure, start the work again.',
     );
+    expect(document.body.textContent).not.toContain('It may be retried.');
     expect(document.body.textContent).not.toContain('Cancel job');
   });
 });

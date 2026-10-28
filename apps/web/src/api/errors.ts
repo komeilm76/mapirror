@@ -25,6 +25,8 @@
 
 import { isErrorCode, type ErrorCode } from '@mapirror/shared';
 
+import { errorCopyFor } from './error-copy';
+
 /**
  * Codes that only ever originate in the browser. Documented here so that a reader of the error table in `04-api.md`
  * does not go looking for them: the server cannot send any of these.
@@ -63,16 +65,6 @@ export const SESSION_ENDED_CODES = [
   'TOKEN_REVOKED',
   'ACCOUNT_DISABLED',
 ] as const;
-
-/** What the client says when the server said nothing usable. */
-const FALLBACK_MESSAGES: Record<ClientErrorCode | 'SERVER', string> = {
-  NETWORK: 'The server could not be reached. Check your connection and try again.',
-  TIMEOUT: 'The server took too long to answer. Try again.',
-  ABORTED: 'The request was cancelled.',
-  MALFORMED: 'The server sent an answer this page could not read.',
-  UNKNOWN: 'The server refused the request without saying why.',
-  SERVER: 'Something went wrong.',
-};
 
 /** Arguments for {@link ApiError}. */
 export interface ApiErrorInit {
@@ -132,8 +124,7 @@ export class ApiError extends Error {
  * @returns A sentence fit to show a person.
  */
 function messageFor(code: ApiErrorCode): string {
-  if (isErrorCode(code)) return FALLBACK_MESSAGES.SERVER;
-  return FALLBACK_MESSAGES[code];
+  return errorCopyFor(code).message;
 }
 
 /**
@@ -216,7 +207,7 @@ export async function errorFromResponse(response: Response): Promise<ApiError> {
       typeof envelope?.message === 'string' && envelope.message !== ''
         ? envelope.message
         : code === 'UNKNOWN'
-          ? `${FALLBACK_MESSAGES.UNKNOWN} (HTTP ${String(response.status)}.)`
+          ? `${errorCopyFor('UNKNOWN').message} (HTTP ${String(response.status)}.)`
           : undefined,
     details: envelope?.details,
     requestId:

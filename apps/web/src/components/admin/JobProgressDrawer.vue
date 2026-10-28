@@ -18,6 +18,7 @@ import {
 import { computed, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { errorCopyFor } from '@/api/error-copy';
 import { ApiError } from '@/api/errors';
 import { useApi } from '@/composables/useApi';
 import {
@@ -351,7 +352,8 @@ onUnmounted(() => {
 
           <div v-if="job.error" class="mm-job-error" role="alert">
             <strong>{{ job.error.code }}</strong>
-            <p class="ma-0 mt-1">{{ job.error.message }}</p>
+            <p class="ma-0 mt-1">{{ errorCopyFor(job.error.code).message }}</p>
+            <p class="ma-0 mt-1">{{ errorCopyFor(job.error.code).action }}</p>
           </div>
 
           <div v-if="loadErrors[jobId]" class="mm-job-error" role="alert">

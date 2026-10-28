@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { errorCopyFor } from '../src/api/error-copy';
 import {
   ApiError,
   CLIENT_ERROR_CODES,
@@ -135,13 +136,13 @@ describe('when the answer is not the documented envelope', () => {
     expect(error.code).toBe('UNKNOWN');
   });
 
-  it('uses the client sentence for a known code with no message', async () => {
+  it('uses the central code mapping when a known envelope has no message', async () => {
     const error = await errorFromResponse(
       envelopeResponse(envelope({ message: '' }), { status: 409 }),
     );
 
     expect(error.code).toBe('VERSION_DUPLICATE');
-    expect(error.message).toBe('Something went wrong.');
+    expect(error.message).toBe(errorCopyFor('VERSION_DUPLICATE').message);
   });
 });
 

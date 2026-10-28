@@ -60,7 +60,9 @@ function colorFor(kind: 'success' | 'info' | 'error'): string {
     >
       <div>{{ item.message }}</div>
       <div v-if="item.detail" class="text-body-2 mt-1">{{ item.detail }}</div>
-      <div v-if="item.requestId" class="text-caption mt-1">Request {{ item.requestId }}</div>
+      <div v-if="item.requestId" class="mm-mono text-caption mt-1">
+        Request {{ item.requestId }}
+      </div>
 
       <template #actions>
         <v-btn variant="text" size="small" @click="notifications.dismiss(item.id)">Dismiss</v-btn>

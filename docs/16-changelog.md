@@ -3,7 +3,7 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 82 passes · 336 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4, pass 76: 4, pass 77: 4, pass 78: 4, pass 79: 5, pass 80: 7, pass 81: 7, pass 82: 9).
+**Totals:** 83 passes · 344 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4, pass 76: 4, pass 77: 4, pass 78: 4, pass 79: 5, pass 80: 7, pass 81: 7, pass 82: 9, pass 83: 8).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
@@ -134,6 +134,25 @@ P2-WEB-06 replaces the S11 placeholder with the authenticated Jobs screen and a 
 Focused web tests pass (**16 tests across the Catalog, Jobs, and job-presentation specs**), including the accepted Catalog enqueue opening the persistent drawer. Full non-Docker `bun run check` passes: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint, formatting, and **1,189 passed across 90 files; 284 skipped**. The skipped database-dependent tests and Docker/operator tests were not run, per operator direction. The production Vite web build succeeds with the Jobs screen split into a lazy-loaded chunk. Existing Vite config, Vuetify theme migration, and jsdom `scrollTo()` notices remain non-fatal.
 
 **Totals after this pass: 82 passes · 336 defects fixed · 0 open.**
+
+## Pass 83 — 2026-10-28 (the web needed exhaustive error copy and actionable toasts)
+
+P2-WEB-07 adds a shared human-copy map for documented HTTP, browser, safe-job and operational error codes, plus one helper for persistent API-error toasts. Existing safe server-envelope messages remain intact; missing-message fallbacks, login refusals, session-expiry reasons, job failures and mapped toasts now share code-specific copy and recovery guidance.
+
+| # | Bug found in contract/code review | Fix |
+|---|---|---|
+| 1 | Error-code copy was split between generic client fallbacks, a partial session-reason map and login-page literals; most documented server/internal codes had no canonical browser copy | Add a typed complete map with a human sentence and next step for every shared HTTP code, client code, safe job code and operational code |
+| 2 | A known server code with an empty message fell back to the unhelpful catch-all “Something went wrong.” | Use that code's mapped human sentence; continue to preserve a safe message supplied by the server |
+| 3 | Login refusals and session-ending toasts could drift from any future shared error guidance | Drive refusal/fallback copy and session-expiry details from the common map while retaining login-specific field and rate-limit behavior |
+| 4 | Job projections exposed safe error codes/messages but did not consistently tell the administrator what would happen next or what to do | Map each safe job code to human copy and retry/backoff guidance in the persistent drawer; never render raw exception details |
+| 5 | Callers had to assemble error toasts themselves, making actionable copy and request-id handling easy to omit | Add `notifyApiError()` for mapped, persistent errors, with contextual overrides and the envelope request id; keep inline errors inline to avoid duplicate feedback |
+| 6 | Toast request ids were small but not rendered in the documented monospace style | Apply the shared monospace class in `ToastHost.vue` |
+| 7 | No test failed when a shared API, internal, job or browser code was added without UI copy | Compare the runtime map to `ERROR_STATUS`, `INTERNAL_ERROR_CODES`, `JobErrorSchema` and `CLIENT_ERROR_CODES`; verify non-empty human sentences/actions and toast lifecycle/context |
+| 8 | The task and UX docs did not state where complete code mapping lives or how mapped copy reaches toasts | Mark P2-WEB-07 complete and document the map/helper in the task table, project tree and UI error/toast standards |
+
+Focused error-copy, client, session, login, job-drawer, toast-host and notification tests pass: **82 tests across seven specs**. Full non-Docker `bun run check` passes: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint, formatting, and **1,193 passed across 91 files; 284 skipped**. The skipped database-dependent tests and Docker/operator tests were not run, per operator direction. The production Vite web build succeeds. Existing Vite config, Vuetify theme migration and jsdom `scrollTo()` notices remain non-fatal.
+
+**Totals after this pass: 83 passes · 344 defects fixed · 0 open.**
 
 ## Pass 78 — 2026-10-28 (the catalog needed source-version selection and a working download action)
 

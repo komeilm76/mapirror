@@ -38,6 +38,8 @@ import type { useNotifications } from '@/stores/notifications';
 import { areaForPath } from '@/theme/policy';
 
 import { createApiClient, type ApiClient } from './client';
+import { errorCopyFor } from './error-copy';
+import { notifyApiError } from './notify-error';
 
 /** The injection key `useApi()` reads. A symbol, so two copies of this module cannot collide. */
 export const API_CLIENT_KEY: InjectionKey<ApiClient> = Symbol('mapirror.api-client');
@@ -70,14 +72,6 @@ export interface AppApiOptions {
 /** The sentence a dead session shows. Deliberately about the session, not about the request that noticed. */
 export const SESSION_ENDED_MESSAGE = 'Your session has ended. Sign in again.';
 
-/** What each ending means, in the reader's terms, taken from the API's own four verdicts (`04-api.md` §1). */
-const REASON: Record<string, string> = {
-  UNAUTHENTICATED: 'This browser is no longer signed in.',
-  TOKEN_EXPIRED: 'The sign-in expired.',
-  TOKEN_REVOKED: 'The session was signed out elsewhere.',
-  ACCOUNT_DISABLED: 'This account has been deactivated.',
-};
-
 /**
  * Builds the client the SPA uses, with the sign-out policy attached.
  *
@@ -98,9 +92,12 @@ export function createAppApiClient(options: AppApiOptions): ApiClient {
       if (readToken() === null) return;
 
       forgetToken();
-      notifications.error(SESSION_ENDED_MESSAGE, {
-        detail: REASON[error.code] ?? 'Sign in again to continue.',
-        requestId: error.requestId,
+      notifyApiError(notifications, error, {
+        message: SESSION_ENDED_MESSAGE,
+        detail:
+          error.code === 'UNKNOWN'
+            ? 'Sign in again to continue.'
+            : errorCopyFor(error.code).message,
       });
 
       const current = router.currentRoute.value;
