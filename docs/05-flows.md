@@ -229,7 +229,12 @@ sequenceDiagram
   API-->>A: rows with cache.cached=false → Download button
   A->>API: GET /catalog/regions/finland/snapshots
   API-->>A: current snapshots + cached flags; on outage, cached source versions only + sourceReachable=false
-  A->>API: POST /cache/downloads {countryId, version}
+  alt moving latest selection
+    A->>API: POST /cache/downloads {countryId, version: latest}
+  else pinned offered date
+    A->>API: POST /cache/:countryId/versions {version}
+    API->>G: resolve and confirm snapshot is still offered (410 if gone)
+  end
   API->>API: validate + statfs preflight (ceil(size × 1.1) + reserve)
   API->>Q: INSERT job (queued)
   API-->>A: 202 {jobId}

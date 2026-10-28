@@ -3,7 +3,7 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 71 passes · 276 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8).
+**Totals:** 72 passes · 283 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
@@ -44,6 +44,22 @@ Real-PostgreSQL route tests exercise authentication, row/cache projection, name 
 
 **Totals after this pass: 66 passes · 244 defects fixed · 0 open.**
 
+## Pass 72 — 2026-10-28 (cache version reads and pinned downloads needed a strict admin contract)
+
+P2-API-07 implements a paginated stored-version list and a specific dated Geofabrik snapshot admission route. The list explicitly includes ready, pending, and failed rows, while pinned downloads share the source, cache, disk, and queue admission path with the existing generic download endpoint.
+
+| # | Bug found in contract/code review | Fix |
+|---|---|---|
+| 1 | Both documented `/_admin/api/cache/:countryId/versions` endpoints were absent, so version history and pinned admission had no implementation | Register authenticated GET/POST handlers with the required `200`/`202`, validation, not-found, gone, and admission error outcomes |
+| 2 | “Same item shape as above” referenced cache detail's `status: ready`, while the existing version repository lists pending/failed rows too; the list projection was ambiguous | Explicitly return all stored states; ready rows sort newest-ready first, pending/failed rows newest-created first, with a strict status union and no storage/failure internals |
+| 3 | `listMapVersions` materializes every version and includes internal columns, which is unsuitable for a paginated endpoint and risks accidental data exposure | Add a SQL-limited safe projection plus count; read cache existence, page, and count in one repeatable-read transaction |
+| 4 | The version query, item/response, and pinned-date body had no shared strict schemas, leaving unknown query/body keys, `latest`, and large byte counts unpinned | Add exported Zod contracts; accept only six-digit dates on the pinned endpoint and serialize int8 bytes exactly as number-or-decimal-string |
+| 5 | Copying the generic download route's source/cache/disk/enqueue logic into the dated route would let two admission paths drift | Factor one admission routine used by both routes; it verifies the source still offers the snapshot, checks cached identity, creates/preflights the cache root, and enqueues with admin attribution |
+| 6 | The security sweep still expected every newly added route to be a `503` stub, and no PostgreSQL tests covered statuses, paging, private fields, offered/gone dates, or auth on these paths | Update the credential-transport assertions and add real-PostgreSQL/source-fixture route tests for paging/order, JSON precision, status projection, no leakage, validation, 404/410/409/502/202, and job attribution |
+| 7 | Pass 71's footer said 275 defects although its eight review findings raised the correct preceding total of 268 to 276 | Correct the historical footer and keep the changelog's per-pass sum, header total, and latest pass footer aligned |
+
+Three targeted mutation probes were killed: dropping `NULLS LAST` moved pending/failed rows ahead of ready rows; coercing int8 size to `Number` made the strict response fail on an unsafe integer; and bypassing the cached-country guard changed the documented uncached `404` into a `500`. Targeted cache-download and credential-transport suites passed **17 tests**. Full non-Docker `bun run check` passes: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint and formatting; **1,410 passed across 109 files, 0 skipped** with local PostgreSQL 16.2. No Docker runtime/operator tests were run. **Totals after this pass: 72 passes · 283 defects fixed · 0 open.**
+
 ## Pass 71 — 2026-10-28 (cache removal needed cooperative cleanup and enqueue-safe file deletion)
 
 P2-API-06 adds typed, authenticated cache removal while retaining the catalog country. Version/cache rows and `cache.delete_country` audit commit together; safe storage unlink happens afterward, with orphan logging on failure. Existing workers must finish cooperative cancellation before data/files are removed, and per-country advisory locks serialize download admission, active file streams, and post-commit unlink.
@@ -61,7 +77,7 @@ P2-API-06 adds typed, authenticated cache removal while retaining the catalog co
 
 Three targeted mutation probes were killed: omitting download enqueue's advisory lock let the enqueue proceed while the delete-side session lock was held; propagating a file-unlink error changed the expected `204` to `500`; and omitting the delete-side exclusive lock removed a file while a simulated active stream held its shared lock. Full non-Docker `bun run check` passes: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint and formatting; **1,397 passed across 109 files, 7 skipped** with local PostgreSQL 16.2. The seven skipped cases are the existing server-absent DB probes, intentionally disabled while the local server is available. Docker runtime/operator tests remain excluded per operator direction.
 
-**Totals after this pass: 71 passes · 275 defects fixed · 0 open.**
+**Totals after this pass: 71 passes · 276 defects fixed · 0 open.**
 
 ## Pass 70 — 2026-10-28 (cache reads needed cached-only lists and live detail state)
 

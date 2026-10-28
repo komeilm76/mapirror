@@ -210,6 +210,8 @@ describe.skipIf(skipReason !== null)(
             route === 'GET /_admin/api/catalog/regions/:slug' ||
             route === 'GET /_admin/api/catalog/regions/:slug/snapshots' ||
             route === 'GET /_admin/api/cache/:countryId' ||
+            route === 'GET /_admin/api/cache/:countryId/versions' ||
+            route === 'POST /_admin/api/cache/:countryId/versions' ||
             route === 'POST /_admin/api/cache/downloads' ||
             route === 'DELETE /_admin/api/cache/:countryId'
           ) {

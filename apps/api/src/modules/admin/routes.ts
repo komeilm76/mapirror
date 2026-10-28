@@ -12,9 +12,13 @@ import type { FastifyPluginCallback } from 'fastify';
 
 import type { AppConfig } from '../../config/env';
 import { createGeofabrikMapSource } from '../geofabrik/map-source';
-import { createCacheDownloadHandler } from './cache-download-route';
+import {
+  createCacheDownloadHandler,
+  createCacheSpecificVersionHandler,
+} from './cache-download-route';
 import { createCacheDeleteHandler } from './cache-delete-route';
 import { getCacheDetail, getCacheList } from './cache-route';
+import { getCacheVersions } from './cache-versions-route';
 import { createCatalogRegionHandlers } from './catalog-region-route';
 import { getCatalog } from './catalog-route';
 import { postCatalogSync } from './catalog-sync-route';
@@ -29,6 +33,10 @@ export const adminRoutes: FastifyPluginCallback<AdminRouteOptions> = (app, optio
   const source = createGeofabrikMapSource(options.config.geofabrikBaseUrl);
   const regionHandlers = createCatalogRegionHandlers(source);
   const cacheDownload = createCacheDownloadHandler({ config: options.config, source });
+  const cacheSpecificVersion = createCacheSpecificVersionHandler({
+    config: options.config,
+    source,
+  });
   const cacheDelete = createCacheDeleteHandler({ config: options.config });
   app.get('/catalog', getCatalog);
   app.post('/catalog/sync', postCatalogSync);
@@ -36,6 +44,8 @@ export const adminRoutes: FastifyPluginCallback<AdminRouteOptions> = (app, optio
   app.get('/catalog/regions/:slug/snapshots', regionHandlers.getSnapshots);
   app.get('/cache', getCacheList);
   app.get('/cache/:countryId', getCacheDetail);
+  app.get('/cache/:countryId/versions', getCacheVersions);
+  app.post('/cache/:countryId/versions', cacheSpecificVersion);
   app.delete('/cache/:countryId', cacheDelete);
   app.post('/cache/downloads', cacheDownload);
 };

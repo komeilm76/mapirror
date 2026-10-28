@@ -29,6 +29,7 @@ export * from './auth';
 export * from './catalog';
 export * from './cache-download';
 export * from './cache';
+export * from './cache-versions';
 export * from './catalog-region';
 export * from './constants';
 export * from './errors';

@@ -409,13 +409,24 @@ Body: `{ "countryIds": ["…"] }` (omit ⇒ all cached). `202 { "jobId": "…" }
 
 #### `GET /_admin/api/cache/:countryId/versions`
 
-Paginated version list (same item shape as above) + `meta`.
+Returns all stored version rows for a cached country (ready, pending, and failed), paginated with `page` and `limit`
+(default 25, maximum 100). Unknown query keys return `400 VALIDATION_ERROR`; malformed UUIDs return `400`, and an
+uncached or unknown country returns `404 NOT_FOUND`. Rows use the same base item fields as cache detail, with `status`
+set to the stored state (`pending|ready|failed`): `id`, `version`, `origin`, `dataTimestamp`, `sizeBytes`, `checksumMd5`,
+`status`, and `createdAt`. Ready versions sort newest-ready first; pending/failed versions follow newest-created first.
+The response contains `{ data, meta: { page, limit, total, totalPages } }`. Storage paths and failure details are not
+returned. Byte counts are JSON integers when safe and decimal strings otherwise.
 
 #### `POST /_admin/api/cache/:countryId/versions`
 
-Download **one specific version** (GEO-4 / CACHE-1): body `{ "version": "261023" }` → `202 { jobId }`.
-Unlike `downloads`, this refuses `latest` (use `downloads` for that) and requires the snapshot to be
-currently offered — otherwise `410 SOURCE_VERSION_GONE`.
+Download **one specific Geofabrik snapshot** (GEO-4 / CACHE-1): body `{ "version": "261023" }` → `202 { "jobId": "…" }`.
+The country must exist in the Geofabrik catalog (otherwise `404 NOT_FOUND`); it need not already have a cache row, so
+the first dated version can be admitted here. The version must be a six-digit date and currently offered by the source. This endpoint refuses `latest`
+with `400 VALIDATION_ERROR` (use `POST /cache/downloads` for that); a dated snapshot no longer offered returns
+`410 SOURCE_VERSION_GONE`. A ready local version returns `409 VERSION_ALREADY_CACHED`; an active duplicate returns
+`409 JOB_ALREADY_RUNNING`; upstream failure returns `502 SOURCE_UNAVAILABLE`; disk preflight failure returns
+`503 DISK_FULL`. Admission shares the generic download route's cache identity check, source resolution, reserve-aware
+disk preflight, and race-safe queue insert.
 
 #### `DELETE /_admin/api/cache/:countryId/versions/:versionId?confirm=true`
 
