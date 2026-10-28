@@ -1,19 +1,12 @@
-import { readFileSync } from 'node:fs';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
-
 import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp, parseEnv } from '../../src/index';
 import { issueToken } from '../../src/modules/auth/tokens';
 import { dsnFor, freshDatabaseSkipReason, withFreshDatabase } from '../helpers/fresh-db';
+import { withGeofabrikFixtureServer } from '../helpers/geofabrik-fixture-server';
 
 const skipReason = await freshDatabaseSkipReason();
-const finlandPage = readFileSync(
-  new URL('../../src/modules/geofabrik/fixtures/finland.html', import.meta.url),
-  'utf8',
-);
 const readyAt = new Date('2026-10-24T06:00:00.000Z');
 const checksum = '0123456789abcdef0123456789abcdef';
 
@@ -108,24 +101,14 @@ async function withSourceServer(
   pageStatus: number,
   run: (baseUrl: string, requestedPaths: string[]) => Promise<void>,
 ) {
-  const requestedPaths: string[] = [];
-  const server = createServer((request, response) => {
-    requestedPaths.push(request.url ?? '');
-    response.writeHead(pageStatus, { 'content-type': 'text/html; charset=utf-8' });
-    response.end(pageStatus === 200 ? finlandPage : 'temporarily unavailable');
-  });
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
-  });
-  const address = server.address() as AddressInfo;
-  try {
-    await run(`http://127.0.0.1:${address.port}`, requestedPaths);
-  } finally {
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => (error === undefined ? resolve() : reject(error)));
-    });
-  }
+  await withGeofabrikFixtureServer(
+    { statusByPath: { '/europe/finland.html': pageStatus } },
+    ({ baseUrl, requests }) =>
+      run(
+        baseUrl,
+        requests.map((request) => request.replace(/^[^ ]+ /u, '')),
+      ),
+  );
 }
 
 function getRegion(app: FastifyInstance, token: string, slug: string) {

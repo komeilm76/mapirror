@@ -1,9 +1,6 @@
-import { readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
 
 import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
@@ -11,14 +8,10 @@ import { describe, expect, it } from 'vitest';
 import { buildApp, parseEnv } from '../../src/index';
 import { issueToken } from '../../src/modules/auth/tokens';
 import { dsnFor, freshDatabaseSkipReason, withFreshDatabase } from '../helpers/fresh-db';
+import { withGeofabrikFixtureServer } from '../helpers/geofabrik-fixture-server';
 
 const skipReason = await freshDatabaseSkipReason();
 type InjectResponse = Awaited<ReturnType<FastifyInstance['inject']>>;
-const finlandPage = readFileSync(
-  new URL('../../src/modules/geofabrik/fixtures/finland.html', import.meta.url),
-  'utf8',
-);
-
 interface SourceServerOptions {
   readonly pageStatus?: number;
   readonly pbfStatus?: number;
@@ -28,34 +21,20 @@ async function withSourceServer(
   options: SourceServerOptions,
   run: (baseUrl: string, requests: string[]) => Promise<void>,
 ) {
-  const requests: string[] = [];
-  const server = createServer((request, response) => {
-    const path = request.url ?? '';
-    requests.push(`${request.method ?? 'GET'} ${path}`);
-    if (path.endsWith('.html')) {
-      response.writeHead(options.pageStatus ?? 200, { 'content-type': 'text/html; charset=utf-8' });
-      response.end((options.pageStatus ?? 200) === 200 ? finlandPage : 'upstream unavailable');
-      return;
+  const statusByPath: Record<string, number> = {};
+  if (options.pageStatus !== undefined) statusByPath['/europe/finland.html'] = options.pageStatus;
+  if (options.pbfStatus !== undefined) {
+    for (const path of [
+      '/europe/finland-latest.osm.pbf',
+      '/europe/finland-261023.osm.pbf',
+      '/europe/finland-261016.osm.pbf',
+    ]) {
+      statusByPath[path] = options.pbfStatus;
     }
-    response.writeHead(options.pbfStatus ?? 200, {
-      'content-length': '100',
-      etag: '"finland-pbf-v1"',
-      'last-modified': 'Fri, 23 Oct 2026 20:20:51 GMT',
-    });
-    response.end();
-  });
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
-  });
-  const address = server.address() as AddressInfo;
-  try {
-    await run(`http://127.0.0.1:${address.port}`, requests);
-  } finally {
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => (error === undefined ? resolve() : reject(error)));
-    });
   }
+  await withGeofabrikFixtureServer({ statusByPath }, ({ baseUrl, requests }) =>
+    run(baseUrl, requests),
+  );
 }
 
 async function withDownloadApp(

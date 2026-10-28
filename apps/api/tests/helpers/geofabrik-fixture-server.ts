@@ -1,0 +1,298 @@
+/**
+ * Reusable local-only Geofabrik HTTP fixture for API tests (`P2-TST-01`).
+ *
+ * The server implements the provider's small, observable HTTP surface: index JSON, region HTML, PBF `HEAD`/`GET`, byte
+ * ranges, and MD5 sidecars. All payloads are checked-in fixtures or deterministic in-memory bytes; requests never leave
+ * loopback. The PBF payload is intentionally tiny because the download handler treats it as an opaque byte stream.
+ *
+ * @module tests/helpers/geofabrik-fixture-server
+ */
+
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
+
+/** Optional deterministic failure and transfer behavior for a fixture server instance. */
+export interface GeofabrikFixtureServerOptions {
+  /** HTTP status overrides keyed by URL pathname, e.g. `/europe/finland.html` or a `.osm.pbf` path. */
+  readonly statusByPath?: Readonly<Record<string, number>>;
+  /** Whether GET requests with a valid Range header receive a partial response. Defaults to `honor`. */
+  readonly rangeMode?: 'honor' | 'ignore';
+}
+
+/** A running offline Geofabrik fixture with its loopback origin and a request audit trail. */
+export interface GeofabrikFixtureServer {
+  /** Loopback base URL suitable for `GEOFABRIK_BASE_URL`. */
+  readonly baseUrl: string;
+  /** HTTP method and URL recorded in arrival order. */
+  readonly requests: string[];
+  /** Stops accepting requests and waits for active connections to close. */
+  close(): Promise<void>;
+}
+
+/** A deliberately small deterministic byte stream served under `.osm.pbf` names. */
+// Pre-encoded minimal OSM PBF (OSMHeader + empty OSMData), checked in as hex so its bytes do not depend on zlib version.
+export const GEOFABRIK_PBF_FIXTURE = Buffer.from(
+  '0000000d0a094f534d486561646572183510291a31789c53e2f32fce0d4ece48cd4dd40d33d0336b6214f34d2cf0cd2c2aca2f5228492d2e5148cbac28292d4a050010610e010000000b0a074f534d44617461180f10031a0b789ce3626400000023000c',
+  'hex',
+);
+
+/** MD5 of {@link GEOFABRIK_PBF_FIXTURE}, matching the provider's sidecar format. */
+export const GEOFABRIK_PBF_FIXTURE_MD5 = createHash('md5')
+  .update(GEOFABRIK_PBF_FIXTURE)
+  .digest('hex');
+
+const PBF_FILES = new Set([
+  '/europe-latest.osm.pbf',
+  '/europe-261023.osm.pbf',
+  '/europe-261016.osm.pbf',
+  '/europe/finland-latest.osm.pbf',
+  '/europe/finland-261023.osm.pbf',
+  '/europe/finland-261016.osm.pbf',
+  '/europe/monaco-latest.osm.pbf',
+  '/europe/monaco-261022.osm.pbf',
+]);
+
+const REGION_PAGES = new Map<string, URL>([
+  ['/europe.html', new URL('../../src/modules/geofabrik/fixtures/europe.html', import.meta.url)],
+  [
+    '/europe/finland.html',
+    new URL('../../src/modules/geofabrik/fixtures/finland.html', import.meta.url),
+  ],
+  [
+    '/europe/monaco.html',
+    new URL('../../src/modules/geofabrik/fixtures/monaco.html', import.meta.url),
+  ],
+]);
+
+/**
+ * Starts a loopback HTTP server that provides the checked-in Geofabrik pages and a tiny PBF with matching metadata.
+ *
+ * @param options - Per-path status overrides and range behavior.
+ * @returns The local origin, observed requests, and an async cleanup method.
+ */
+export async function startGeofabrikFixtureServer(
+  options: GeofabrikFixtureServerOptions = {},
+): Promise<GeofabrikFixtureServer> {
+  const requests: string[] = [];
+  const pages = new Map<string, string>();
+  let fixtureOrigin = '';
+  await Promise.all(
+    [...REGION_PAGES].map(async ([path, url]) => {
+      pages.set(path, await readFile(url, 'utf8'));
+    }),
+  );
+
+  const server = createServer((request, response) => {
+    const pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
+    requests.push(`${request.method ?? 'GET'} ${request.url ?? '/'}`);
+    const statusOverrides = options.statusByPath;
+    const forcedStatus =
+      statusOverrides !== undefined && Object.hasOwn(statusOverrides, pathname)
+        ? statusOverrides[pathname]
+        : undefined;
+    if (forcedStatus !== undefined && forcedStatus !== 200) {
+      response.writeHead(forcedStatus, { 'content-type': 'text/plain; charset=utf-8' });
+      response.end(request.method === 'HEAD' ? undefined : 'fixture response override');
+      return;
+    }
+
+    if (pathname === '/index-v1-nogeom.json' && request.method === 'GET') {
+      const index = makeIndex(fixtureOrigin);
+      send(response, 200, 'application/json; charset=utf-8', Buffer.from(JSON.stringify(index)));
+      return;
+    }
+
+    const page = pages.get(pathname);
+    if (page !== undefined && request.method === 'GET') {
+      send(response, 200, 'text/html; charset=utf-8', Buffer.from(page));
+      return;
+    }
+
+    if (PBF_FILES.has(pathname)) {
+      servePbf(request, response, options.rangeMode ?? 'honor');
+      return;
+    }
+
+    const pbfPath = pathname.endsWith('.md5') ? pathname.slice(0, -4) : null;
+    if (pbfPath !== null && PBF_FILES.has(pbfPath) && request.method === 'GET') {
+      const filename = pbfPath.slice(pbfPath.lastIndexOf('/') + 1);
+      const sidecar = `${GEOFABRIK_PBF_FIXTURE_MD5}  ${filename}\n`;
+      send(response, 200, 'text/plain; charset=utf-8', Buffer.from(sidecar));
+      return;
+    }
+
+    response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+    response.end(request.method === 'HEAD' ? undefined : 'fixture not found');
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error): void => reject(error);
+    server.once('error', onError);
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', onError);
+      resolve();
+    });
+  });
+  const address = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${String(address.port)}`;
+  fixtureOrigin = baseUrl;
+
+  return {
+    baseUrl,
+    requests,
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => (error === undefined ? resolve() : reject(error)));
+      }),
+  };
+}
+
+/** Starts the fixture, invokes a test callback, and closes the server even when the callback fails. */
+export async function withGeofabrikFixtureServer<T>(
+  options: GeofabrikFixtureServerOptions,
+  run: (fixture: GeofabrikFixtureServer) => Promise<T>,
+): Promise<T> {
+  const fixture = await startGeofabrikFixtureServer(options);
+  try {
+    return await run(fixture);
+  } finally {
+    await fixture.close();
+  }
+}
+
+function makeIndex(origin: string) {
+  const features = [
+    {
+      id: 'europe',
+      parent: null,
+      name: 'Europe',
+      isoAlpha2: [],
+      isoOther: [],
+      path: '/europe-latest.osm.pbf',
+    },
+    {
+      id: 'europe/finland',
+      parent: 'europe',
+      name: 'Finland',
+      isoAlpha2: ['FI'],
+      isoOther: ['FI-01'],
+      path: '/europe/finland-latest.osm.pbf',
+    },
+    {
+      id: 'europe/monaco',
+      parent: 'europe',
+      name: 'Monaco',
+      isoAlpha2: ['MC'],
+      isoOther: [],
+      path: '/europe/monaco-latest.osm.pbf',
+    },
+  ];
+  return {
+    type: 'FeatureCollection',
+    features: features.map(({ id, parent, name, isoAlpha2, isoOther, path }) => ({
+      type: 'Feature',
+      properties: {
+        id,
+        parent,
+        name,
+        'iso3166-1:alpha2': isoAlpha2,
+        'iso3166-2': isoOther,
+        urls: { pbf: `${origin}${path}` },
+      },
+    })),
+  };
+}
+
+function servePbf(
+  request: IncomingMessage,
+  response: ServerResponse,
+  rangeMode: 'honor' | 'ignore',
+): void {
+  const commonHeaders = {
+    'accept-ranges': 'bytes',
+    etag: '"mapirror-fixture-pbf-v1"',
+    'last-modified': 'Fri, 23 Oct 2026 20:20:51 GMT',
+  };
+
+  if (request.method === 'HEAD') {
+    response.writeHead(200, {
+      ...commonHeaders,
+      'content-length': String(GEOFABRIK_PBF_FIXTURE.byteLength),
+    });
+    response.end();
+    return;
+  }
+  if (request.method !== 'GET') {
+    response.writeHead(405, { allow: 'GET, HEAD' });
+    response.end();
+    return;
+  }
+
+  const range = rangeMode === 'honor' ? parseRange(request.headers.range) : null;
+  if (range === 'invalid') {
+    response.writeHead(416, {
+      ...commonHeaders,
+      'content-range': `bytes */${String(GEOFABRIK_PBF_FIXTURE.byteLength)}`,
+      'content-length': '0',
+    });
+    response.end();
+    return;
+  }
+  if (range !== null) {
+    const chunk = GEOFABRIK_PBF_FIXTURE.subarray(range.start, range.end + 1);
+    response.writeHead(206, {
+      ...commonHeaders,
+      'content-range': `bytes ${String(range.start)}-${String(range.end)}/${String(GEOFABRIK_PBF_FIXTURE.byteLength)}`,
+      'content-length': String(chunk.byteLength),
+      'content-type': 'application/octet-stream',
+    });
+    response.end(chunk);
+    return;
+  }
+
+  send(
+    response,
+    200,
+    'application/octet-stream',
+    Buffer.from(GEOFABRIK_PBF_FIXTURE),
+    commonHeaders,
+  );
+}
+
+function parseRange(value: string | undefined): { start: number; end: number } | 'invalid' | null {
+  if (value === undefined) return null;
+  const match = /^bytes=(\d+)-(\d*)$/u.exec(value.trim());
+  if (match === null) return 'invalid';
+  const startText = match[1];
+  const endText = match[2];
+  if (startText === undefined || endText === undefined) return 'invalid';
+  const start = Number(startText);
+  const requestedEnd = endText === '' ? GEOFABRIK_PBF_FIXTURE.byteLength - 1 : Number(endText);
+  if (
+    !Number.isSafeInteger(start) ||
+    !Number.isSafeInteger(requestedEnd) ||
+    start < 0 ||
+    requestedEnd < start ||
+    start >= GEOFABRIK_PBF_FIXTURE.byteLength
+  ) {
+    return 'invalid';
+  }
+  return { start, end: Math.min(requestedEnd, GEOFABRIK_PBF_FIXTURE.byteLength - 1) };
+}
+
+function send(
+  response: ServerResponse,
+  status: number,
+  contentType: string,
+  body: Buffer,
+  headers: Record<string, string> = {},
+): void {
+  response.writeHead(status, {
+    'content-type': contentType,
+    'content-length': String(body.byteLength),
+    ...headers,
+  });
+  response.end(body);
+}

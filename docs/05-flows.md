@@ -269,9 +269,10 @@ summary; no duplicate active job; disk preflight before enqueue; the preflight r
 the configured reserve; queued cancellation is immediate; running cancellation leaves no `.partial/<job>.part` before its
 terminal state. Cancellation targets ≤2 s for a cooperative handler; arbitrary blocking code is not forcibly interrupted.
 **Tests:** P2-JOB-05 worker integration tests use an injected offline transport for byte-identical happy path, sidecar MD5,
-Range resume, server-ignored Range restart, checksum mismatch, cancellation cleanup, and simulated `ENOSPC`. P2-TST-01/02
-remain responsible for the shared fixture HTTP server and full download suite; disk preflight is covered by P2-JOB-04,
-duplicate detection and conflict translation by P2-JOB-07, and the route-level `409` by P2-API-04.
+Range resume, server-ignored Range restart, checksum mismatch, cancellation cleanup, and simulated `ENOSPC`. P2-TST-01
+provides the shared loopback fixture server for the index, region pages, PBF bytes, metadata, ranges and MD5 sidecars;
+P2-TST-02 remains responsible for the full download suite. Disk preflight is covered by P2-JOB-04, duplicate detection
+and conflict translation by P2-JOB-07, and the route-level `409` by P2-API-04.
 
 ---
 
