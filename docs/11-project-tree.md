@@ -153,6 +153,7 @@ mapirror/
 │     │  │  ├─ tokens.css          # --mm-* spacing/radius/motion/focus, focus ring, reduced motion
 │     │  │  ├─ shell.css           # exists: skip link and the breadcrumb trail (P1-WEB-07)
 │     │  │  ├─ catalog.css         # exists: responsive catalog table/cards (P2-WEB-01)
+│     │  │  ├─ cache.css            # exists: sortable responsive cache table/cards (P2-WEB-03)
 │     │  │  └─ typography.css      # @font-face (Space Grotesk, 22 kB) + the type roles
 │     │  ├─ assets/fonts/          # space-grotesk-latin-wght.woff2 + OFL.txt
 │     │  ├─ stores/                # notifications + auth (exist), catalog, cache, versions,
@@ -167,7 +168,8 @@ mapirror/
 │     │  │  ├─ PlaceholderPage.vue       # Shared fallback for admin screens not built yet
 │     │  │  ├─ auth/LoginPage.vue        # exists (P1-WEB-06): the one page outside /_site
 │     │  │  ├─ admin/CatalogPage.vue     # exists (P2-WEB-01): filters, sort, pagination, responsive table/cards
-│     │  │  ├─ admin/{Dashboard,Cache,CountryDetail,Intervals,Import,Jobs,
+│     │  │  ├─ admin/CachePage.vue        # exists (P2-WEB-03): cache list, size sort, URL filters, table/cards
+│     │  │  ├─ admin/{Dashboard,CountryDetail,Intervals,Import,Jobs,
 │     │  │  │        System,Settings,Audit}Page.vue
 │     │  │  ├─ public/{Home,CountryDetail,ApiDocs,NotFound}Page.vue  # HomePage + NotFoundPage exist
 │     │  ├─ components/

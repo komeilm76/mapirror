@@ -217,12 +217,14 @@ describe('the topbar', () => {
   it('asks nobody when the profile is already known', async () => {
     // A second navigation into the admin area must not re-ask for a name the store already holds.
     const { fetchImpl, router } = await mountAdmin({ at: adminPagePaths.dashboard() });
-    const calls = fetchImpl.mock.calls.length;
+    const profileCalls = fetchImpl.mock.calls.filter(([url]) => url === '/_auth/api/me').length;
 
     await router.push(adminPagePaths.cache());
     await flushPromises();
 
-    expect(fetchImpl.mock.calls.length).toBe(calls);
+    expect(fetchImpl.mock.calls.filter(([url]) => url === '/_auth/api/me')).toHaveLength(
+      profileCalls,
+    );
   });
 
   it('sends a catalog search to the catalog screen, in the URL', async () => {

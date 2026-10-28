@@ -223,6 +223,50 @@ describe.skipIf(skipReason !== null)('GET /_admin/api/cache', () => {
     });
   });
 
+  it('sorts the cache size column by local cached bytes rather than source-size hints', async () => {
+    await withCacheApp(async ({ app, token }) => {
+      await app.db.db
+        .insertInto('countries')
+        .values([
+          {
+            source_id: 'europe/sweden',
+            parent_id: 'europe',
+            slug: 'sweden',
+            name: 'Sweden',
+            source_size_hint_bytes: 10_000_000_000,
+          },
+          {
+            source_id: 'europe/norway',
+            parent_id: 'europe',
+            slug: 'norway',
+            name: 'Norway',
+            source_size_hint_bytes: 20_000_000_000,
+          },
+        ])
+        .execute();
+      const added = await app.db.db
+        .selectFrom('countries')
+        .select(['id', 'slug'])
+        .where('slug', 'in', ['sweden', 'norway'])
+        .execute();
+      await app.db.db
+        .insertInto('country_cache')
+        .values([
+          { country_id: added.find(({ slug }) => slug === 'sweden')!.id, total_size_bytes: 100 },
+          { country_id: added.find(({ slug }) => slug === 'norway')!.id, total_size_bytes: 300 },
+        ])
+        .execute();
+
+      const response = await getCache(app, token, '?sort=size&order=asc');
+      expect(response.statusCode).toBe(200);
+      expect(CacheListResponseSchema.parse(response.json()).data.map(({ slug }) => slug)).toEqual([
+        'sweden',
+        'norway',
+        'finland',
+      ]);
+    });
+  });
+
   it('rejects unauthenticated requests and unknown query keys', async () => {
     await withCacheApp(async ({ app, token }) => {
       const unauthorized = await app.inject({ method: 'GET', url: '/_admin/api/cache' });

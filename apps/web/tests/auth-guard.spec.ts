@@ -233,6 +233,6 @@ describe('the app router ships with the guard already on', () => {
     const { container, router } = await mountAt(`${ADMIN_ROOT}/cache`);
 
     expect(router.currentRoute.value.path).toBe(`${ADMIN_ROOT}/cache`);
-    expect(container.textContent).toContain('Screen S7');
+    expect(container.querySelector('h1')?.textContent).toBe('Cached countries');
   });
 });

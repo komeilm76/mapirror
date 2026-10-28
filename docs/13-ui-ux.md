@@ -160,7 +160,7 @@ yet. Until then `font-display: swap` means text paints in the fallback face firs
 | S4 | `/_site/api-docs` | API documentation | endpoint list, copyable curl, error codes | — |
 | S5 | `/_site/admin/` | Dashboard | 4 stat cards, CPU/RAM/disk charts, updates, jobs | "No data yet — sampling…" |
 | S6 | `/_site/admin/catalog` | Search Geofabrik | search, continent, cache filter, table with Download | "No country matches" |
-| S7 | `/_site/admin/cache` | Cached countries | table: name, versions, size, public switch, update badge, actions | "Nothing cached yet — pick a country" |
+| S7 | `/_site/admin/cache` | Cached countries | search/update filter; sortable, paginated table: name, ready versions, local size, public/private state, update badge, catalog sync/source-download times | "Nothing cached yet — browse catalog" |
 | S8 | `/_site/admin/cache/:slug` | Country detail | versions table, public toggle, check update, active jobs | — |
 | S9 | `/_site/admin/intervals` | Schedules | list + create button, next run, last status | "No intervals yet" |
 | S10 | `/_site/admin/import` | Upload | dropzone, country select, version, submit, progress | — |
@@ -174,7 +174,7 @@ yet. Until then `font-display: swap` means text paints in the fallback face firs
 
 | Component | Rules |
 |---|---|
-| **Cache table** | Sticky header; columns: Country · Versions · Size · Public · Update · Actions. Row hover reveals a subtle background; actions are icon buttons with tooltips + aria-labels. On `< 768 px` it becomes stacked cards. |
+| **Cache table** | Sticky header; columns: Country · Ready versions · Local size · Public state · Update · Catalog synced. Sort and pagination state live in the URL; `size` means local cached bytes. Row hover reveals a subtle background. On `< 768 px` it becomes stacked cards, never a horizontal scroller. The cache list shows public/private state only; the switch belongs to P3-WEB-06 and per-country actions belong to P2-WEB-04/05. |
 | **Public switch** | `v-switch` with an inline label + immediate optimistic update; on failure, revert + toast. Disabled with a tooltip when no ready version. |
 | **Update badge** | Amber pill "Update available · 261024"; row action "Update" opens a confirm showing size delta and retention effect. |
 | **Download button** | Present only when not cached (catalog) or for a specific uncached version. Destructive/disabled states explained by tooltip, never silently invisible without a reason on hover. |
@@ -193,7 +193,7 @@ yet. Until then `font-display: swap` means text paints in the fallback face firs
 - Every async action: disabled button → inline progress → success toast or inline error. No dead clicks.
 - Optimistic updates only for the public switch and settings toggles, always with rollback.
 - Destructive actions never auto-confirm; Enter does not trigger them by default.
-- Tables sort client-side for < 200 rows, server-side beyond; sort state lives in the URL query.
+- Small, fully loaded tables sort client-side; paginated admin catalog/cache tables use server-side sorting, with sort state in the URL query.
 - Search is debounced 300 ms; the URL reflects filters so a view can be bookmarked/shared.
 - Forms validate on blur + on submit, show a summary if multiple fields fail, and never lose typed data.
 - Keyboard: `Tab` order follows visual order; `Esc` closes dialogs/drawers; `/` focuses search in admin.

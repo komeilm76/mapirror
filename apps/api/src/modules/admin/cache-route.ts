@@ -151,7 +151,8 @@ function catalogSort(sort: 'name' | 'size' | 'updated' | 'created'): CatalogSort
     case 'name':
       return 'name';
     case 'size':
-      return 'sourceSizeHintBytes';
+      // In the cached-only table, size means the bytes stored locally, not the source extract hint used by the catalog.
+      return 'totalSizeBytes';
     case 'updated':
       return 'lastSyncedAt';
     case 'created':

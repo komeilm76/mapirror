@@ -282,6 +282,7 @@ describe('no component holds a colour', () => {
       'src/styles/typography.css',
       'src/styles/shell.css',
       'src/styles/catalog.css',
+      'src/styles/cache.css',
     ];
     const offenders: string[] = [];
 
@@ -297,7 +298,7 @@ describe('no component holds a colour', () => {
     expect(offenders, 'components use theme keys, not colours').toEqual([]);
   });
 
-  it('keeps the three stylesheets free of literal colours other than the documented shadow', () => {
+  it('keeps the application stylesheets free of literal colours other than the documented shadow', () => {
     // A weaker promise for the files that are allowed literals: the only one is `--mm-shadow-overlay`, so a new
     // `background: #fafafa` in a stylesheet still fails.
     for (const name of [
@@ -305,6 +306,7 @@ describe('no component holds a colour', () => {
       'src/styles/typography.css',
       'src/styles/shell.css',
       'src/styles/catalog.css',
+      'src/styles/cache.css',
     ]) {
       const lines = readFileSync(resolve(import.meta.dirname, '..', name), 'utf8')
         .split('\n')

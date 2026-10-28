@@ -2,7 +2,7 @@
 /**
  * Shared view for a screen that is not built yet (`P1-WEB-03`).
  *
- * Eleven of the fourteen screens in `13-ui-ux.md` §4 are still owed to later tasks, and the router has to know their
+ * Ten of the fourteen screens in `13-ui-ux.md` §4 are still owed to later tasks, and the router has to know their
  * paths today — the law test walks the table, and a deep link that 404s is worse than one that explains itself. Rather
  * than eleven near-identical SFCs, every pending route points here and `meta` says which screen it stands in for
  * (`screen`), what it is called (`title`) and which task will replace it (`owner`).

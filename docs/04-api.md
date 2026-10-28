@@ -313,7 +313,7 @@ database error.
 
 Returns cached countries only, using the same row projection and pagination metadata as the catalog list. It accepts
 `q`, `continent`, `update=any|available`, `page`, `limit` (default 50, maximum 100),
-`sort=name|size|updated|created`, and `order=asc|desc`; `cache` is not accepted because the route is always cached-only.
+`sort=name|size|updated|created`, and `order=asc|desc`; `cache` is not accepted because the route is always cached-only. Here `size` sorts by total local cached bytes (the catalog endpoint's `size` is the source-size hint); `updated` sorts by catalog sync time.
 Unknown keys and invalid filters return `400 VALIDATION_ERROR`. Each row adds `lastCheckedAt` (the last upstream
 update-check time), `createdAt` (the cache-row creation time), and `mostRecentDownloadAt` (the latest successful
 Geofabrik version install; uploads and non-ready versions do not count). Timestamps without a matching event are `null`.
