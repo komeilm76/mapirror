@@ -48,11 +48,13 @@ import { useRoute, useRouter } from 'vue-router';
 import { useDisplay } from 'vuetify';
 
 import AdminUserMenu from '@/components/admin/UserMenu.vue';
+import JobProgressDrawer from '@/components/admin/JobProgressDrawer.vue';
 import { useApi } from '@/composables/useApi';
 import { breadcrumbsFor } from '@/router/breadcrumbs';
 import { ADMIN_NAV, isNavItemActive } from '@/router/nav';
 import { useAuth } from '@/stores/auth';
 import { useBreadcrumbs } from '@/stores/breadcrumbs';
+import { useJobProgress } from '@/stores/jobProgress';
 
 import { MAIN_ID, SIDEBAR_WIDTH, TOPBAR_HEIGHT } from './adminShell';
 
@@ -61,6 +63,7 @@ const router = useRouter();
 const display = useDisplay();
 const auth = useAuth();
 const pageLabels = useBreadcrumbs();
+const jobProgress = useJobProgress();
 const client = useApi();
 
 /** Whether the viewport is below §3's boundary. */
@@ -190,6 +193,21 @@ onMounted(() => {
       />
     </form>
 
+    <v-btn
+      aria-controls="mm-job-progress-drawer"
+      :aria-expanded="jobProgress.isOpen"
+      :aria-label="
+        jobProgress.activeCount > 0
+          ? `${jobProgress.activeCount} active ${jobProgress.activeCount === 1 ? 'job' : 'jobs'}. Open job progress`
+          : 'Open job progress'
+      "
+      class="mx-1"
+      variant="text"
+      @click="jobProgress.open()"
+    >
+      Jobs<span v-if="jobProgress.activeCount > 0" aria-hidden="true" class="mm-job-active-dot" />
+    </v-btn>
+
     <AdminUserMenu />
   </v-app-bar>
 
@@ -208,8 +226,17 @@ onMounted(() => {
         :active="isNavItemActive(item, route.path)"
         :aria-current="isNavItemActive(item, route.path) ? 'page' : undefined"
         :title="item.label"
+        :aria-label="
+          item.name === 'admin-jobs' && jobProgress.activeCount > 0
+            ? `Jobs, ${jobProgress.activeCount} active`
+            : item.label
+        "
         :to="{ name: item.name }"
-      />
+      >
+        <template v-if="item.name === 'admin-jobs' && jobProgress.activeCount > 0" #append>
+          <span aria-hidden="true" class="mm-job-active-dot" />
+        </template>
+      </v-list-item>
     </v-list>
   </v-navigation-drawer>
 
@@ -218,4 +245,6 @@ onMounted(() => {
       <slot />
     </div>
   </v-main>
+
+  <JobProgressDrawer />
 </template>

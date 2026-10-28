@@ -31,6 +31,7 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { ApiError } from '@/api/errors';
 import { useApi } from '@/composables/useApi';
+import { useJobProgress } from '@/stores/jobProgress';
 
 const CATALOG_API = '/_admin/api/catalog';
 const PAGE_SIZE = 50;
@@ -41,6 +42,7 @@ type CatalogSort = (typeof SORT_FIELDS)[number];
 const route = useRoute();
 const router = useRouter();
 const api = useApi();
+const jobProgress = useJobProgress();
 
 const result = ref<CatalogListResponse | null>(null);
 const loading = ref(true);
@@ -543,6 +545,7 @@ async function queueDownload(): Promise<void> {
       return;
     }
     queuedJobs.value = { ...queuedJobs.value, [region.countryId]: parsed.data.jobId };
+    jobProgress.track(parsed.data.jobId);
     const version = parsed.data.resolvedVersion ?? request.data.version;
     queueAnnouncement.value = `${region.name} download queued for ${version}. Job id: ${parsed.data.jobId}.`;
     returnFocusElement = null;

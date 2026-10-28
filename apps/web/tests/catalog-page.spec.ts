@@ -19,6 +19,8 @@ import { adminPagePaths } from '../src/router/paths';
 const PROFILE = { id: '3f1c2b4a-5d6e-4f70-8a91-b2c3d4e5f607', username: 'admin' };
 const ME = { admin: PROFILE, expiresAt: '2026-10-26T21:00:00.000Z', lastUsedAt: null };
 const CATALOG_SYNCED_AT = '2026-10-24T06:00:00.000Z';
+const QUEUED_JOB_ID = '00000000-0000-4000-8000-000000000099';
+const JOB_CREATED_AT = '2026-10-28T10:00:00.000Z';
 
 /** A mounted app, unmounted after every test. */
 const mounted: VueApp<Element>[] = [];
@@ -331,11 +333,38 @@ describe('admin catalog page', () => {
         expect(init?.method).toBe('POST');
         return jsonResponse(
           {
-            jobId: '00000000-0000-4000-8000-000000000099',
+            jobId: QUEUED_JOB_ID,
             resolvedVersion: '261023',
           },
           202,
         );
+      }
+      if (url.pathname === `/_admin/api/jobs/${QUEUED_JOB_ID}`) {
+        return jsonResponse({
+          id: QUEUED_JOB_ID,
+          type: 'download',
+          status: 'queued',
+          phase: null,
+          progressBytes: 0,
+          totalBytes: null,
+          speedBps: null,
+          etaSeconds: null,
+          payload: { countryId: catalogItem(0).countryId, version: '261023' },
+          cancelRequested: false,
+          attempts: 0,
+          maxAttempts: 3,
+          createdAt: JOB_CREATED_AT,
+          startedAt: null,
+          finishedAt: null,
+          error: null,
+        });
+      }
+      if (url.pathname === '/_admin/api/jobs') {
+        const queued = url.searchParams.get('status') === 'queued';
+        return jsonResponse({
+          data: [],
+          meta: { page: 1, limit: 1, total: queued ? 1 : 0, totalPages: queued ? 1 : 0 },
+        });
       }
       throw new Error(`Unexpected request: ${url.pathname}`);
     });
@@ -376,10 +405,14 @@ describe('admin catalog page', () => {
 
     await vi.waitFor(() => expect(container.querySelector('[role="dialog"]')).toBeNull());
     expect(container.textContent).toContain('Finland download queued for 261023');
-    expect(container.textContent).toContain('00000000-0000-4000-8000-000000000099');
+    expect(container.textContent).toContain(QUEUED_JOB_ID);
     await vi.waitFor(() =>
       expect(document.activeElement).toBe(container.querySelector('.mm-catalog-queued')),
     );
+    await vi.waitFor(() =>
+      expect(document.querySelector('#mm-job-progress-drawer')).not.toBeNull(),
+    );
+    expect(document.body.textContent).toContain('Download · queued');
     expect(
       [...container.querySelectorAll<HTMLButtonElement>('.mm-catalog-download-button')].every(
         (button) => button.disabled,

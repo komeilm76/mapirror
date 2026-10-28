@@ -283,6 +283,7 @@ describe('no component holds a colour', () => {
       'src/styles/shell.css',
       'src/styles/catalog.css',
       'src/styles/cache.css',
+      'src/styles/jobs.css',
     ];
     const offenders: string[] = [];
 
@@ -307,6 +308,7 @@ describe('no component holds a colour', () => {
       'src/styles/shell.css',
       'src/styles/catalog.css',
       'src/styles/cache.css',
+      'src/styles/jobs.css',
     ]) {
       const lines = readFileSync(resolve(import.meta.dirname, '..', name), 'utf8')
         .split('\n')

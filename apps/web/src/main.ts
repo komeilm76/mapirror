@@ -24,6 +24,7 @@ import './styles/typography.css';
 import './styles/shell.css';
 import './styles/catalog.css';
 import './styles/cache.css';
+import './styles/jobs.css';
 
 import { createWebApp, MOUNT_SELECTOR } from './bootstrap';
 

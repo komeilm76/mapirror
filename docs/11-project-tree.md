@@ -144,8 +144,11 @@ mapirror/
 │     │  ├─ stores/auth.ts         # The session: token + profile + expiry; signIn/signOut/forget/restore (D-13)
 │     │  ├─ stores/breadcrumbs.ts  # Reactive API-loaded country name for the detail-page breadcrumb
 │     │  ├─ stores/notifications.ts # Toasts: one per action, errors persist, newest three at most
+│     │  ├─ stores/jobProgress.ts   # Session-local job ids + persistent drawer state (P2-WEB-06)
+│     │  ├─ jobs/presentation.ts    # Exact-byte, phase, progress and ETA labels shared by S11 and its drawer
 │     │  ├─ components/common/ToastHost.vue  # Renders the queue (position is P1-WEB-07's)
 │     │  ├─ components/admin/UserMenu.vue    # exists: who is signed in, and the way out
+│     │  ├─ components/admin/JobProgressDrawer.vue # exists: global 2 s detail polling, progress, cancel, safe errors
 │     │  ├─ plugins/vuetify.ts     # createAppVuetify(): both themes, built from styles/tokens.ts
 │     │  ├─ plugins/pinia.ts
 │     │  ├─ theme/policy.ts        # Path → theme (admin dark, public light, auth follows the system)
@@ -155,10 +158,11 @@ mapirror/
 │     │  │  ├─ shell.css           # exists: skip link and the breadcrumb trail (P1-WEB-07)
 │     │  │  ├─ catalog.css         # exists: responsive catalog table/cards (P2-WEB-01)
 │     │  │  ├─ cache.css            # exists: responsive cache table/cards + detail/version actions (P2-WEB-03/04)
+│     │  │  ├─ jobs.css             # exists: queue table/cards and persistent progress panel (P2-WEB-06)
 │     │  │  └─ typography.css      # @font-face (Space Grotesk, 22 kB) + the type roles
 │     │  ├─ assets/fonts/          # space-grotesk-latin-wght.woff2 + OFL.txt
-│     │  ├─ stores/                # notifications + auth (exist), catalog, cache, versions,
-│     │  │                         # intervals, jobs, system
+│     │  ├─ stores/                # notifications, auth and jobProgress exist; catalog, cache,
+│     │  │                         # versions, intervals, jobs, system are future feature stores
 │     │  ├─ composables/           # useApi (exists), usePolling (VueUse),
 │     │  │                         # useConfirm, useByteFormat, useUpdateTicker
 │     │  ├─ layouts/
@@ -171,7 +175,8 @@ mapirror/
 │     │  │  ├─ admin/CatalogPage.vue     # exists (P2-WEB-01): filters, sort, pagination, responsive table/cards
 │     │  │  ├─ admin/CachePage.vue        # exists (P2-WEB-03): cache list, size sort, URL filters, table/cards
 │     │  │  ├─ admin/CacheCountryPage.vue # exists (P2-WEB-04): detail, active jobs, paginated versions, streamed download/delete
-│     │  │  ├─ admin/{Dashboard,Intervals,Import,Jobs,
+│     │  │  ├─ admin/JobsPage.vue          # exists (P2-WEB-06): queue filters, progress rows/cards
+│     │  │  ├─ admin/{Dashboard,Intervals,Import,
 │     │  │  │        System,Settings,Audit}Page.vue
 │     │  │  ├─ public/{Home,CountryDetail,ApiDocs,NotFound}Page.vue  # HomePage + NotFoundPage exist
 │     │  ├─ components/

@@ -13,11 +13,12 @@
  *
  * ## Which screens are real today
  *
- * Six: the catalog and cache admin screens render `CatalogPage.vue` (`P2-WEB-01`), `CachePage.vue` (`P2-WEB-03`) and
- * `CacheCountryPage.vue` (`P2-WEB-04`); `/_site/` renders `HomePage.vue` — still a token/wiring preview until
- * `P3-WEB-01` replaces it — the login page renders `LoginPage.vue` (`P1-WEB-06`), and the not-found catch-all renders
- * `NotFoundPage.vue`. The other nine are `PlaceholderPage`, which says which screen it stands in for and which task
- * replaces it. A router tree full of invented screens would be worse than one that names its own gaps.
+ * Seven: the catalog and cache admin screens render `CatalogPage.vue` (`P2-WEB-01`), `CachePage.vue` (`P2-WEB-03`),
+ * `CacheCountryPage.vue` (`P2-WEB-04`) and `JobsPage.vue` (`P2-WEB-06`); `/_site/` renders `HomePage.vue` — still a
+ * token/wiring preview until `P3-WEB-01` replaces it — the login page renders `LoginPage.vue` (`P1-WEB-06`), and the
+ * not-found catch-all renders `NotFoundPage.vue`. The other eight are `PlaceholderPage`, which says which screen it
+ * stands in for and which task replaces it. A router tree full of invented screens would be worse than one that names
+ * its own gaps.
  *
  * ## The two records that are not pages
  *
@@ -132,13 +133,12 @@ export const APP_ROUTES: readonly RouteRecordRaw[] = [
     screen: 'S10',
     owner: 'P4-IMP-05',
   }),
-  pending({
+  {
     path: adminPagePaths.jobs(),
     name: 'admin-jobs',
-    title: 'Jobs',
-    screen: 'S11',
-    owner: 'P2-WEB-06',
-  }),
+    component: () => import('@/pages/admin/JobsPage.vue'),
+    meta: { title: 'Jobs', screen: 'S11', owner: 'P2-WEB-06' },
+  },
   pending({
     path: adminPagePaths.system(),
     name: 'admin-system',

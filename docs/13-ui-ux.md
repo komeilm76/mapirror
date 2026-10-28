@@ -132,10 +132,12 @@ yet. Until then `font-display: swap` means text paints in the fallback face firs
   `display.mobileBreakpoint`, so "mobile" means this document's boundary and not the framework's 1280 px. A temporary
   drawer closes itself on navigation and re-opens on a desktop when the boundary is crossed — Vuetify does both, and
   `tests/admin-layout.spec.ts` asserts them so an upgrade cannot quietly take them away (pass 36).
-- A dot badge on **Jobs** shows running jobs; a counter on **Catalog** shows updates available. **Owed**: the numbers need
-  `P2-WEB-06` (jobs) and `P2-WEB-01` (catalog). A badge hard-coded to `0` is a claim that the queue is empty, so the
-  sidebar carries none until the data does.
-- Topbar holds the menu button, breadcrumbs, global search (catalog) and the user menu (logout). **No theme toggle**: §1
+- A dot badge on **Jobs** shows queued/running work. The shell polls validated totals from `P2-API-10` every 2 s and
+  shows the dot only for a non-zero count; it does not claim an empty queue before the first successful response. The
+  Catalog updates counter remains owned by `P2-WEB-01`.
+- Topbar holds the menu button, breadcrumbs, global search (catalog), a persistent **Jobs** progress-drawer trigger and
+  the user menu (logout). The Jobs drawer is mounted by `AdminLayout`, so tracked progress remains open and polling while
+  the reader navigates between admin pages. **No theme toggle**: §1
   fixes the admin area to the dark theme, so a toggle there could only do nothing — the per-visitor override §1 allows is
   the public shell's (`P3-WEB-01`). The menu button says "Menu" / "Hide menu" rather than wearing a hamburger icon,
   because the icon set is not installed yet (§5). The trail is `<nav aria-label="Breadcrumb">` with `aria-current="page"`
@@ -164,7 +166,7 @@ yet. Until then `font-display: swap` means text paints in the fallback face firs
 | S8 | `/_site/admin/cache/:countryId` | Cached-country detail | cache summary, active work, paginated version table with download/delete, delete-country action | "No versions stored" |
 | S9 | `/_site/admin/intervals` | Schedules | list + create button, next run, last status | "No intervals yet" |
 | S10 | `/_site/admin/import` | Upload | dropzone, country select, version, submit, progress | — |
-| S11 | `/_site/admin/jobs` | Job queue | filters, progress rows, cancel | "No jobs" |
+| S11 | `/_site/admin/jobs` | Job queue | URL-backed status/type filters, paginated progress rows/cards; persistent detail drawer with phase, speed/ETA, cooperative cancel and safe error detail | "No jobs" |
 | S12 | `/_site/admin/system` | Status | disk, counts, source freshness, orphan report | — |
 | S13 | `/_site/admin/settings` | Settings | display name, retention, limits | — |
 | S14 | `/_site/admin/audit` | Audit log | filter by action, paginated | "No entries" |
