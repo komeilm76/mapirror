@@ -10,7 +10,7 @@
 
 import { z } from 'zod';
 
-import type { SourceRegion } from './source';
+import type { CatalogIndexSource, SourceRegion } from './source';
 
 /** The published index resource, relative to the configured Geofabrik base URL. */
 export const GEOFABRIK_INDEX_FILENAME = 'index-v1-nogeom.json';
@@ -167,4 +167,24 @@ export async function fetchGeofabrikRegions(
     if (timer !== undefined) clearTimeout(timer);
     options.signal?.removeEventListener('abort', abortFromCaller);
   }
+}
+
+/**
+ * Adapts the configured Geofabrik base URL to the catalog job's narrow index-source capability.
+ *
+ * @param baseUrl - Validated `GEOFABRIK_BASE_URL` value.
+ * @returns A source that fetches the configured index and propagates worker cancellation.
+ */
+export function createGeofabrikCatalogIndexSource(
+  baseUrl: string,
+  options: Omit<GeofabrikIndexOptions, 'signal'> = {},
+): CatalogIndexSource {
+  return {
+    id: 'geofabrik',
+    listRegions: (signal) =>
+      fetchGeofabrikRegions(baseUrl, {
+        ...options,
+        ...(signal === undefined ? {} : { signal }),
+      }),
+  };
 }

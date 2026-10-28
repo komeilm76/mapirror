@@ -73,6 +73,9 @@ export interface ResolvedDownload {
   readonly lastModified: Date | null;
 }
 
+/** The catalog-index capability needed by the synchronization job. */
+export type CatalogIndexSource = Pick<MapSource, 'id' | 'listRegions'>;
+
 /** A map data provider. Only the four operations the product needs. */
 export interface MapSource {
   /** Provider identifier persisted with catalog rows. */

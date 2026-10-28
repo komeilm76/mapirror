@@ -20,11 +20,12 @@
  * @module plugins/order
  */
 
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 
 import { parseEnv, type AppConfig } from '../config/env';
 import type { SqlDatabase } from '../db/client';
 import type { SchemaCheck } from '../db/version-check';
+import type { AuthVerify } from './auth-guard';
 import type { LoginThrottle } from '../modules/auth/login-throttle';
 import { loginThrottleFromConfig } from '../modules/auth/login-throttle';
 
@@ -88,7 +89,7 @@ export interface PipelineContext {
    * Verifier for the Bearer guard, when a caller wants to supply one. **Tests only** — `buildApp` forwards it and
    * `server.ts` never sets it; without it the guard uses the database-backed verifier.
    */
-  readonly authVerify?: (request: FastifyRequest, token: string) => Promise<unknown>;
+  readonly authVerify?: AuthVerify;
 }
 
 /** One stage of the pipeline. */

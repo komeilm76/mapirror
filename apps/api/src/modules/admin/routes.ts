@@ -11,8 +11,10 @@
 import type { FastifyPluginCallback } from 'fastify';
 
 import { getCatalog } from './catalog-route';
+import { postCatalogSync } from './catalog-sync-route';
 
 /** Catalog, cache, versions, imports, intervals, jobs, system, settings, audit land here. */
 export const adminRoutes: FastifyPluginCallback = (app) => {
   app.get('/catalog', getCatalog);
+  app.post('/catalog/sync', postCatalogSync);
 };

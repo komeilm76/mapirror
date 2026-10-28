@@ -231,13 +231,19 @@ version/public actions instead.
 
 #### `POST /_admin/api/catalog/sync`
 
-Triggers a `catalog_sync` job. `202 { "jobId": "…" }`. Idempotent: a second call while one is queued
-returns the existing job. The handler always performs an explicitly queued sync; freshness is a separate trigger
-policy based on the transactionally written `source.catalogSyncedAt` marker. `source.catalogTtlMinutes` (initially from
-`CATALOG_TTL_MINUTES`, default 360 minutes) sets the window; a missing/invalid marker or an age at/over the TTL is
-stale. The marker commits with the country upserts and audit, so empty catalogs and job-history pruning are handled. An existing queued/running catalog job suppresses a duplicate
-TTL-triggered enqueue. A successful sync audits `catalog.sync` in the same transaction as country upserts; source removals do not delete local catalog or
-cache rows.
+Accepts no body (or `{}`); unknown fields return `400 VALIDATION_ERROR`. Queues a `catalog_sync` job and returns
+`202 { "jobId": "…" }`. A second or concurrent call while one is queued/running returns that same job id; a transaction-scoped PostgreSQL
+advisory lock serializes API and CLI triggers across processes. The job records the requesting
+admin, and the worker fetches the configured Geofabrik index with its bounded, cancelable request. `bun run sync:catalog`
+uses the same queue operation; it does not bypass the job handler or fetch the source directly. With
+`WORKER_ENABLED=true`, the configured worker runs the committed job; otherwise it remains queued for an enabled worker.
+
+The handler always performs an explicitly queued sync; freshness is a separate trigger policy based on the
+transactionally written `source.catalogSyncedAt` marker. `source.catalogTtlMinutes` (initially from `CATALOG_TTL_MINUTES`,
+default 360 minutes) sets the window; a missing/invalid marker or an age at/over the TTL is stale. The marker commits
+with country upserts and audit, so empty catalogs and job-history pruning are handled. An existing queued/running
+catalog job suppresses a duplicate TTL-triggered enqueue. A successful sync audits `catalog.sync` in the same
+transaction as country upserts; source removals do not delete local catalog or cache rows.
 
 #### `GET /_admin/api/catalog/regions/:slug`
 

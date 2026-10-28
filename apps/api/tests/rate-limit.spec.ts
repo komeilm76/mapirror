@@ -14,7 +14,7 @@ import { SlidingWindowLimiter } from '../src/lib/rate-limit';
 import { LoginRateLimitDetailsSchema } from '@mapirror/shared';
 import { parseEnv } from '../src/config/env';
 import { loginThrottleFromConfig } from '../src/modules/auth/login-throttle';
-import { buildTestApp } from './helpers/test-app';
+import { buildTestApp, TEST_ADMIN_IDENTITY } from './helpers/test-app';
 
 /**
  * `P1-API-09`: the request limiter, and the numbers `14-security.md` §7 promises.
@@ -221,7 +221,7 @@ async function appWithClock(
   const config = parseEnv({});
   return buildTestApp({
     // Accepts any token; the database stub may make a protected handler fail, but only the limiter's 429 is relevant.
-    authVerify: () => Promise.resolve({}),
+    authVerify: () => Promise.resolve(TEST_ADMIN_IDENTITY),
     rateLimitNow: () => clock.now,
     config:
       options.publicDownloadsPerMinute === undefined
@@ -374,7 +374,7 @@ describe('the stage charges the documented requests, and only those', () => {
     // could answer the *preflight* with `429` — which a browser reports as a CORS failure, not as a rate limit.
     const clock = clockAt('2026-10-25T09:00:00.000Z');
     const app = await buildTestApp({
-      authVerify: () => Promise.resolve({}),
+      authVerify: () => Promise.resolve(TEST_ADMIN_IDENTITY),
       config: {
         ...parseEnv({}),
         corsOrigins: ['https://maps.example.org'],

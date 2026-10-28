@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 
 import {
+  createGeofabrikCatalogIndexSource,
   fetchGeofabrikRegions,
   GEOFABRIK_INDEX_FILENAME,
   parseGeofabrikIndex,
@@ -202,4 +203,25 @@ describe('fetchGeofabrikRegions', () => {
       ).rejects.toThrow(RangeError);
     },
   );
+});
+
+describe('createGeofabrikCatalogIndexSource', () => {
+  it('uses the configured base URL and the validated index client', async () => {
+    const calls: string[] = [];
+    const source = createGeofabrikCatalogIndexSource('https://mirror.example.org/geofabrik', {
+      fetchImpl: (input) => {
+        calls.push(String(input));
+        return Promise.resolve(
+          new Response(JSON.stringify(indexFixture), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      },
+    });
+
+    expect(source.id).toBe('geofabrik');
+    await expect(source.listRegions()).resolves.toHaveLength(1);
+    expect(calls).toEqual([`https://mirror.example.org/geofabrik/${GEOFABRIK_INDEX_FILENAME}`]);
+  });
 });

@@ -85,3 +85,15 @@ export const CatalogListResponseSchema = z
 
 /** Successful `GET /_admin/api/catalog` response. */
 export type CatalogListResponse = z.infer<typeof CatalogListResponseSchema>;
+
+/** `POST /_admin/api/catalog/sync` accepts an empty body only. */
+export const CatalogSyncRequestSchema = z.object({}).strict();
+
+/** Request contract for `POST /_admin/api/catalog/sync`. */
+export type CatalogSyncRequest = z.infer<typeof CatalogSyncRequestSchema>;
+
+/** Accepted or already-active catalog sync job. */
+export const CatalogSyncResponseSchema = z.object({ jobId: z.uuid() }).strict();
+
+/** Successful `POST /_admin/api/catalog/sync` response. */
+export type CatalogSyncResponse = z.infer<typeof CatalogSyncResponseSchema>;

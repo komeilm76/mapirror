@@ -163,16 +163,21 @@ sequenceDiagram
 
 **Rules:** TTL is measured from `source.catalogSyncedAt`, written in the catalog transaction even for an empty index;
 failed/canceled attempts that roll back do not refresh it, and job-history pruning does not erase it. The exact TTL
-boundary is due; an already queued/running catalog job suppresses a second automatic trigger. A manually requested job always fetches the index,
-even if it is fresh. The source request is bounded and receives the worker's cancellation signal; cancellation during
-writes rolls the transaction back. Every current region is upserted with one shared `catalog_synced_at`; existing slugs
-are never rewritten, and records omitted upstream (including their cache rows and map versions) are retained. The
-`catalog.sync` audit entry commits in the same transaction, so an audit failure cannot leave an unaudited catalog update.
+boundary is due; an already queued/running catalog job suppresses a second automatic trigger. The API route and CLI share
+one enqueue operation under a transaction-scoped advisory lock, so simultaneous manual requests return the same active
+job id and record the admin that created it. A manually requested job always fetches the index, even if it is fresh. The production worker
+registers the catalog handler against the configured Geofabrik base URL. The source request is bounded and receives the
+worker's cancellation signal; cancellation during writes rolls the transaction back. Every current region is upserted
+with one shared `catalog_synced_at`; existing slugs are never rewritten, and records omitted upstream (including their
+cache rows and map versions) are retained. The `catalog.sync` audit entry commits in the same transaction, so an audit
+failure cannot leave an unaudited catalog update.
 
 **Tests:** `apps/api/tests/integration/catalog-sync.spec.ts` — repeat sync updates facts without duplicate rows or slug
 changes, removed cached country/version retained, audit action and metadata, audit failure rolls upserts back, TTL
-success/failure/other-job and boundary behavior, and empty-catalog freshness; `apps/api/tests/geofabrik-index.spec.ts` —
-index URL, validation, status safety, request deadline and prompt cancellation.
+success/failure/other-job and boundary behavior, and empty-catalog freshness; `apps/api/tests/integration/catalog-sync-route.spec.ts`
+— auth, attribution, strict input, concurrent deduplication, running-job reuse and terminal replacement;
+`scripts/tests/sync-catalog.spec.ts` — help/arguments, config failure and shared queue behavior;
+`apps/api/tests/geofabrik-index.spec.ts` — configured index URL, validation, status safety, request deadline and prompt cancellation.
 
 ---
 

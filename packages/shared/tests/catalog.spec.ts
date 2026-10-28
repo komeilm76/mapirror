@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { CatalogListResponseSchema, CatalogQuerySchema, JsonIntegerSchema } from '../src/catalog';
+import {
+  CatalogListResponseSchema,
+  CatalogQuerySchema,
+  CatalogSyncRequestSchema,
+  CatalogSyncResponseSchema,
+  JsonIntegerSchema,
+} from '../src/catalog';
 
 const row = {
   countryId: '00000000-0000-4000-8000-000000000001',
@@ -62,5 +68,14 @@ describe('catalog contracts', () => {
     expect(
       CatalogListResponseSchema.safeParse({ ...response, catalogSyncedAt: 'not a date' }).success,
     ).toBe(false);
+  });
+
+  it('accepts only an empty catalog-sync request and returns a UUID job id', () => {
+    expect(CatalogSyncRequestSchema.parse({})).toEqual({});
+    expect(CatalogSyncRequestSchema.safeParse({ source: 'arbitrary' }).success).toBe(false);
+    expect(
+      CatalogSyncResponseSchema.parse({ jobId: '00000000-0000-4000-8000-000000000001' }),
+    ).toEqual({ jobId: '00000000-0000-4000-8000-000000000001' });
+    expect(CatalogSyncResponseSchema.safeParse({ jobId: 'not-a-uuid' }).success).toBe(false);
   });
 });

@@ -39,7 +39,8 @@
     "admin:init": "bun run scripts/init-admin.ts",
     "admin:reset": "bun run scripts/reset-admin-password.ts",
     "db:migrate": "bun run scripts/migrate.ts",
-    "db:reset": "bun run scripts/migrate.ts --reset"
+    "db:reset": "bun run scripts/migrate.ts --reset",
+    "sync:catalog": "bun run scripts/sync-catalog.ts"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

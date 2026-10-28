@@ -21,6 +21,8 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from './app';
 import { ConfigError, parseEnv, type AppConfig, type EnvSource } from './config/env';
 import { runHousekeeping } from './lib/housekeeping';
+import { createGeofabrikCatalogIndexSource } from './modules/geofabrik/index-client';
+import { createCatalogSyncHandler } from './modules/jobs/catalog-sync-handler';
 import { startJobReaper } from './modules/jobs/reaper';
 import { startJobWorker, type JobHandlers } from './modules/jobs/worker';
 
@@ -135,8 +137,11 @@ export async function start(
 
   let stopWorkers: (() => Promise<void>) | undefined;
   if (config.workerEnabled) {
-    // Concrete handlers are registered by the job-specific tasks. Until one exists, its job type is not claimed.
-    const handlers: JobHandlers = {};
+    // The catalog worker uses the validated index client pointed at the configured Geofabrik base URL.
+    const catalogSource = createGeofabrikCatalogIndexSource(config.geofabrikBaseUrl);
+    const handlers: JobHandlers = {
+      catalog_sync: createCatalogSyncHandler({ source: catalogSource }),
+    };
     const worker = startJobWorker(app.db.db, handlers, {
       concurrency: config.workerConcurrency,
       log: app.log,

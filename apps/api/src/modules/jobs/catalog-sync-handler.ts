@@ -17,7 +17,7 @@ import { CATALOG_SYNCED_AT_SETTING, upsertCatalogCountry } from '../../db/reposi
 import { withTransaction } from '../../db/transaction';
 import type { Database, JsonValue } from '../../db/schema';
 import { baseGeofabrikSlug, deriveGeofabrikSlugs } from '../geofabrik/slug';
-import type { MapSource, SourceRegion } from '../geofabrik/source';
+import type { CatalogIndexSource, SourceRegion } from '../geofabrik/source';
 import type { JobHandler } from './worker';
 
 const CatalogSyncPayloadSchema = z
@@ -25,9 +25,6 @@ const CatalogSyncPayloadSchema = z
     source: z.literal('geofabrik').optional().default('geofabrik'),
   })
   .strict();
-
-/** The source capability this handler uses; a full `MapSource` structurally satisfies it. */
-export type CatalogIndexSource = Pick<MapSource, 'id' | 'listRegions'>;
 
 /** Dependencies for one catalog sync handler. */
 export interface CatalogSyncHandlerOptions {

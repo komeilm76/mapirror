@@ -3,7 +3,7 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 66 passes · 244 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8).
+**Totals:** 67 passes · 250 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
@@ -23,7 +23,7 @@ P2-SRC-06 implements the catalog job as an upsert-only transaction: fetch and va
 
 Eight targeted mutations were killed by tests: remove active-job suppression; overwrite the repository's assigned slug; omit the index request signal; fail to abort the timed-out request; delete source-omitted countries; omit the audit insert; replace the cancelable lock loop with a blocking advisory lock; or rely on prunable job history instead of the sync marker. A slug-overwrite mutation was rejected by the repository contract test (the sync-level caller correctly supplies the preserved slug, so that narrower probe alone was equivalent).
 
-Full non-Docker `bun run check`: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint and formatting; **1,348 passed across 99 files, 7 skipped**. Docker runtime/operator tests remain excluded per operator direction. The development guide's `bun run sync:catalog` was moved from P2-SRC-06 to P2-API-02: the CLI should share that task's idempotent enqueue/worker wiring rather than bypass the durable job contract. The command remains planned. **Totals after this pass: 65 passes · 236 defects fixed · 0 open.**
+Full non-Docker `bun run check`: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint and formatting; **1,348 passed across 99 files, 7 skipped**. Docker runtime/operator tests remain excluded per operator direction. The development guide's `bun run sync:catalog` was moved from P2-SRC-06 to P2-API-02: the CLI should share that task's idempotent enqueue/worker wiring rather than bypass the durable job contract. The command remained planned at the end of this pass and was completed in pass 67. **Totals after this pass: 65 passes · 236 defects fixed · 0 open.**
 
 ## Pass 66 — 2026-10-28 (admin catalog listing needed a contract and consistent projection)
 
@@ -43,6 +43,25 @@ P2-API-01 replaces the catalog `NOT_READY` stub with an authenticated SQL-backed
 Real-PostgreSQL route tests exercise authentication, row/cache projection, name and both ISO-array searches, filters, all sort keys, pagination, malformed freshness markers, large int8 values, empty results, and the 400-row latency target. Shared-contract tests pin strict query/response shapes and precision-safe integers. Four targeted implementation mutations were killed: removing strict unknown-query rejection; sorting `size` by the wrong database column; converting all PostgreSQL int8 values to `Number`; and changing the catalog default from 50. Separately, the subdivision-ISO regression failed before the search fix (empty result instead of Finland) and passed afterward. The int8 mutation returned `9223372036854776000` instead of the exact decimal string `9223372036854775807`. Full non-Docker `bun run check` passes: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint and formatting; **1,362 passed across 101 files, 0 skipped** with the local PostgreSQL 16.2 test database. Docker runtime/operator tests remain excluded per operator direction.
 
 **Totals after this pass: 66 passes · 244 defects fixed · 0 open.**
+
+## Pass 67 — 2026-10-28 (catalog sync needed an authenticated, idempotent queue trigger)
+
+P2-API-02 implements `POST /_admin/api/catalog/sync` and `bun run sync:catalog`, both using the same durable enqueue helper. The API returns `202 { jobId }`, records the verified admin on `jobs.created_by`, and reuses queued/running jobs. The production worker registers `createCatalogSyncHandler` with the configured Geofabrik index source; the CLI enqueues but never calls the source itself.
+
+| # | Bug found in contract review | Fix |
+|---|---|---|
+| 1 | The catalog sync API was not registered, and the request/response contract did not have strict shared schemas | Add the authenticated `POST` route, accept only an empty object, and validate the `202 { jobId }` response with shared Zod contracts |
+| 2 | Separate manual triggers could create duplicate active work across API instances or the CLI | Route and CLI share one transaction-scoped PostgreSQL advisory-lock enqueue operation; it returns an existing queued/running job or inserts one queued job |
+| 3 | The admin guard discarded the verified identity, preventing the route from attributing the job | Retain the verified `AdminIdentity` on the request and set `jobs.created_by`; prove attribution against PostgreSQL |
+| 4 | Worker startup still registered an empty handler map, and no code connected the configured Geofabrik base URL to the catalog handler | Register `createCatalogSyncHandler` using a narrow source adapter that fetches the configured index and forwards cancellation |
+| 5 | The documented CLI trigger was still planned and could have bypassed the durable queue | Add `sync:catalog`; it calls the same enqueue helper, handles help/config/database errors, and closes its pool |
+| 6 | Route-table credential tests still expected `503 NOT_READY` for the new endpoint, while task, usage, flow, and project-tree docs omitted its finished behavior | Update the transport test and endpoint/job/CLI documentation, including active-job reuse and worker-disabled behavior |
+
+An initial removal-of-lock probe passed the simultaneous-request test once, showing that the race-only assertion was scheduler-dependent. Added a deterministic PostgreSQL lock-wait test: it holds the enqueue advisory lock from a separate database session and verifies that the route waits. Removing the lock then failed that test (no advisory waiter observed); restoring it passed. The route integration suite also checks anonymous refusal, actor attribution, eight concurrent callers sharing one id, running-job reuse, terminal-job replacement, and strict-body rejection. CLI tests cover arguments/help, invalid config without connecting, two invocations reusing one job, and the CLI's null actor. The configured index-source factory and cancellation propagation are covered offline; Docker tests were not run per operator direction.
+
+Full non-Docker `bun run check`: 22 workspace checks, 54 hygiene checks, typechecks, ESLint and formatting; **1,373 passed across 103 files, 0 skipped** with the local PostgreSQL 16.2 test database. The CLI package command was also exercised with `bun run sync:catalog --help`. Docker runtime/operator tests remain excluded per operator direction.
+
+**Totals after this pass: 67 passes · 250 defects fixed · 0 open.**
 
 ## Pass 64 — 2026-10-27 (active download uniqueness needed a conflict boundary)
 

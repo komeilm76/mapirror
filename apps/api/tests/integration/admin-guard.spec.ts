@@ -4,9 +4,10 @@ import { resolve } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
 
+import type { AdminIdentity } from '../../src/db/repositories/admin-tokens';
 import { AppError } from '../../src/lib/errors';
 import { installAuthGuard } from '../../src/plugins/auth-guard';
-import { buildTestApp } from '../helpers/test-app';
+import { buildTestApp, TEST_ADMIN_IDENTITY } from '../helpers/test-app';
 
 /**
  * Law L2: *every* `/_admin/api/*` route requires a valid Bearer token, with **no opt-out**, enforced by a guard keyed on
@@ -24,15 +25,17 @@ import { buildTestApp } from '../helpers/test-app';
 const TOKEN = `mm_${'A'.repeat(43)}`;
 
 /** Builds the app with a verifier whose answer the test chooses. */
-function appWithVerify(verify: (token: string) => Promise<unknown>): Promise<FastifyInstance> {
+function appWithVerify(
+  verify: (token: string) => Promise<AdminIdentity>,
+): Promise<FastifyInstance> {
   return buildTestApp({ authVerify: (_request, token) => verify(token) });
 }
 
 /** A verifier that accepts every token. */
-const accept = (): Promise<unknown> => Promise.resolve({});
+const accept = (): Promise<AdminIdentity> => Promise.resolve(TEST_ADMIN_IDENTITY);
 
 /** A verifier that refuses with a given `AppError`. */
-const refuse = (error: AppError) => (): Promise<unknown> => Promise.reject(error);
+const refuse = (error: AppError) => (): Promise<AdminIdentity> => Promise.reject(error);
 
 /**
  * Every admin route the app registered, as `METHOD /path`.
@@ -256,7 +259,7 @@ describe('the verdict decides the answer', () => {
     const seen: string[] = [];
     const app = await appWithVerify((token) => {
       seen.push(token);
-      return Promise.resolve({});
+      return Promise.resolve(TEST_ADMIN_IDENTITY);
     });
     try {
       await app.inject({
@@ -279,7 +282,7 @@ describe('what the guard does not touch', () => {
     const touched: string[] = [];
     const app = await appWithVerify((token) => {
       touched.push(token);
-      return Promise.resolve({});
+      return Promise.resolve(TEST_ADMIN_IDENTITY);
     });
     try {
       for (const [method, url] of [
@@ -373,7 +376,7 @@ describe('installAuthGuard on its own', () => {
     installAuthGuard(app, {
       verify: () => {
         called += 1;
-        return Promise.resolve({});
+        return Promise.resolve(TEST_ADMIN_IDENTITY);
       },
     });
     app.get('/_public/api/x', () => ({ ok: true }));

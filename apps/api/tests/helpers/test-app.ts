@@ -16,6 +16,8 @@
 
 import type { Kysely } from 'kysely';
 
+import type { AdminIdentity } from '../../src/db/repositories/admin-tokens';
+
 import {
   buildApp,
   EXPECTED_MIGRATIONS,
@@ -28,6 +30,13 @@ import {
 /** What a query does on the stub: fail, and say where to go instead. */
 const STUB_MESSAGE =
   'the database in this test is a stub — use tests/integration/db.spec.ts for behaviour that needs SQL';
+
+/** A valid identity returned by tests that exercise the guard without a database-backed token verifier. */
+export const TEST_ADMIN_IDENTITY: AdminIdentity = {
+  id: '00000000-0000-4000-8000-000000000001',
+  username: 'guard-test-admin',
+  isActive: true,
+};
 
 /**
  * A database handle that answers its liveness check and refuses to be queried.

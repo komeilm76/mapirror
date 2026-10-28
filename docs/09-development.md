@@ -115,7 +115,7 @@ Scripts marked ✅ exist today; ⬜ are created by the task named in `08-tasks.m
 | `bun run admin:init` | Create the admin account: `ADMIN_PASSWORD`, `ADMIN_PASSWORD_FILE`, or a hidden prompt; `--username`; idempotent, never overwrites | ✅ P1-AUTH-06 |
 | `bun run admin:reset` | Reset an admin password and end its sessions: hidden prompt, `--generate` (printed once), or `--password-stdin` for automation | ✅ P1-AUTH-07 |
 | `bun run seed:dev` | Dev fixtures (needs the phase-2 catalog tables, so it lands with them) | ⬜ P2-DB-01 |
-| `bun run sync:catalog` | Enqueue and run a manual Geofabrik catalog sync | ⬜ P2-API-02 |
+| `bun run sync:catalog` | Enqueue or reuse a catalog-sync job; the configured API worker runs it | ✅ P2-API-02 |
 
 ## 5. Environment variables
 

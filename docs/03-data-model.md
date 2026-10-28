@@ -247,6 +247,7 @@ CREATE UNIQUE INDEX jobs_one_active_download ON jobs (((payload->>'countryId')::
 
 - `payload` examples:
   - download: `{ countryId, version, origin, onlyIfChanged? }`
+  - catalog sync: `{ source: "geofabrik" }` (the configured index source)
   - import: `{ uploadId, countryId, version, replace }`
   - update_check: `{ countryIds: [...] }`
   - prune: `{ countryId, keep }`

@@ -32,6 +32,7 @@
 import { isAdminApiPath, statusFor } from '@mapirror/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
+import type { AdminIdentity } from '../db/repositories/admin-tokens';
 import { AppError } from '../lib/errors';
 import { readBearerToken, verifySession } from '../modules/auth/session';
 
@@ -43,10 +44,17 @@ import { readBearerToken, verifySession } from '../modules/auth/session';
  * a policy seam — there is no way to say "let this one through".
  */
 /**
- * What a verifier is: given the request and the presented token, either resolve with the session or reject with an
+ * What a verifier is: given the request and presented token, resolve the verified admin identity or reject with an
  * `AppError` the guard passes through unchanged.
  */
-export type AuthVerify = (request: FastifyRequest, token: string) => Promise<unknown>;
+export type AuthVerify = (request: FastifyRequest, token: string) => Promise<AdminIdentity>;
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    /** Verified identity attached by the global admin guard for the handler to attribute requested work. */
+    authenticatedAdmin: AdminIdentity | null;
+  }
+}
 
 /** What the guard accepts. */
 export interface AuthGuardOptions {
@@ -64,8 +72,9 @@ export interface AuthGuardOptions {
  * @param token - The credential the caller presented.
  * @returns The session, or throws the verdict's `AppError`.
  */
-async function verifyWithDatabase(request: FastifyRequest, token: string): Promise<unknown> {
-  return verifySession(request.server.db.db, token);
+async function verifyWithDatabase(request: FastifyRequest, token: string): Promise<AdminIdentity> {
+  const session = await verifySession(request.server.db.db, token);
+  return session.admin;
 }
 
 /**
@@ -91,6 +100,7 @@ async function verifyWithDatabase(request: FastifyRequest, token: string): Promi
  */
 export function installAuthGuard(app: FastifyInstance, options: AuthGuardOptions = {}): void {
   const verify = options.verify ?? verifyWithDatabase;
+  app.decorateRequest('authenticatedAdmin', null);
 
   app.addHook('onRequest', async (request) => {
     // Not an admin path: nothing to do. `isAdminApiPath` is the shared predicate the route law uses — it decodes
@@ -107,7 +117,7 @@ export function installAuthGuard(app: FastifyInstance, options: AuthGuardOptions
     // the error stage maps it, and anything else — a dead pool, a driver message naming a table — is mapped there to
     // `INTERNAL_ERROR` with a fixed sentence and logged with the detail. Catching and rewrapping here would be a second
     // copy of the 500 policy, and the copy is what drifts.
-    await verify(request, token);
+    request.authenticatedAdmin = await verify(request, token);
   });
 }
 

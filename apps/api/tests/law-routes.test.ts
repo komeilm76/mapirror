@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { isApiPath, isProbePath } from '@mapirror/shared';
 
-import { buildTestApp } from './helpers/test-app';
+import { buildTestApp, TEST_ADMIN_IDENTITY } from './helpers/test-app';
 
 /**
  * L1 over the **real route table**, and "no API route answers HTML" (`P1-API-08`).
@@ -45,7 +45,7 @@ interface RouteTable {
 async function appWithRouteTable(): Promise<RouteTable> {
   const routes: string[] = [];
   const app = await buildTestApp({
-    authVerify: () => Promise.resolve({}),
+    authVerify: () => Promise.resolve(TEST_ADMIN_IDENTITY),
     routeObserver: (route) => {
       const methods = typeof route.method === 'string' ? [route.method] : route.method;
       for (const method of methods) {
