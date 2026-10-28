@@ -311,10 +311,37 @@ database error.
 
 #### `GET /_admin/api/cache`
 
-Same shape as catalog rows, but only cached countries. Extra fields: `lastCheckedAt`,
-`createdAt`, `mostRecentDownloadAt`.
+Returns cached countries only, using the same row projection and pagination metadata as the catalog list. It accepts
+`q`, `continent`, `update=any|available`, `page`, `limit` (default 50, maximum 100),
+`sort=name|size|updated|created`, and `order=asc|desc`; `cache` is not accepted because the route is always cached-only.
+Unknown keys and invalid filters return `400 VALIDATION_ERROR`. Each row adds `lastCheckedAt` (the last upstream
+update-check time), `createdAt` (the cache-row creation time), and `mostRecentDownloadAt` (the latest successful
+Geofabrik version install; uploads and non-ready versions do not count). Timestamps without a matching event are `null`.
+As in catalog rows, byte counts are JSON integers when safe and decimal strings otherwise.
+
+```json
+200 {
+  "data": [{
+    "countryId": "…", "sourceId": "europe/finland", "name": "Finland",
+    "slug": "finland", "continent": "europe", "iso": ["FI"],
+    "sourceSizeHintBytes": 773465008,
+    "cache": { "cached": true, "versionsReady": 3, "totalSizeBytes": 2319000000,
+               "isPublic": true, "updateState": "update_available",
+               "availableVersion": "261024", "availableSizeBytes": 774000000 },
+    "lastSyncedAt": "2026-10-24T06:00:00.000Z",
+    "lastCheckedAt": "2026-10-24T06:00:00.000Z",
+    "createdAt": "2026-10-20T12:00:00.000Z",
+    "mostRecentDownloadAt": "2026-10-23T20:20:51.000Z"
+  }],
+  "meta": { "page": 1, "limit": 50, "total": 12, "totalPages": 1 }
+}
+```
 
 #### `GET /_admin/api/cache/:countryId`
+
+`:countryId` is a local UUID. The detail response includes the current cache/publication summary and update-check state,
+ready versions, and only queued/running jobs whose payload identifies this country. An uncached or unknown UUID returns
+`404 NOT_FOUND`; a malformed UUID returns `400 VALIDATION_ERROR`.
 
 ```json
 200 {
@@ -324,10 +351,13 @@ Same shape as catalog rows, but only cached countries. Extra fields: `lastChecke
              "availableSizeBytes": 774000000, "updateCheckedAt": "…" },
   "versions": [ { "id": "…", "version": "261023", "origin": "geofabrik_snapshot",
                   "dataTimestamp": "…", "sizeBytes": 773465008, "checksumMd5": "…",
-                  "status": "ready", "createdAt": "…", "downloads": 12 } ],
+                  "status": "ready", "createdAt": "…" } ],
   "activeJobs": [ { "id": "…", "type": "download", "status": "running", "progressBytes": 123456789, "totalBytes": 774000000 } ]
 }
 ```
+
+Per-version download counts are not available yet: `download_events` is introduced with the later public-download
+recording task (P3-API-06), so this response deliberately does not fabricate a count.
 
 #### `DELETE /_admin/api/cache/:countryId?confirm=<slug>`
 

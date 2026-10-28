@@ -7,7 +7,9 @@
  * @module db/repositories/cache
  */
 
-import type { CountryCacheRow } from '../schema';
+import { sql } from 'kysely';
+
+import type { CountryCacheRow, JobType } from '../schema';
 import {
   findCatalogCountryById,
   listCatalogCountries,
@@ -47,4 +49,61 @@ export async function findCachedCountry(
 ): Promise<CatalogCountryRow | null> {
   const row = await findCatalogCountryById(executor, countryId);
   return row?.cache_country_id === null ? null : row;
+}
+
+/** One active job associated with the country whose progress is safe for the admin detail view. */
+export interface ActiveCountryJobRow {
+  readonly id: string;
+  readonly type: JobType;
+  readonly status: 'queued' | 'running';
+  readonly progress_bytes: string;
+  readonly total_bytes: string | null;
+}
+
+/** Finds queued/running jobs whose payload names this country, including work without a map-version row yet. */
+export async function listActiveCountryJobs(
+  executor: RepositoryExecutor,
+  countryId: string,
+): Promise<ActiveCountryJobRow[]> {
+  const rows = await executor
+    .selectFrom('jobs')
+    .select(['id', 'type', 'status', 'progress_bytes', 'total_bytes'])
+    .where(sql<boolean>`payload->>'countryId' = ${countryId}`)
+    .where('status', 'in', ['queued', 'running'])
+    .orderBy('created_at', 'asc')
+    .orderBy('id', 'asc')
+    .execute();
+  const activeRows: ActiveCountryJobRow[] = [];
+  for (const row of rows) {
+    if (row.status === 'queued' || row.status === 'running') {
+      activeRows.push({ ...row, status: row.status });
+    }
+  }
+  return activeRows;
+}
+
+/** Latest successful Geofabrik download-install time for each requested cached country. */
+export async function findMostRecentDownloads(
+  executor: RepositoryExecutor,
+  countryIds: readonly string[],
+): Promise<Map<string, Date>> {
+  if (countryIds.length === 0) return new Map();
+
+  const rows = await executor
+    .selectFrom('map_versions')
+    .select(['country_id', sql<Date | null>`max(ready_at)`.as('most_recent_download_at')])
+    .where('country_id', 'in', [...countryIds])
+    .where('origin', 'in', ['geofabrik_snapshot', 'geofabrik_latest'])
+    .where('status', '=', 'ready')
+    .where('ready_at', 'is not', null)
+    .groupBy('country_id')
+    .execute();
+
+  return new Map(
+    rows.flatMap((row) =>
+      row.most_recent_download_at === null
+        ? []
+        : [[row.country_id, row.most_recent_download_at] as const],
+    ),
+  );
 }

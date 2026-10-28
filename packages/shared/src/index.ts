@@ -16,9 +16,11 @@
  * | `license` | ODbL attribution that must appear on every public surface |
  * | `constants` | token format, sort fields and the enums the DB `CHECK`s mirror |
  * | `auth` | login request/response shapes and their bounds (`P1-AUTH-03`) |
+ * | `catalog` | admin catalog query, row and sync response contracts (`P2-API-01`) |
+ * | `cache` | admin cache-list/detail query and response contracts (`P2-API-05`) |
  *
- * Zod schemas for request/response bodies build on these and land with the API contract tasks (`auth` is the first);
- * they are additive, so nothing here changes shape when they arrive.
+ * Request/response schemas are added alongside their owning API contract tasks, so each implemented endpoint exports
+ * one strict, reusable Zod shape instead of a prose-only or server-private contract.
  *
  * @module
  */
@@ -26,6 +28,7 @@
 export * from './auth';
 export * from './catalog';
 export * from './cache-download';
+export * from './cache';
 export * from './catalog-region';
 export * from './constants';
 export * from './errors';

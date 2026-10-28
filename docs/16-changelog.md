@@ -3,7 +3,7 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 69 passes · 263 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5).
+**Totals:** 70 passes · 268 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
@@ -43,6 +43,22 @@ P2-API-01 replaces the catalog `NOT_READY` stub with an authenticated SQL-backed
 Real-PostgreSQL route tests exercise authentication, row/cache projection, name and both ISO-array searches, filters, all sort keys, pagination, malformed freshness markers, large int8 values, empty results, and the 400-row latency target. Shared-contract tests pin strict query/response shapes and precision-safe integers. Four targeted implementation mutations were killed: removing strict unknown-query rejection; sorting `size` by the wrong database column; converting all PostgreSQL int8 values to `Number`; and changing the catalog default from 50. Separately, the subdivision-ISO regression failed before the search fix (empty result instead of Finland) and passed afterward. The int8 mutation returned `9223372036854776000` instead of the exact decimal string `9223372036854775807`. Full non-Docker `bun run check` passes: 22 workspace checks, 54 hygiene checks, all package typechecks, ESLint and formatting; **1,362 passed across 101 files, 0 skipped** with the local PostgreSQL 16.2 test database. Docker runtime/operator tests remain excluded per operator direction.
 
 **Totals after this pass: 66 passes · 244 defects fixed · 0 open.**
+
+## Pass 70 — 2026-10-28 (cache reads needed cached-only lists and live detail state)
+
+P2-API-05 adds the authenticated cache list/detail reads, backed by the existing catalog/cache repositories. Both reads use repeatable-read snapshots and explicit shared Zod contracts; the list is SQL-filtered and paginated, and detail includes ready versions and country-scoped active jobs.
+
+| # | Bug found in contract/code review | Fix |
+|---|---|---|
+| 1 | Both documented cache GET routes were absent, leaving the admin cache screen without a read API | Register authenticated list/detail handlers under `/_admin/api/cache` and `/:countryId`; return the documented projections and `NOT_FOUND`/validation envelopes |
+| 2 | Cache list/detail had no strict shared schemas or query contract, so row shape, pagination, and large PostgreSQL `int8` values could drift or lose precision | Add shared Zod query/response schemas, strict unknown-key rejection, catalog-consistent filters and paging, and exact integer/string serialization |
+| 3 | Detail acceptance required current update state and active jobs, but the response needed a consistent country-scoped view and could otherwise expose terminal or unrelated jobs | Read cache, ready versions and queued/running country jobs in one repeatable-read transaction; tests pin update state, progress, state filtering and country scoping |
+| 4 | The detail example promised per-version download counts before `download_events` is introduced by P3-API-06 | Remove the unsupported count from the response contract and explicitly defer it rather than fabricate a value |
+| 5 | The Bearer-transport sweep still classified cache reads as `503 NOT_READY`, so a valid token against an implemented route made the full security suite fail | Expect `200` for the cache list and route-validation `400` for a template detail UUID, while retaining `401` for every misplaced credential |
+
+Real-PostgreSQL route tests cover cached-only list behavior, ISO/name filtering, update filtering, paging, timestamps, source-download selection, exact `bigint` encoding, strict query and UUID validation, auth, uncached/unknown 404s, ready versions, update state, active-job scope/status/progress and totals. Four mutation probes were killed: dropping the cached-only restriction; counting uploads or non-ready versions (even one with `ready_at`) as source downloads; and including another country's active jobs. Full non-Docker `bun run check` passes: 22 workspace checks, 54 hygiene checks, typechecking, ESLint and formatting; **1,387 passed across 108 files, 7 skipped** with the local PostgreSQL 16.2 test database. Docker runtime/operator tests remain excluded per operator direction.
+
+**Totals after this pass: 70 passes · 268 defects fixed · 0 open.**
 
 ## Pass 69 — 2026-10-28 (cache download admission needed source, disk, and queue orchestration)
 

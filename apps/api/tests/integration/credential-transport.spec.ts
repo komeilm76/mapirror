@@ -201,7 +201,7 @@ describe.skipIf(skipReason !== null)(
             headers: { authorization: `Bearer ${token}` },
           });
 
-          if (route === 'GET /_admin/api/catalog') {
+          if (route === 'GET /_admin/api/catalog' || route === 'GET /_admin/api/cache') {
             expect(response.statusCode, route).toBe(200);
           } else if (route === 'POST /_admin/api/catalog/sync') {
             expect(response.statusCode, route).toBe(202);
@@ -209,6 +209,7 @@ describe.skipIf(skipReason !== null)(
           } else if (
             route === 'GET /_admin/api/catalog/regions/:slug' ||
             route === 'GET /_admin/api/catalog/regions/:slug/snapshots' ||
+            route === 'GET /_admin/api/cache/:countryId' ||
             route === 'POST /_admin/api/cache/downloads'
           ) {
             expect(response.statusCode, route).toBe(400);
