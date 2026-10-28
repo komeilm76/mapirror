@@ -180,7 +180,18 @@ export function createCacheVersionDeleteHandler(options: CacheVersionDeleteRoute
         });
 
         try {
-          await deleted.file.remove();
+          const removed = await deleted.file.remove();
+          if (!removed) {
+            request.log.warn(
+              {
+                countryId,
+                versionId,
+                version: deleted.version,
+                storagePath: deleted.storagePath,
+              },
+              'map version row was deleted but an ancestor symlink blocked leaf cleanup; orphan sweep required',
+            );
+          }
         } catch (error) {
           request.log.warn(
             {

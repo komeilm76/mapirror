@@ -20,8 +20,8 @@ export interface DownloadFile {
   size(): Promise<bigint>;
   /** Opens the file using storage-enforced no-follow rules. */
   open(mode: 'read' | 'write' | 'append'): Promise<FileHandle>;
-  /** Removes this storage-owned file/link without traversing a symlink. */
-  remove(): Promise<void>;
+  /** Removes this storage-owned file/link without traversing a symlink; `false` means an ancestor link blocked the leaf. */
+  remove(): Promise<void | boolean>;
 }
 /** Injectable low-level write operation; production loops until the entire chunk is written. */
 export type DownloadChunkWriter = (handle: FileHandle, bytes: Uint8Array) => Promise<void>;

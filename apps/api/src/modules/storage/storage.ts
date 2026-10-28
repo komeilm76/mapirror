@@ -23,8 +23,11 @@ export interface StorageFile {
   size(): Promise<bigint>;
   /** Opens a regular file without following a leaf symlink. */
   open(mode: 'read' | 'write' | 'append'): Promise<FileHandle>;
-  /** Removes only a file or the first encountered symlink, never recursively removing a directory or following a link. */
-  remove(): Promise<void>;
+  /**
+   * Removes a file or encountered symlink without following links; returns false when an ancestor link was removed
+   * instead of reaching the requested leaf.
+   */
+  remove(): Promise<boolean>;
 }
 
 /** Cache-owned filesystem operations. */
@@ -128,11 +131,12 @@ export function createCacheStorage(cacheDirectory: string): CacheStorage {
         for (const component of spec.components.slice(0, -1)) {
           const candidate = join(parent, component);
           const parentDetails = await lstatIfExists(candidate);
-          if (parentDetails === undefined) return;
+          if (parentDetails === undefined) return true;
           if (parentDetails.isSymbolicLink()) {
-            // Removing the unexpected link itself is safe and prevents cancellation cleanup getting stuck behind it.
+            // Removing the unexpected link itself is safe and prevents cleanup from getting stuck behind it, but the
+            // requested leaf was not reached. Tell callers that it may remain in the symlink target.
             await unlink(candidate);
-            return;
+            return false;
           }
           if (!parentDetails.isDirectory() || (await realpath(candidate)) !== candidate) {
             throw new StoragePathError('Refusing to unlink through a non-directory cache parent.');
@@ -141,12 +145,13 @@ export function createCacheStorage(cacheDirectory: string): CacheStorage {
         }
         const path = join(parent, spec.components.at(-1) as string);
         const details = await lstatIfExists(path);
-        if (details === undefined) return;
+        if (details === undefined) return true;
         if (!details.isFile() && !details.isSymbolicLink()) {
           throw new StoragePathError('Refusing to unlink a non-file cache entry.');
         }
         // unlink() removes a symlink itself rather than following it. Parent components were walked without following.
         await unlink(path);
+        return true;
       },
     };
     Object.freeze(file);

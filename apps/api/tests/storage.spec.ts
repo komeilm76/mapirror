@@ -111,7 +111,7 @@ describe('cache storage paths and safe filesystem operations', () => {
 
       await expect(target.open('read')).rejects.toBeInstanceOf(StoragePathError);
       await expect(target.open('write')).rejects.toBeInstanceOf(StoragePathError);
-      await target.remove();
+      await expect(target.remove()).resolves.toBe(false);
       await expect(lstat(join(root, 'finland'))).rejects.toMatchObject({ code: 'ENOENT' });
       await expect(readFile(join(outside, '261023.osm.pbf'), 'utf8')).resolves.toBe(
         'must stay untouched',
@@ -132,7 +132,7 @@ describe('cache storage paths and safe filesystem operations', () => {
 
       await expect(target.ensureParent()).rejects.toBeInstanceOf(StoragePathError);
       await expect(target.open('read')).rejects.toBeInstanceOf(StoragePathError);
-      await target.remove();
+      await expect(target.remove()).resolves.toBe(false);
       await expect(lstat(join(root, 'finland', '261023'))).rejects.toMatchObject({
         code: 'ENOENT',
       });

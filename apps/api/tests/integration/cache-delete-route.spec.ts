@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp, parseEnv } from '../../src/index';
+import type { BuildAppOptions } from '../../src/app';
 import {
   acquireCountryCacheStreamLock,
   cacheCountryAdvisoryLockKey,
@@ -29,7 +30,10 @@ interface DeleteHarness {
   readonly versionPath: string;
 }
 
-async function withDeleteApp(run: (harness: DeleteHarness) => Promise<void>) {
+async function withDeleteApp(
+  run: (harness: DeleteHarness) => Promise<void>,
+  logger: BuildAppOptions['logger'] = false,
+) {
   await withFreshDatabase(
     async (database, name) => {
       const admin = await database.db
@@ -83,6 +87,7 @@ async function withDeleteApp(run: (harness: DeleteHarness) => Promise<void>) {
       const app = await buildApp({
         config: parseEnv({ DATABASE_URL: dsnFor(name), CACHE_DIR: cacheDir }),
         database,
+        logger,
       });
       try {
         await run({
@@ -894,6 +899,34 @@ describe.skipIf(skipReason !== null)(
             .execute(),
         ).toEqual([{ id: foreign.id }]);
       });
+    });
+
+    it('returns 204 and logs incomplete cleanup without following an ancestor symlink', async () => {
+      const logs: string[] = [];
+      await withDeleteApp(
+        async ({ app, token, countryId, cacheDir, versionPath }) => {
+          const outside = join(cacheDir, 'outside');
+          const outsideVersion = join(outside, '261023', 'finland-261023.osm.pbf');
+          await mkdir(join(outside, '261023'), { recursive: true });
+          await writeFile(outsideVersion, Buffer.from('not-under-cache-root'));
+          await rm(join(cacheDir, 'finland'), { recursive: true, force: true });
+          await symlink(outside, join(cacheDir, 'finland'), 'dir');
+
+          const version = await app.db.db
+            .selectFrom('map_versions')
+            .select('id')
+            .where('country_id', '=', countryId)
+            .executeTakeFirstOrThrow();
+          const response = await deleteVersion(app, token, countryId, version.id, '?confirm=true');
+
+          expect(response.statusCode).toBe(204);
+          await expectFileMissing(versionPath);
+          await expect(access(join(cacheDir, 'finland'))).rejects.toMatchObject({ code: 'ENOENT' });
+          await expect(access(outsideVersion)).resolves.toBeUndefined();
+        },
+        { level: 'warn', stream: { write: (line) => logs.push(line) } },
+      );
+      expect(logs.join('')).toContain('ancestor symlink blocked leaf cleanup');
     });
 
     it('returns 204 and leaves an orphan for cleanup when unlink cannot remove the leaf', async () => {

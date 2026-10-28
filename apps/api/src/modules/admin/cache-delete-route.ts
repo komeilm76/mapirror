@@ -134,7 +134,13 @@ export function createCacheDeleteHandler(options: CacheDeleteRouteOptions) {
 
         for (const storagePath of storagePaths) {
           try {
-            await storage.versionFileAt(storagePath).remove();
+            const removed = await storage.versionFileAt(storagePath).remove();
+            if (!removed) {
+              request.log.warn(
+                { countryId, storagePath },
+                'cache file row was deleted but an ancestor symlink blocked leaf cleanup; orphan sweep required',
+              );
+            }
           } catch (error) {
             request.log.warn(
               { err: error, countryId, storagePath },
