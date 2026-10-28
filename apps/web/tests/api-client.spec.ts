@@ -34,6 +34,13 @@ function jsonFetch(
 }
 
 /** The `Headers` a recorded call was given. */
+function requestUrl(input: RequestInfo | URL | undefined): string {
+  if (input === undefined) return '';
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
 function headersOf(fetchImpl: ReturnType<typeof jsonFetch>, call = 0): Headers {
   const [, init] = fetchImpl.mock.calls[call] ?? [];
   return new Headers(init?.headers);
@@ -412,6 +419,96 @@ describe('which failures end a session', () => {
       .get(ADMIN)
       .catch(() => undefined);
     expect(neither).not.toHaveBeenCalled();
+  });
+});
+
+describe('authenticated file streams', () => {
+  it('pipes bytes directly to the destination with Bearer auth and no cookies', async () => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'mm_file_token');
+    const bytes = new Uint8Array([0, 1, 2, 255]);
+    const fetchImpl = vi.fn<typeof fetch>(() =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(bytes);
+              controller.close();
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/octet-stream' } },
+        ),
+      ),
+    );
+    const chunks: Uint8Array[] = [];
+    const destination = new WritableStream<Uint8Array>({
+      write(chunk) {
+        chunks.push(chunk);
+      },
+    });
+
+    await createApiClient({ fetchImpl }).stream(
+      `${ADMIN}/00000000-0000-4000-8000-000000000001/versions/00000000-0000-4000-8000-000000000002/download`,
+      destination,
+      { query: { range: 'bytes=0-3' } },
+    );
+
+    const [url, init] = fetchImpl.mock.calls[0] ?? [];
+    expect(requestUrl(url)).toContain('range=bytes%3D0-3');
+    expect(init?.method).toBe('GET');
+    expect(init?.credentials).toBe('omit');
+    expect(new Headers(init?.headers).get('authorization')).toBe('Bearer mm_file_token');
+    expect(new Headers(init?.headers).get('accept')).toBe('application/octet-stream');
+    expect(chunks).toHaveLength(1);
+    expect([...chunks[0]!]).toEqual([...bytes]);
+  });
+
+  it('does not apply the JSON timeout to a long-running stream', async () => {
+    vi.useFakeTimers();
+    const fetchImpl = vi.fn<typeof fetch>(() =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              setTimeout(() => {
+                controller.enqueue(new Uint8Array([7]));
+                controller.close();
+              }, DEFAULT_TIMEOUT_MS + 1);
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    const chunks: Uint8Array[] = [];
+    const pending = createApiClient({ fetchImpl }).stream(
+      `${ADMIN}/file`,
+      new WritableStream<Uint8Array>({
+        write(chunk) {
+          chunks.push(chunk);
+        },
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS + 5);
+    await expect(pending).resolves.toBeUndefined();
+    expect(chunks).toHaveLength(1);
+  });
+
+  it('preserves API errors and expires a session when a protected stream answers 401', async () => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'mm_stale');
+    const onSessionExpired = vi.fn();
+    const fetchImpl = rawFetch(
+      JSON.stringify({
+        error: { code: 'TOKEN_EXPIRED', message: 'Session expired.', requestId: 'req-stream' },
+      }),
+      401,
+    );
+    const error = await createApiClient({ fetchImpl, onSessionExpired })
+      .stream(`${ADMIN}/file`, new WritableStream<Uint8Array>())
+      .catch((cause: unknown) => cause);
+
+    expect(error).toMatchObject({ code: 'TOKEN_EXPIRED', requestId: 'req-stream' });
+    expect(onSessionExpired).toHaveBeenCalledWith(error);
   });
 });
 

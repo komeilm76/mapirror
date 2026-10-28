@@ -12,7 +12,7 @@ Pages and APIs have disjoint homes — a path is either a page or an API, never 
 
 | Kind | Prefix | Examples | Auth |
 |---|---|---|---|
-| **Website pages** (SPA shells, HTML) | `/_site/*` | `/_site/`, `/_site/countries/:slug`, `/_site/api-docs`, `/_site/admin/cache` | None (the admin panel checks its token client-side) |
+| **Website pages** (SPA shells, HTML) | `/_site/*` | `/_site/`, `/_site/countries/:slug`, `/_site/api-docs`, `/_site/admin/cache`, `/_site/admin/cache/:countryId` | None (the admin panel checks its token client-side) |
 | **Admin JSON API** | `/_admin/api/*` | `/_admin/api/catalog`, `/_admin/api/cache/:countryId/public` | Bearer token |
 | **Public JSON API** | `/_public/api/*` | `/_public/api/countries`, `/_public/api/countries/:slug/download` | None, rate limited |
 | **Login page** (SPA) | `/_auth/login` | `GET /_auth/login` | None |
@@ -32,7 +32,7 @@ Rules:
   (`/_site/countries/api`) is still a legal page. Classification compares whole segments, and decodes
   percent-escapes first: `/_admin/%61pi/...` is the admin API, not an unknown path.
 - `/` returns `302` to `/_site/`.
-- SPA deep links (`/_site/admin/cache/finland`) are rewritten by Nginx to `index.html`; unknown
+- SPA deep links (`/_site/admin/cache/00000000-0000-4000-8000-000000000001`) are rewritten by Nginx to `index.html`; unknown
   `/_site/*` paths render the in-app 404 page, not a server error.
 - **Who serves what:** Nginx serves the SPA (`/` → `/_site/`, `/_site/*` fallback and the single
   `/_auth/login` page); the API serves only `/_auth/api/*`, `/_admin/api/*`, `/_public/api/*` and the

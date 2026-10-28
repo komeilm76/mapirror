@@ -450,7 +450,9 @@ function isoLabel(item: CacheListItem): string {
           <tbody>
             <tr v-for="item in result.data" :key="item.countryId">
               <th scope="row" class="mm-cache-country">
-                <span class="mm-cache-name">{{ item.name }}</span>
+                <RouterLink class="mm-cache-name" :to="adminPagePaths.cacheCountry(item.countryId)">
+                  {{ item.name }}
+                </RouterLink>
                 <span class="mm-cache-source mm-mono-small">{{ item.sourceId }}</span>
                 <span class="mm-cache-secondary">{{ isoLabel(item) }}</span>
               </th>
@@ -495,7 +497,11 @@ function isoLabel(item: CacheListItem): string {
       <div class="mm-cache-cards" aria-label="Cached countries">
         <article v-for="item in result.data" :key="item.countryId" class="mm-cache-card">
           <header>
-            <h2 class="mm-cache-name">{{ item.name }}</h2>
+            <h2 class="mm-cache-name">
+              <RouterLink :to="adminPagePaths.cacheCountry(item.countryId)">{{
+                item.name
+              }}</RouterLink>
+            </h2>
             <span class="mm-cache-source mm-mono-small">{{ item.sourceId }}</span>
             <span class="mm-cache-secondary">{{ isoLabel(item) }}</span>
           </header>

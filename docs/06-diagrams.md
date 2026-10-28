@@ -68,7 +68,7 @@ flowchart LR
   pages --> papi["/_public/api/*\nJSON, anonymous"]
   adm --> aapi["/_admin/api/*\nJSON, Bearer"]
   login --> auth["/_auth/api/*\nJSON: login / logout / me"]
-  adm --> dash["/_site/admin/cache/finland\ndeep links rewritten to index.html"]
+  adm --> dash["/_site/admin/cache/00000000-0000-4000-8000-000000000001\ndeep links rewritten to index.html"]
 ```
 
 ## 5. Data model (compact)
@@ -152,7 +152,7 @@ flowchart LR
   login["/_auth/login"] --> dash["/_site/admin (dashboard)"]
   dash --> catalog["/_site/admin/catalog"]
   dash --> cache["/_site/admin/cache"]
-  cache --> detail["/_site/admin/cache/:slug"]
+  cache --> detail["/_site/admin/cache/:countryId"]
   dash --> intervals["/_site/admin/intervals"]
   dash --> imports["/_site/admin/import"]
   dash --> jobs["/_site/admin/jobs"]

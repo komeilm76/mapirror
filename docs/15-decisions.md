@@ -288,7 +288,7 @@ JSON on the same URLs would need content negotiation and make `curl` output depe
 | Kind | Path |
 |---|---|
 | Public pages | `/_site/`, `/_site/countries/:slug`, `/_site/api-docs`, `/_site/not-found` |
-| Admin pages | `/_site/admin/`, `/_site/admin/catalog`, `/_site/admin/cache`, `/_site/admin/cache/:slug`, `/_site/admin/intervals`, `/_site/admin/import`, `/_site/admin/jobs`, `/_site/admin/system`, `/_site/admin/settings`, `/_site/admin/audit` |
+| Admin pages | `/_site/admin/`, `/_site/admin/catalog`, `/_site/admin/cache`, `/_site/admin/cache/:countryId`, `/_site/admin/intervals`, `/_site/admin/import`, `/_site/admin/jobs`, `/_site/admin/system`, `/_site/admin/settings`, `/_site/admin/audit` |
 | Login page | `/_auth/login` — the single exception, owned by the auth namespace (ADR-024) |
 | APIs | `/_auth/api/*`, `/_admin/api/*`, `/_public/api/*` |
 | Root | `GET /` → `302 /_site/` |

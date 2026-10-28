@@ -52,6 +52,7 @@ import { useApi } from '@/composables/useApi';
 import { breadcrumbsFor } from '@/router/breadcrumbs';
 import { ADMIN_NAV, isNavItemActive } from '@/router/nav';
 import { useAuth } from '@/stores/auth';
+import { useBreadcrumbs } from '@/stores/breadcrumbs';
 
 import { MAIN_ID, SIDEBAR_WIDTH, TOPBAR_HEIGHT } from './adminShell';
 
@@ -59,6 +60,7 @@ const route = useRoute();
 const router = useRouter();
 const display = useDisplay();
 const auth = useAuth();
+const pageLabels = useBreadcrumbs();
 const client = useApi();
 
 /** Whether the viewport is below §3's boundary. */
@@ -67,8 +69,16 @@ const mobile = computed(() => display.mobile.value);
 /** Whether the sidebar is showing. Open on a desktop, closed on a phone, where it would cover the page. */
 const drawerOpen = ref(!mobile.value);
 
-/** The trail, from the path alone, so a filtered URL (`?status=failed`) has the same crumbs as its page. */
-const crumbs = computed(() => breadcrumbsFor(route));
+/** The trail follows the path; a cached-country's API label replaces its UUID after detail loads. */
+const crumbs = computed(() =>
+  breadcrumbsFor({
+    path: route.path,
+    meta: {
+      title: route.meta.title,
+      breadcrumbLabel: pageLabels.cacheCountryLabel ?? route.meta.breadcrumbLabel,
+    },
+  }),
+);
 
 /** The catalog search term (§3: global search in the topbar). */
 const search = ref('');

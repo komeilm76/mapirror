@@ -160,6 +160,11 @@ describe('admin cache page', () => {
     expect(container.querySelector('h1')?.textContent).toBe('Cached countries');
     expect(container.querySelectorAll('.mm-cache-table tbody tr')).toHaveLength(2);
     expect(container.querySelectorAll('.mm-cache-card')).toHaveLength(2);
+    expect(
+      [...container.querySelectorAll<HTMLAnchorElement>('a.mm-cache-name')].some(
+        (link) => link.getAttribute('href') === adminPagePaths.cacheCountry(cacheItem(0).countryId),
+      ),
+    ).toBe(true);
     expect(container.textContent).toContain('8.0 PiB');
     expect(container.textContent).toContain('1.2 MiB');
     expect(container.textContent).toContain('3');

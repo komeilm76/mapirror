@@ -161,7 +161,7 @@ yet. Until then `font-display: swap` means text paints in the fallback face firs
 | S5 | `/_site/admin/` | Dashboard | 4 stat cards, CPU/RAM/disk charts, updates, jobs | "No data yet — sampling…" |
 | S6 | `/_site/admin/catalog` | Search Geofabrik | search, continent, cache filter, table with Download | "No country matches" |
 | S7 | `/_site/admin/cache` | Cached countries | search/update filter; sortable, paginated table: name, ready versions, local size, public/private state, update badge, catalog sync/source-download times | "Nothing cached yet — browse catalog" |
-| S8 | `/_site/admin/cache/:slug` | Country detail | versions table, public toggle, check update, active jobs | — |
+| S8 | `/_site/admin/cache/:countryId` | Cached-country detail | cache summary, active work, paginated version table with download/delete | "No versions stored" |
 | S9 | `/_site/admin/intervals` | Schedules | list + create button, next run, last status | "No intervals yet" |
 | S10 | `/_site/admin/import` | Upload | dropzone, country select, version, submit, progress | — |
 | S11 | `/_site/admin/jobs` | Job queue | filters, progress rows, cancel | "No jobs" |
@@ -169,6 +169,8 @@ yet. Until then `font-display: swap` means text paints in the fallback face firs
 | S13 | `/_site/admin/settings` | Settings | display name, retention, limits | — |
 | S14 | `/_site/admin/audit` | Audit log | filter by action, paginated | "No entries" |
 | S15 | `/_site/*` (unmatched) | Not found | friendly 404 + link home | — |
+
+The admin detail URL carries the local country UUID because the cache detail/version APIs are UUID-scoped. The page reads the country name from the API for its heading and breadcrumb. Its current version actions are scoped to P2-WEB-04; the publication switch is P3-WEB-06, and update-check actions remain outside this task.
 
 ## 5. Component rules
 

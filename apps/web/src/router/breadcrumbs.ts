@@ -9,8 +9,8 @@
  *
  * The sidebar (`router/nav.ts`) — not from each route's own meta. A screen's place in the hierarchy is the same fact in
  * both places, and deriving the trail from the navigation means the two cannot disagree: if `Cache` is under `Dashboard`
- * in the sidebar, it is under it in the trail. The tail — the part below a sidebar entry, e.g. the country in
- * `/_site/admin/cache/finland` — comes from the URL, because that is what a reader can check against the address bar.
+ * in the sidebar, it is under it in the trail. The tail below a sidebar entry is the cached-country name returned by the
+ * authenticated detail API when available; before it answers, the decoded URL segment is the honest fallback.
  *
  * ## The last crumb is not a link
  *
@@ -42,7 +42,7 @@ export interface CrumbRoute {
   /** `route.path`, without a query string. */
   readonly path: string;
   /** `route.meta`, whose `title` every route in this app carries (`types/vue-router.d.ts`). */
-  readonly meta: { readonly title: string };
+  readonly meta: { readonly title: string; readonly breadcrumbLabel?: string };
 }
 
 /** The admin root as the sidebar spells it, and as a browser may spell it. */
@@ -99,9 +99,9 @@ export function breadcrumbsFor(route: CrumbRoute): Crumb[] {
   crumbs.push({ label: item.label, to: deeper === '' ? null : item.path });
 
   if (deeper !== '') {
-    // The tail is the URL's own last segment(s), decoded. A country's display name arrives with the API (`P2-WEB-04`),
-    // and until then the slug in the address bar is the one label a reader can verify.
-    crumbs.push({ label: decodeSegment(deeper), to: null });
+    // The page may replace the UUID tail with the country name after its authenticated detail read; before that response,
+    // the decoded URL remains the only label the reader can verify.
+    crumbs.push({ label: route.meta.breadcrumbLabel ?? decodeSegment(deeper), to: null });
   }
 
   return crumbs;

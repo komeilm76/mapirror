@@ -150,13 +150,19 @@ describe('the navigation is the router', () => {
   it('keeps a parent entry marked for a child screen', async () => {
     // S8 (a cached country) is under S7, not an entry of its own: the reader must not lose the sidebar's answer to
     // "where am I?" one click in.
-    const { container } = await mountAdmin({ at: adminPagePaths.cacheCountry('finland') });
+    const { container } = await mountAdmin({
+      at: adminPagePaths.cacheCountry('00000000-0000-4000-8000-000000000001'),
+    });
 
     const current = navLinks(container).filter(
       (link) => link.getAttribute('aria-current') === 'page',
     );
     expect(current.map((link) => link.textContent?.trim())).toEqual(['Cache']);
-    expect(crumbLabels(container)).toEqual(['Dashboard', 'Cache', 'finland']);
+    expect(crumbLabels(container)).toEqual([
+      'Dashboard',
+      'Cache',
+      '00000000-0000-4000-8000-000000000001',
+    ]);
   });
 
   it('navigates when an entry is clicked', async () => {
@@ -391,7 +397,9 @@ describe('the shell is reachable and honest', () => {
     // the file is *the shell's* stylesheet, and the day a rule serves another area it moves to that area's file.
     // A country's page, not the dashboard: the dashboard's trail has one step and therefore no link and no divider, so the
     // deepest screen is the one that renders every class the file styles.
-    const { container } = await mountAdmin({ at: adminPagePaths.cacheCountry('finland') });
+    const { container } = await mountAdmin({
+      at: adminPagePaths.cacheCountry('00000000-0000-4000-8000-000000000001'),
+    });
     // Comments are stripped first: this file names its own selectors in prose, and the prose is not a selector.
     const css = readFileSync(
       resolve(import.meta.dirname, '../src/styles/shell.css'),

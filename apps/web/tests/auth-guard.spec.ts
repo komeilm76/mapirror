@@ -34,9 +34,11 @@ function guardedRouter(hasSession: boolean): Router {
   return router;
 }
 
-/** A route path with its `:slug` filled in, so it can be pushed. */
+/** A route path with its dynamic params filled in, so it can be pushed. */
 function concrete(path: string): string {
-  return path.replace(':slug', 'finland');
+  return path
+    .replace(':slug', 'finland')
+    .replace(':countryId', '00000000-0000-4000-8000-000000000001');
 }
 
 /** Every admin page in the table, as concrete paths. */

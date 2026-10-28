@@ -29,10 +29,10 @@ import { apiScopeOf, isApiPath } from '@mapirror/shared';
 import { readSessionToken } from '@/auth/token-storage';
 import { ApiError, errorFromFailure, errorFromResponse, type ApiErrorCode } from './errors';
 
-/** The methods this client uses. `HEAD`/`OPTIONS` are not called by the SPA: downloads are links, not fetches. */
+/** The JSON methods this client uses; authenticated file downloads use the streaming `stream()` method below. */
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
-/** Default request budget. A download is a link and never comes through here, so this only has to cover JSON. */
+/** Default request budget for JSON calls; large file streams deliberately have no fixed timeout. */
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
 /** A value that can appear in a query string. `null`/`undefined` are dropped rather than sent as `"null"`. */
@@ -53,6 +53,9 @@ export interface ApiRequestOptions {
   readonly timeoutMs?: number;
 }
 
+/** Options for a streaming download; map extracts have no fixed timeout because they can be several GiB. */
+export type ApiStreamOptions = Pick<ApiRequestOptions, 'query' | 'headers' | 'signal'>;
+
 /** Options for {@link createApiClient}. Everything is injectable so a test needs no network and no globals. */
 export interface ApiClientOptions {
   /** The `fetch` to use; defaults to the global one. */
@@ -70,6 +73,12 @@ export interface ApiClientOptions {
 /** The client a screen receives from `useApi()`. */
 export interface ApiClient {
   request: <T>(method: HttpMethod, path: string, options?: ApiRequestOptions) => Promise<T>;
+  /** Streams a successful GET response into a writable without buffering large map files in memory. */
+  stream: (
+    path: string,
+    destination: WritableStream<Uint8Array>,
+    options?: ApiStreamOptions,
+  ) => Promise<void>;
   get: <T>(path: string, options?: ApiRequestOptions) => Promise<T>;
   post: <T>(path: string, body?: unknown, options?: ApiRequestOptions) => Promise<T>;
   patch: <T>(path: string, body?: unknown, options?: ApiRequestOptions) => Promise<T>;
@@ -291,8 +300,79 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     }
   }
 
+  /**
+   * Authenticated GET whose body is piped to the caller's writable, never accumulated in RAM.
+   *
+   * Large admin map files can be several GiB, so a JSON request timeout and `Response.blob()` are both inappropriate.
+   * The caller owns the destination and cancellation controller; this method still owns the API-path law, Bearer header,
+   * cookie omission, and standard error/session-expiry handling.
+   *
+   * @param path - A documented API path.
+   * @param destination - A browser file stream or another writable byte sink.
+   * @param streamOptions - Query, extra headers, and cooperative cancellation.
+   */
+  async function stream(
+    path: string,
+    destination: WritableStream<Uint8Array>,
+    streamOptions: ApiStreamOptions = {},
+  ): Promise<void> {
+    if (!isApiPath(path)) {
+      throw new Error(
+        `GET ${path} is not an API path: useApi() talks to /_auth/api, /_admin/api and /_public/api.`,
+      );
+    }
+
+    const presented = needsBearer(path) ? readToken() : null;
+    const headers = new Headers({ accept: 'application/octet-stream' });
+    if (presented !== null) headers.set('authorization', `Bearer ${presented}`);
+    for (const [name, value] of Object.entries(streamOptions.headers ?? {}))
+      headers.set(name, value);
+
+    const controller = new AbortController();
+    const forwardAbort = (): void => controller.abort();
+    if (streamOptions.signal?.aborted === true) {
+      throw errorFromFailure(undefined, 'ABORTED');
+    }
+    streamOptions.signal?.addEventListener('abort', forwardAbort, { once: true });
+
+    let receivedResponse = false;
+    try {
+      const response = await fetchImpl(buildUrl(baseUrl, path, streamOptions.query), {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+        credentials: 'omit',
+      });
+      receivedResponse = true;
+
+      if (!response.ok) {
+        const error = await errorFromResponse(response);
+        if (presented !== null && error.sessionEnded) notifySessionExpired(error);
+        throw error;
+      }
+      if (response.body === null) {
+        throw new ApiError({
+          code: 'MALFORMED',
+          status: response.status,
+          requestId: response.headers.get('x-request-id'),
+          message: 'The server returned an empty file response.',
+        });
+      }
+      await response.body.pipeTo(destination, { signal: controller.signal });
+    } catch (cause) {
+      if (cause instanceof ApiError) throw cause;
+      if (controller.signal.aborted) throw errorFromFailure(cause, 'ABORTED');
+      if (!receivedResponse) throw errorFromFailure(cause, 'NETWORK');
+      // A body-stream or destination failure is left intact for the page's disk/network-safe copy.
+      throw cause;
+    } finally {
+      streamOptions.signal?.removeEventListener('abort', forwardAbort);
+    }
+  }
+
   return {
     request,
+    stream,
     get: <T>(path: string, requestOptions?: ApiRequestOptions): Promise<T> =>
       request<T>('GET', path, requestOptions),
     post: <T>(

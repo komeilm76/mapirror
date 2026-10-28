@@ -29,5 +29,7 @@ declare module 'vue-router' {
     readonly owner: string;
     /** `true` while the route renders `PlaceholderPage`. */
     readonly placeholder?: boolean;
+    /** A data-loaded child label for breadcrumbs, e.g. the country name returned by S8. */
+    readonly breadcrumbLabel?: string;
   }
 }
