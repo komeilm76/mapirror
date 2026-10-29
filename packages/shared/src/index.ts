@@ -39,4 +39,5 @@ export * from './license';
 export * from './jobs';
 export * from './pagination';
 export * from './public-catalog';
+export * from './public-country';
 export * from './routes';

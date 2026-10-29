@@ -655,22 +655,42 @@ Only countries with `is_public = true` **and** ≥ 1 `ready` version appear. Unp
 
 ### 3.2 `GET /_public/api/countries/:slug`
 
+Returns the published country and its newest ready version. `versions` embeds up to the 100 newest ready versions; use §3.3 to page through a longer history. `updatedAt` is the newest ready version's `dataTimestamp`, or `null` when that timestamp is unknown. Version byte counts use a JSON integer when safe, otherwise a canonical decimal string; an unavailable/invalid MD5 is `null`.
+
 ```json
 200 {
   "slug": "finland", "name": "Finland", "iso": ["FI"],
-  "versions": [ { "version": "261023", "dataTimestamp": "…", "sizeBytes": 773465008,
-                  "checksumMd5": "…", "downloadUrl": "…?version=261023", "isLatest": true } ],
-  "latest": "261023",
-  "updatedAt": "…",
+  "versions": [ { "version": "261023", "dataTimestamp": "2026-10-22T20:19:04.000Z", "sizeBytes": 773465008,
+                  "checksumMd5": "d41d8cd98f00b204e9800998ecf8427e",
+                  "downloadUrl": "/_public/api/countries/finland/download?version=261023", "isLatest": true } ],
+  "latest": "261023", "updatedAt": "2026-10-22T20:19:04.000Z",
   "license": { "name": "ODbL 1.0", "attribution": "© OpenStreetMap contributors",
                "url": "https://www.openstreetmap.org/copyright",
                "source": "Geofabrik GmbH", "sourceUrl": "https://download.geofabrik.de" }
 }
 ```
-Unknown **or unpublished** slug → `404 NOT_FOUND` (identical body; no existence leak).
+
+Only countries with `is_public = true` and at least one ready version are visible. Unknown and unpublished slugs return `404 NOT_FOUND` with the same safe message; malformed slugs are also hidden as `404`. The request id remains unique per response.
 
 ### 3.3 `GET /_public/api/countries/:slug/versions`
-Paginated versions (public-safe fields only: no `storagePath`, no ids of internal jobs).
+
+Query: `page` and `limit` (default 25, maximum 100), with §0.2's decimal-only clamping. Unknown query keys return `400 VALIDATION_ERROR`. The endpoint returns only ready versions, newest first using the same timestamp/ready-time ordering as `latest`; `isLatest` identifies the selected latest version. Unknown, unpublished, or malformed slugs return the same `404 NOT_FOUND` as §3.2.
+
+```json
+200 {
+  "data": [{
+    "version": "261023", "dataTimestamp": "2026-10-22T20:19:04.000Z", "sizeBytes": 773465008,
+    "checksumMd5": "d41d8cd98f00b204e9800998ecf8427e",
+    "downloadUrl": "/_public/api/countries/finland/download?version=261023", "isLatest": true
+  }],
+  "meta": { "page": 1, "limit": 25, "total": 2, "totalPages": 1 },
+  "license": { "name": "ODbL 1.0", "attribution": "© OpenStreetMap contributors",
+               "url": "https://www.openstreetmap.org/copyright",
+               "source": "Geofabrik GmbH", "sourceUrl": "https://download.geofabrik.de" }
+}
+```
+
+No internal ids, job ids, or storage paths are exposed. Invalid MD5 values are represented as `null` rather than labeled as MD5.
 
 ### 3.4 `GET /_public/api/countries/:slug/download?version=latest|260101`
 

@@ -46,6 +46,7 @@ describe('the three API prefixes are registered', () => {
     '/_public/api/countries?sort=unsupported',
     '/_public/api/countries?q=%00',
     '/_public/api/countries?continent=%00',
+    '/_public/api/countries/finland/versions?sort=name',
   ])('validates public countries query %s before touching the database', async (url) => {
     const response = await (await app()).inject({ method: 'GET', url });
 
@@ -381,5 +382,9 @@ describe('L1 is enforced at boot, not only by the law test', () => {
   it('is installed by buildApp, so a legal app boots and is checked', async () => {
     const instance = await app();
     expect(instance.hasRoute({ method: 'GET', url: '/_public/api/countries' })).toBe(true);
+    expect(instance.hasRoute({ method: 'GET', url: '/_public/api/countries/:slug' })).toBe(true);
+    expect(instance.hasRoute({ method: 'GET', url: '/_public/api/countries/:slug/versions' })).toBe(
+      true,
+    );
   });
 });

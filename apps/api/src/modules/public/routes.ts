@@ -9,9 +9,11 @@
 
 import type { FastifyPluginCallback } from 'fastify';
 
-import { getPublicCountries } from './countries-route';
+import { getPublicCountries, getPublicCountry, getPublicCountryVersions } from './countries-route';
 
 /** Countries, versions, download, stats land here. */
 export const publicRoutes: FastifyPluginCallback = (app) => {
   app.get('/countries', getPublicCountries);
+  app.get('/countries/:slug/versions', getPublicCountryVersions);
+  app.get('/countries/:slug', getPublicCountry);
 };
