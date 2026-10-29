@@ -3,11 +3,22 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 99 passes · 370 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4, pass 76: 4, pass 77: 4, pass 78: 4, pass 79: 5, pass 80: 7, pass 81: 7, pass 82: 9, pass 83: 8, pass 84: 1, pass 85: 3, pass 86: 1, pass 87: 2, pass 88: 2, pass 89: 1, pass 90: 1, pass 91: 3, pass 92: 1, pass 93: 1, pass 94: 1, pass 95: 1, pass 96: 1, pass 97: 1, pass 98: 2, pass 99: 4).
+**Totals:** 100 passes · 372 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4, pass 76: 4, pass 77: 4, pass 78: 4, pass 79: 5, pass 80: 7, pass 81: 7, pass 82: 9, pass 83: 8, pass 84: 1, pass 85: 3, pass 86: 1, pass 87: 2, pass 88: 2, pass 89: 1, pass 90: 1, pass 91: 3, pass 92: 1, pass 93: 1, pass 94: 1, pass 95: 1, pass 96: 1, pass 97: 1, pass 98: 2, pass 99: 4, pass 100: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
 ---
+
+## Pass 100 — 2026-10-29 (public stats and download accounting were still missing)
+
+P3-API-06 review followed the `download_events` schema and the documented §3.5 response. The existing admin stream already stored salted IP hashes, but the public stream had no event writes and the public stats route was not registered. The count/size semantics also needed to be explicit so public aggregates could not accidentally include admin events or hidden/pending data.
+
+| # | Bug found | Fix |
+|---|---|---|
+| 1 | `GET /_public/api/stats` was documented but unimplemented, with no strict shared response contract or defined size/publication aggregation | Add an anonymous strict-schema route from one repeatable-read snapshot; count visible countries and sum all ready downloadable version bytes, with safe bigint JSON encoding and documented windows/null semantics |
+| 2 | Only admin streams recorded download events, so public analytics were absent; persisting the raw client IP would violate the privacy rule | Share the salted-hash event writer between channels, count actual response-body bytes for completed and aborted public transfers, and leave HEAD/304 unrecorded; return only public-channel aggregates with no event/client identifiers |
+
+Validation: `bun run check` passed (22 workspace checks, 54 hygiene checks, typecheck, ESLint, Prettier; Vitest: 97 files passed, 33 skipped; 1,216 tests passed, 297 skipped). Shared stats contract tests and route/query validation passed. The two new stats-route and five public-stream PostgreSQL integration cases were skipped because no fresh test database is available; database aggregation, event persistence, and aborted-transfer accounting remain unverified here. Existing Vite native-config and Vue/jsdom warnings remain. **Totals after this pass: 100 passes · 372 defects fixed · 0 open.**
 
 ## Pass 99 — 2026-10-29 (published map downloads still had no public stream)
 

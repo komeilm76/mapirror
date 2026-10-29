@@ -742,11 +742,19 @@ allowance (60 per IP per minute), so a client downloading files cannot lock itse
 
 ### 3.5 `GET /_public/api/stats`
 
+Anonymous aggregate only; this route accepts no query parameters and responds with `Cache-Control: no-store`.
+
 ```json
 { "countries": 5, "totalSizeBytes": 2319000000, "downloads30d": 128,
-  "totalDownloads": 1420, "lastPublishedAt": "…" }
+  "totalDownloads": 1420, "lastPublishedAt": "2026-10-23T20:20:51.000Z" }
 ```
-No IPs, no per-user data.
+
+- `countries`: currently published countries with at least one ready version.
+- `totalSizeBytes`: the sum of **all** ready versions downloadable from those countries (not just each newest version, and not pending/failed versions).
+- `lastPublishedAt`: most recent `public_since` among those currently visible countries, or `null` when none are public.
+- `downloads30d`: public-channel event rows created in the last 30 days; `totalDownloads` is all-time public-channel events. Events are recorded after a body-bearing response closes, including interrupted transfers, and `bytes_sent` is the number of body bytes actually transferred. Counts therefore include aborted body transfers, exclude `HEAD` and `304`, and remain historical if a country is later unpublished.
+
+The response contains no IP, IP hash, user-agent, country id, version id, or per-user data. Event rows store only a salted SHA-256 hash of a normalized IP (or `null` if unavailable); the raw IP is never persisted. Aggregate bigint values are JSON numbers while safe, otherwise decimal strings.
 
 ---
 

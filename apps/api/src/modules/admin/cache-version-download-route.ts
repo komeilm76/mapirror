@@ -3,23 +3,21 @@
  * @module modules/admin/cache-version-download-route
  */
 
-import { createHash, randomBytes } from 'node:crypto';
 import type { FileHandle } from 'node:fs/promises';
 import type { ServerResponse } from 'node:http';
 import { basename } from 'node:path';
 
 import { CacheVersionDeleteParamsSchema } from '@mapirror/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { sql, type Kysely } from 'kysely';
+import { sql } from 'kysely';
 
 import type { AppConfig } from '../../config/env';
-import type { Database } from '../../db/schema';
 import {
   acquireCountryCacheStreamLock,
   cacheCountryAdvisoryLockKey,
   releaseCountryCacheStreamLock,
 } from '../../db/repositories/cache';
-import { normaliseIp } from '../../lib/client-ip';
+import { recordDownloadEvent } from '../download-events';
 import { AppError } from '../../lib/errors';
 import { createCacheStorage, type StorageFile } from '../storage/storage';
 
@@ -149,14 +147,12 @@ export function createCacheVersionDownloadHandler(options: CacheVersionDownloadO
           );
         });
         if (recordEvent) {
-          await recordDownloadEvent(
-            connection,
-            options.config,
-            request,
+          await recordDownloadEvent(connection, options.config, request, {
             countryId,
             versionId,
             bytesSent,
-          );
+            channel: 'admin',
+          });
         }
         if (lockHeld) {
           try {
@@ -189,70 +185,6 @@ async function openVersionFile(
       });
     }
     throw error;
-  }
-}
-
-/** Loads the configured IP salt or creates the persisted default on the first recorded transfer. */
-async function downloadIpHashSalt(
-  connection: Kysely<Database>,
-  config: AppConfig,
-): Promise<string> {
-  if (config.ipHashSalt !== undefined) return config.ipHashSalt;
-
-  const readSalt = async (): Promise<string | null> => {
-    const setting = await connection
-      .selectFrom('settings')
-      .select('value')
-      .where('key', '=', 'privacy.ipHashSalt')
-      .executeTakeFirst();
-    return typeof setting?.value === 'string' && setting.value.length > 0 ? setting.value : null;
-  };
-
-  const existing = await readSalt();
-  if (existing !== null) return existing;
-
-  const generatedSalt = randomBytes(32).toString('hex');
-  await connection
-    .insertInto('settings')
-    .values({ key: 'privacy.ipHashSalt', value: JSON.stringify(generatedSalt) })
-    .onConflict((conflict) => conflict.column('key').doNothing())
-    .execute();
-  const persisted = await readSalt();
-  if (persisted === null) throw new Error('the persisted download IP hash salt is invalid');
-  return persisted;
-}
-
-/** Adds the admin-channel transfer record after the response closes; raw IP addresses are never persisted. */
-async function recordDownloadEvent(
-  connection: Kysely<Database>,
-  config: AppConfig,
-  request: FastifyRequest,
-  countryId: string,
-  versionId: string,
-  bytesSent: bigint,
-): Promise<void> {
-  try {
-    const ip = normaliseIp(request.ip ?? request.raw.socket.remoteAddress);
-    const salt = await downloadIpHashSalt(connection, config);
-    const ipHash =
-      ip === null ? null : createHash('sha256').update(`${ip}${salt}`, 'utf8').digest('hex');
-    const userAgent = request.headers['user-agent'];
-    await connection
-      .insertInto('download_events')
-      .values({
-        country_id: countryId,
-        version_id: versionId,
-        channel: 'admin',
-        bytes_sent: bytesSent,
-        ip_hash: ipHash,
-        user_agent: typeof userAgent === 'string' ? userAgent : null,
-      })
-      .execute();
-  } catch (error) {
-    request.log.warn(
-      { err: error, countryId, versionId, bytesSent: bytesSent.toString(), channel: 'admin' },
-      'could not record completed cached map download',
-    );
   }
 }
 

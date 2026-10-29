@@ -401,8 +401,8 @@ CREATE TABLE download_events (
 CREATE INDEX download_events_country_idx ON download_events (country_id, created_at DESC);
 ```
 
-- Recorded when a streaming download completes or is aborted (bytes actually sent).
-- Powers public stats and the admin "most downloaded" widget; IPs are hashed (privacy by design).
+- Recorded for a body-bearing streaming response when it completes or is aborted (bytes actually sent); `HEAD` and `304` create no row. Public and admin streams use their respective `channel` values.
+- Powers public stats (public channel only) and the admin "most downloaded" widget. The normalized IP is stored only as `sha256(ip + salt)` (or `NULL`); raw IPs are never persisted. The public stats response never exposes IP hashes, user agents, or row identifiers.
 
 ### 2.11 `settings` + `audit_logs`
 

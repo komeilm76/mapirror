@@ -365,14 +365,16 @@ sequenceDiagram
   API->>FS: stat file → size, mtime
   API-->>U: 200 headers (Content-Length, ETag, Accept-Ranges)
   API->>FS: createReadStream → pipe (64 KiB chunks)
-  API->>API: on close → download_events(bytes_sent, ip_hash)
+  API->>API: on close → public download_events(bytes_sent, salted ip_hash)
 ```
 
 **Rules:** `404` (not `403`) for anything not published; `Range` supported; no full-file buffering in
-memory; aborted transfers still recorded (client disconnect → record bytes actually sent); `HEAD`
-returns headers without creating a `download_events` row.
+memory; completed and aborted body transfers are recorded with bytes actually sent. The normalized IP is
+hashed with the persisted/configured salt; its raw value is never stored. `HEAD` and `304` return no body
+and create no event. Stats count public-channel rows only; their aggregates contain no identifiers. See
+`04-api.md` §3.5 for the count/size window definitions.
 **Tests:** 200 + exact bytes, 206 with `Range`, 304 with matching `ETag`, 404 unpublished, 410 when the
-file was removed manually, rate limit `429`, `HEAD` returns no body.
+file was removed manually, rate limit `429`, `HEAD` returns no body and neither `HEAD` nor `304` records an event.
 
 ---
 

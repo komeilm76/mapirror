@@ -49,7 +49,8 @@ describe('the three API prefixes are registered', () => {
     '/_public/api/countries/finland/versions?sort=name',
     '/_public/api/countries/finland/download?version=../private',
     '/_public/api/countries/finland/download?cache=no',
-  ])('validates public countries query %s before touching the database', async (url) => {
+    '/_public/api/stats?period=30d',
+  ])('validates public request query %s before touching the database', async (url) => {
     const response = await (await app()).inject({ method: 'GET', url });
 
     expect(response.statusCode).toBe(400);
@@ -268,6 +269,7 @@ describe('plugin pipeline', () => {
     // `commonPrefix: false` prints whole URLs, which is what "the slot was actually registered" means.
     const routes = instance.printRoutes({ commonPrefix: false });
     expect(routes).toContain('_public/api/countries');
+    expect(routes).toContain('_public/api/stats');
     expect(routes).toContain('_admin/api/catalog');
     expect(routes).toContain('_auth/api/login');
   });
@@ -383,6 +385,7 @@ describe('L1 is enforced at boot, not only by the law test', () => {
 
   it('is installed by buildApp, so a legal app boots and is checked', async () => {
     const instance = await app();
+    expect(instance.hasRoute({ method: 'GET', url: '/_public/api/stats' })).toBe(true);
     expect(instance.hasRoute({ method: 'GET', url: '/_public/api/countries' })).toBe(true);
     expect(instance.hasRoute({ method: 'GET', url: '/_public/api/countries/:slug' })).toBe(true);
     expect(instance.hasRoute({ method: 'GET', url: '/_public/api/countries/:slug/versions' })).toBe(

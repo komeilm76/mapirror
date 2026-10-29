@@ -1,10 +1,11 @@
 /**
- * Public catalog read model. Every query here applies the publication and ready-version guard (L8).
+ * Public catalog read model. Country/version queries apply the publication and ready-version guard (L8); the stats
+ * aggregate also reads only public-channel event counts and public-ready version sizes.
  *
- * Public routes must use these guarded queries instead of reading `countries`, `country_cache`, or `map_versions`
- * directly. JSON projections omit cache internals, job data, storage paths and row ids that have no public meaning; the
- * private download-file reference is deliberately separate and must never be serialized. Callers that combine page data
- * and counts in one response should pass a repeatable-read transaction.
+ * Public routes must use these queries instead of reading catalog tables directly. The `EXISTS` check protects against
+ * inconsistent rows where a cache is marked public but has no ready version. JSON projections omit cache internals, job
+ * data, storage paths and row ids that have no public meaning; the private download-file reference is deliberately
+ * separate and must never be serialized. Callers that combine related reads should pass a repeatable-read transaction.
  *
  * @module db/repositories/public-catalog
  */
@@ -58,6 +59,40 @@ export interface PublicDownloadFileRow {
 export interface PublicReadPage<Row> {
   readonly rows: Row[];
   readonly total: string;
+}
+
+/** Anonymous aggregates over publicly downloadable versions and public-channel stream events. */
+export interface PublicStatsRow {
+  readonly countries: string;
+  readonly total_size_bytes: string;
+  readonly downloads_30d: string;
+  readonly total_downloads: string;
+  readonly last_published_at: Date | null;
+}
+
+/** Reads public totals from one snapshot; total size includes every ready version of every visible country. */
+export async function getPublicStats(executor: RepositoryExecutor): Promise<PublicStatsRow> {
+  const catalog = await publicCountryBase(executor)
+    .innerJoin('map_versions as mv', 'mv.country_id', 'c.id')
+    .where('mv.status', '=', 'ready')
+    .select([
+      sql<string>`count(distinct c.id)::text`.as('countries'),
+      sql<string>`coalesce(sum(mv.file_size_bytes), 0)::text`.as('total_size_bytes'),
+      sql<Date | null>`max(cc.public_since)`.as('last_published_at'),
+    ])
+    .executeTakeFirstOrThrow();
+  const downloads = await executor
+    .selectFrom('download_events')
+    .select([
+      sql<string>`count(*)::text`.as('total_downloads'),
+      sql<string>`count(*) filter (where created_at >= now() - interval '30 days')::text`.as(
+        'downloads_30d',
+      ),
+    ])
+    .where('channel', '=', 'public')
+    .executeTakeFirstOrThrow();
+
+  return { ...catalog, ...downloads };
 }
 
 /** Required page length and optional zero-based offset for public read-model queries. */

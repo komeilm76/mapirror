@@ -1,4 +1,4 @@
-/** Stream one ready version from an explicitly published country (`P3-API-05`).
+/** Stream one ready version from an explicitly published country and record public events (`P3-API-05/06`).
  *
  * @module modules/public/country-download-route
  */
@@ -21,6 +21,7 @@ import {
   findPublicDownloadFile,
 } from '../../db/repositories/public-catalog';
 import { AppError } from '../../lib/errors';
+import { recordDownloadEvent } from '../download-events';
 import { createCacheStorage, type StorageFile } from '../storage/storage';
 
 /** Settings required to resolve cache files safely. */
@@ -59,6 +60,9 @@ export function createPublicCountryDownloadHandler(options: PublicCountryDownloa
       let lockHeld = false;
       let fileHandle: FileHandle | undefined;
       let transfer: ReturnType<FileHandle['createReadStream']> | undefined;
+      let versionId: string | null = null;
+      let bytesSent = 0n;
+      let recordEvent = false;
       try {
         await acquireCountryCacheStreamLock(connection, visibleCountry.country_id);
         lockHeld = true;
@@ -67,6 +71,7 @@ export function createPublicCountryDownloadHandler(options: PublicCountryDownloa
         if (row === null || row.country_id !== visibleCountry.country_id) {
           throw publicCountryNotFound();
         }
+        versionId = row.version_id;
 
         const file = storage.versionFileAt(row.storage_path);
         fileHandle = await openVersionFile(file);
@@ -123,6 +128,9 @@ export function createPublicCountryDownloadHandler(options: PublicCountryDownloa
           end: selectedRange.end,
           autoClose: false,
         });
+        transfer.on('data', (chunk: Buffer | string) => {
+          bytesSent += BigInt(Buffer.byteLength(chunk));
+        });
         transfer.on('error', (error: Error) => {
           request.log.error(
             { err: error, slug, version: row.version },
@@ -130,12 +138,21 @@ export function createPublicCountryDownloadHandler(options: PublicCountryDownloa
           );
         });
         reply.code(status).send(transfer);
+        recordEvent = true;
         await responseClosed;
       } finally {
         transfer?.destroy();
         await fileHandle?.close().catch((error: unknown) => {
           request.log.warn({ err: error, slug }, 'could not close public cached map file handle');
         });
+        if (recordEvent && versionId !== null) {
+          await recordDownloadEvent(connection, options.config, request, {
+            countryId: visibleCountry.country_id,
+            versionId,
+            bytesSent,
+            channel: 'public',
+          });
+        }
         if (lockHeld) {
           try {
             await releaseCountryCacheStreamLock(connection, visibleCountry.country_id);

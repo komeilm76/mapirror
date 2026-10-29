@@ -198,6 +198,15 @@ describe.skipIf(skipReason !== null)('public country download stream', () => {
       expect(explicit.body).toBe(olderBytes.toString());
       expect(explicit.headers['cache-control']).toBe('public, max-age=31536000, immutable');
       expect(explicit.headers.etag).toBe(`"md5:${olderMd5}"`);
+
+      const events = await app.db.db.selectFrom('download_events').selectAll().execute();
+      expect(events).toHaveLength(2);
+      expect(events.map((event) => event.channel)).toEqual(['public', 'public']);
+      expect(events.map((event) => Number(event.bytes_sent)).sort((a, b) => a - b)).toEqual(
+        [latestBytes.length, olderBytes.length].sort((a, b) => a - b),
+      );
+      expect(events.every((event) => /^[a-f\\d]{64}$/u.test(event.ip_hash ?? ''))).toBe(true);
+      expect(events.some((event) => event.ip_hash === '127.0.0.1')).toBe(false);
     });
   });
 
@@ -292,6 +301,10 @@ describe.skipIf(skipReason !== null)('public country download stream', () => {
       });
       expect(ignoredRange.statusCode).toBe(200);
       expect(ignoredRange.body).toBe(latestBytes.toString());
+      const eventsBeforeBodylessResponses = await app.db.db
+        .selectFrom('download_events')
+        .select('id')
+        .execute();
 
       const notModified = await app.inject({
         method: 'GET',
@@ -315,6 +328,11 @@ describe.skipIf(skipReason !== null)('public country download stream', () => {
       expect(head.statusCode).toBe(200);
       expect(head.body).toBe('');
       expect(head.headers['content-length']).toBe(String(latestBytes.length));
+      const eventsAfterBodylessResponses = await app.db.db
+        .selectFrom('download_events')
+        .select('id')
+        .execute();
+      expect(eventsAfterBodylessResponses).toHaveLength(eventsBeforeBodylessResponses.length);
     });
   });
 
@@ -350,6 +368,13 @@ describe.skipIf(skipReason !== null)('public country download stream', () => {
           if (!lockReleased) await new Promise((resolve) => setTimeout(resolve, 20));
         }
         expect(lockReleased).toBe(true);
+        const event = await app.db.db
+          .selectFrom('download_events')
+          .select(['channel', 'bytes_sent', 'ip_hash'])
+          .executeTakeFirst();
+        expect(event?.channel).toBe('public');
+        expect(BigInt(event?.bytes_sent ?? 0)).toBeGreaterThan(0n);
+        expect(event?.ip_hash).toMatch(/^[a-f\\d]{64}$/u);
       } finally {
         clientResponse?.destroy();
       }

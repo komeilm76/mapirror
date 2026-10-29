@@ -19,6 +19,7 @@
  * | `catalog` | admin catalog query, row and sync response contracts (`P2-API-01`) |
  * | `cache` | admin cache-list/detail and publication toggle contracts (`P2-API-05`, `P3-API-02`) |
  * | `public-catalog` | public country-list query and response contract (`P3-API-03`) |
+ * | `public-stats` | strict aggregate response for published-catalog statistics (`P3-API-06`) |
  * | `jobs` | admin job list/detail/cancel contracts (`P2-API-10`) |
  *
  * Request/response schemas are added alongside their owning API contract tasks, so each implemented endpoint exports
@@ -41,4 +42,5 @@ export * from './pagination';
 export * from './public-catalog';
 export * from './public-country';
 export * from './public-download';
+export * from './public-stats';
 export * from './routes';
