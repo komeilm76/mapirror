@@ -224,6 +224,11 @@ describe.skipIf(skipReason !== null)('public country download stream', () => {
           contentRange: `bytes 4-${latestBytes.length - 1}/${latestBytes.length}`,
         },
         {
+          range: 'bytes=2-9999',
+          expected: latestBytes.subarray(2),
+          contentRange: `bytes 2-${latestBytes.length - 1}/${latestBytes.length}`,
+        },
+        {
           range: 'bytes=-5',
           expected: latestBytes.subarray(-5),
           contentRange: `bytes ${latestBytes.length - 5}-${latestBytes.length - 1}/${latestBytes.length}`,
@@ -301,20 +306,62 @@ describe.skipIf(skipReason !== null)('public country download stream', () => {
       });
       expect(ignoredRange.statusCode).toBe(200);
       expect(ignoredRange.body).toBe(latestBytes.toString());
+
+      const weakIfRange = await app.inject({
+        method: 'GET',
+        url: publicDownloadUrl(),
+        headers: { range: 'bytes=0-3', 'if-range': `W/"md5:${latestMd5}"` },
+      });
+      expect(weakIfRange.statusCode).toBe(200);
+      expect(weakIfRange.body).toBe(latestBytes.toString());
+
+      const rangedGet = await app.inject({
+        method: 'GET',
+        url: publicDownloadUrl(),
+        headers: { range: 'bytes=0-3' },
+      });
+      expect(rangedGet.statusCode).toBe(206);
+      const fullGet = await app.inject({ method: 'GET', url: publicDownloadUrl() });
+      expect(fullGet.statusCode).toBe(200);
       const eventsBeforeBodylessResponses = await app.db.db
         .selectFrom('download_events')
         .select('id')
         .execute();
 
+      const rangedHead = await app.inject({
+        method: 'HEAD',
+        url: publicDownloadUrl(),
+        headers: { range: 'bytes=0-3' },
+      });
+      expect(rangedHead.statusCode).toBe(206);
+      expect(rangedHead.body).toBe('');
+      expect(rangedHead.headers['content-range']).toBe(rangedGet.headers['content-range']);
+      expect(rangedHead.headers['content-length']).toBe(rangedGet.headers['content-length']);
+      expect(rangedHead.headers['content-length']).toBe('4');
+      expect(rangedHead.headers.etag).toBe(rangedGet.headers.etag);
+
       const notModified = await app.inject({
         method: 'GET',
         url: publicDownloadUrl(),
-        headers: { 'if-none-match': `"other", W/"md5:${latestMd5}"` },
+        headers: {
+          range: 'bytes=0-3',
+          'if-none-match': `"other", W/"md5:${latestMd5}"`,
+        },
       });
       expect(notModified.statusCode).toBe(304);
       expect(notModified.body).toBe('');
       expect(notModified.headers['content-length']).toBeUndefined();
+      expect(notModified.headers['content-range']).toBeUndefined();
       expect(notModified.headers.etag).toBe(`"md5:${latestMd5}"`);
+
+      const headNotModified = await app.inject({
+        method: 'HEAD',
+        url: publicDownloadUrl(),
+        headers: { 'if-none-match': `"md5:${latestMd5}"` },
+      });
+      expect(headNotModified.statusCode).toBe(304);
+      expect(headNotModified.body).toBe('');
+      expect(headNotModified.headers['content-length']).toBeUndefined();
 
       const wildcard = await app.inject({
         method: 'GET',
@@ -328,6 +375,19 @@ describe.skipIf(skipReason !== null)('public country download stream', () => {
       expect(head.statusCode).toBe(200);
       expect(head.body).toBe('');
       expect(head.headers['content-length']).toBe(String(latestBytes.length));
+      for (const header of [
+        'accept-ranges',
+        'cache-control',
+        'content-disposition',
+        'content-length',
+        'content-type',
+        'etag',
+        'last-modified',
+        'x-checksum-md5',
+      ] as const) {
+        expect(head.headers[header]).toBe(fullGet.headers[header]);
+      }
+      expect(head.headers['content-range']).toBeUndefined();
       const eventsAfterBodylessResponses = await app.db.db
         .selectFrom('download_events')
         .select('id')
