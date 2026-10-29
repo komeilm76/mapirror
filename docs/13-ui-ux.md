@@ -147,7 +147,7 @@ fails above 40 kB, so the exemption stays earned.
 ### Public shell
 
 - Header: wordmark, "Browse maps", "API", theme toggle. **Light is the default** on the public site;
-  dark is fully supported and remembered per visitor (`usePreferredDark` → VueUse, overridable).
+  dark is fully supported and remembered per visitor through VueUse storage, as an explicit visitor choice.
 - Home: a compact intro (one line + license note), then **search + continent chips + country grid**.
 - Country page: name + ISO flag, primary **Download** button, then a versions table, then the
   attribution/license block.

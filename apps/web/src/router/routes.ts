@@ -13,11 +13,12 @@
  *
  * ## Which screens are real today
  *
- * Seven: the public catalog renders `HomePage.vue` and its shell (`P3-WEB-01`); the admin catalog/cache screens render
- * `CatalogPage.vue` (`P2-WEB-01`), `CachePage.vue` (`P2-WEB-03`), `CacheCountryPage.vue` (`P2-WEB-04`) and
- * `JobsPage.vue` (`P2-WEB-06`); the login page renders `LoginPage.vue` (`P1-WEB-06`), and the not-found catch-all renders
- * `NotFoundPage.vue`. The other eight are `PlaceholderPage`, which says which screen it stands in for and which task
- * replaces it. A router tree full of invented screens would be worse than one that names its own gaps.
+ * Eight: the public catalog and country detail render `HomePage.vue` (`P3-WEB-01`) and `CountryDetailPage.vue`
+ * (`P3-WEB-02`); the admin catalog/cache screens render `CatalogPage.vue` (`P2-WEB-01`), `CachePage.vue` (`P2-WEB-03`),
+ * `CacheCountryPage.vue` (`P2-WEB-04`) and `JobsPage.vue` (`P2-WEB-06`); the login page renders `LoginPage.vue`
+ * (`P1-WEB-06`), and the not-found catch-all renders `NotFoundPage.vue`. The other seven are `PlaceholderPage`, which
+ * says which screen it stands in for and which task replaces it. A router tree full of invented screens would be worse
+ * than one that names its own gaps.
  *
  * ## The two records that are not pages
  *
@@ -77,13 +78,12 @@ export const APP_ROUTES: readonly RouteRecordRaw[] = [
     component: HomePage,
     meta: { title: 'Catalog', screen: 'S2', owner: 'P3-WEB-01' },
   },
-  pending({
+  {
     path: '/_site/countries/:slug',
     name: 'country',
-    title: 'Country',
-    screen: 'S3',
-    owner: 'P3-WEB-02',
-  }),
+    component: () => import('@/pages/public/CountryDetailPage.vue'),
+    meta: { title: 'Country', screen: 'S3', owner: 'P3-WEB-02' },
+  },
   pending({
     path: '/_site/api-docs',
     name: 'api-docs',
