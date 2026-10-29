@@ -46,9 +46,13 @@ describe.skipIf(skipReason !== null)('POST /_admin/api/cache/:countryId/public',
         };
         const finlandId = id('finland');
         const norwayId = id('norway');
+        const cacheSeededAt = new Date('2026-10-01T00:00:00.000Z');
         await database.db
           .insertInto('country_cache')
-          .values([{ country_id: finlandId }, { country_id: norwayId }])
+          .values([
+            { country_id: finlandId, created_at: cacheSeededAt, updated_at: cacheSeededAt },
+            { country_id: norwayId, created_at: cacheSeededAt, updated_at: cacheSeededAt },
+          ])
           .execute();
         const readyVersion = await database.db
           .insertInto('map_versions')
@@ -96,6 +100,15 @@ describe.skipIf(skipReason !== null)('POST /_admin/api/cache/:countryId/public',
           const publication = published.json<{ isPublic: boolean; publicSince: string | null }>();
           expect(publication.isPublic).toBe(true);
           expect(publication.publicSince).toMatch(/^\d{4}-\d\d-\d\dT/u);
+          const afterPublish = await database.db
+            .selectFrom('country_cache')
+            .select(['is_public', 'public_since', 'updated_at'])
+            .where('country_id', '=', finlandId)
+            .executeTakeFirstOrThrow();
+          expect(afterPublish.is_public).toBe(true);
+          expect(afterPublish.public_since?.toISOString()).toBe(publication.publicSince);
+          expect(afterPublish.updated_at.getTime()).toBeGreaterThan(cacheSeededAt.getTime());
+          expect(afterPublish.updated_at.toISOString()).toBe(publication.publicSince);
           const repeated = await toggle(finlandId, true);
           expect(repeated.statusCode).toBe(200);
           expect(repeated.json()).toEqual(publication);
@@ -121,11 +134,12 @@ describe.skipIf(skipReason !== null)('POST /_admin/api/cache/:countryId/public',
 
           const audit = await database.db
             .selectFrom('audit_logs')
-            .select(['actor_id', 'actor_name', 'action', 'target_id', 'metadata'])
+            .select(['actor_id', 'actor_name', 'action', 'target_id', 'metadata', 'created_at'])
             .where('target_id', '=', finlandId)
             .orderBy('created_at', 'asc')
             .execute();
           expect(audit).toHaveLength(2);
+          expect(audit[0]?.created_at.toISOString()).toBe(publication.publicSince);
           expect(audit).toMatchObject([
             {
               actor_id: admin.id,

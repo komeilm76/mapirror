@@ -76,7 +76,11 @@ export async function postCachePublic(
 
     const updated = await trx
       .updateTable('country_cache')
-      .set({ is_public: after, public_since: after ? sql<Date>`now()` : null })
+      .set({
+        is_public: after,
+        public_since: after ? sql<Date>`now()` : null,
+        updated_at: sql<Date>`now()`,
+      })
       .where('country_id', '=', country.id)
       .returning('public_since')
       .executeTakeFirstOrThrow();
