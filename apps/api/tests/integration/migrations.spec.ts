@@ -313,6 +313,48 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
     });
   });
 
+  it('keeps download keys unique while queued or running and releases them for terminal jobs', async () => {
+    await withFreshDatabase(async (database) => {
+      await migrateToLatest(database.db);
+      const db = database.db;
+      const country = await db
+        .insertInto('countries')
+        .values({ source_id: 'europe/finland', slug: 'finland', name: 'Finland' })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      const insertDownload = (version = '260104') =>
+        sql<{ id: string }>`
+          insert into jobs (type, payload)
+          values ('download', ${JSON.stringify({ countryId: country.id, version })}::jsonb)
+          returning id
+        `.execute(db);
+
+      const active = await insertDownload();
+      const activeId = active.rows[0]!.id;
+      await expect(insertDownload()).rejects.toMatchObject({
+        code: '23505',
+        constraint: 'jobs_one_active_download',
+      });
+      await sql`update jobs set status = 'running' where id = ${activeId}::uuid`.execute(db);
+      await expect(insertDownload()).rejects.toMatchObject({
+        code: '23505',
+        constraint: 'jobs_one_active_download',
+      });
+
+      // The unique key includes both country and version, not country alone.
+      const otherVersion = await insertDownload('260105');
+      await sql`delete from jobs where id = ${otherVersion.rows[0]!.id}::uuid`.execute(db);
+
+      // Every terminal state frees the slot; running it back up between transitions exercises the same row/key.
+      for (const status of ['succeeded', 'failed', 'canceled'] as const) {
+        await sql`update jobs set status = ${status} where id = ${activeId}::uuid`.execute(db);
+        const replacement = await insertDownload();
+        await sql`delete from jobs where id = ${replacement.rows[0]!.id}::uuid`.execute(db);
+        await sql`update jobs set status = 'running' where id = ${activeId}::uuid`.execute(db);
+      }
+    });
+  });
+
   it('a migration that fails is not recorded as applied, so a fixed rerun retries it', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'mapirror-bad-migration-'));
     try {

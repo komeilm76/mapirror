@@ -611,6 +611,23 @@ describe.skipIf(skipReason !== null)(
             unpublished: false,
           },
         });
+
+        // Hard deletion releases the country/version unique key so a later redownload can create a new row.
+        const replacement = await app.db.db
+          .insertInto('map_versions')
+          .values({
+            country_id: countryId,
+            version: '261023',
+            origin: 'geofabrik_snapshot',
+            source_filename: 'finland-261023.osm.pbf',
+            file_size_bytes: 0,
+            storage_path: 'finland/261023/finland-261023.osm.pbf',
+            status: 'pending',
+          })
+          .returning(['id', 'version'])
+          .executeTakeFirstOrThrow();
+        expect(replacement).toMatchObject({ version: '261023' });
+        expect(replacement.id).not.toBe(removed.id);
       });
     });
 
