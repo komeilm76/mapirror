@@ -151,6 +151,15 @@ describe('error codes (04-api.md §0.2 ↔ ERROR_STATUS)', () => {
   });
 });
 
+describe('documentation index summary (00-index.md)', () => {
+  it('links to the task board and changelog without duplicating their changing totals', () => {
+    const index = read('docs/00-index.md');
+    expect(index).toContain('[08-tasks.md](08-tasks.md)');
+    expect(index).toContain('[16-changelog.md](16-changelog.md)');
+    expect(index).not.toMatch(/\b\d+ tasks\b|\b\d+ passes\b|\b\d+ defects fixed\b/u);
+  });
+});
+
 describe('task board counts (08-tasks.md)', () => {
   it('keeps the TL;DR total equal to the actual task rows', () => {
     const tasks = read('docs/08-tasks.md');

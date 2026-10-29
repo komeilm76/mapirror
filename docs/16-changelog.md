@@ -3,11 +3,22 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 87 passes · 351 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4, pass 76: 4, pass 77: 4, pass 78: 4, pass 79: 5, pass 80: 7, pass 81: 7, pass 82: 9, pass 83: 8, pass 84: 1, pass 85: 3, pass 86: 1, pass 87: 2).
+**Totals:** 88 passes · 353 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4, pass 76: 4, pass 77: 4, pass 78: 4, pass 79: 5, pass 80: 7, pass 81: 7, pass 82: 9, pass 83: 8, pass 84: 1, pass 85: 3, pass 86: 1, pass 87: 2, pass 88: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
 ---
+
+## Pass 88 — 2026-10-29 (documentation index retained stale manual summaries)
+
+A repository-wide summary scan found `docs/00-index.md` still advertised 48 review passes, 191 fixes, and 140 tasks, while the changelog now records 87 passes and 351 fixes and `docs/08-tasks.md` contains 149 task rows. The task count and cumulative review totals duplicated in the index were liable to drift again.
+
+| # | Bug found | Fix |
+|---|---|---|
+| 1 | The index's task count was stale and required manual synchronization whenever the roadmap changed | Replace the hard-coded count with a description of the task table's contents |
+| 2 | The index's review-pass totals lagged 39 passes and 160 fixes behind the changelog | Make the changelog the sole source of current totals, remove the duplicated counters, and add a docs-contract regression test so they cannot silently return |
+
+Validation: repository scan confirms the 88 changelog pass breakdown sums to 353 fixes; the index no longer contains duplicated pass/fix/task totals. Full `bun run check` passes 22 workspace checks, 54 hygiene checks, typechecking, ESLint and formatting; Vitest reports **1,200 passed, 285 skipped** across 119 files. Database-gated integration tests remain skipped because no fresh test database is available. **Totals after this pass: 88 passes · 353 defects fixed · 0 open.**
 
 ## Pass 87 — 2026-10-29 (delete and active-job identity slots needed lifecycle assertions)
 
