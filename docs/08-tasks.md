@@ -181,7 +181,7 @@ prove L1–L3.
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
 | P3-API-01 | Public read model + `is_public` guard in one place | L8 | P2-API-05 | 🟦 | `public-catalog.ts` centralizes every public read behind `is_public = true` plus an `EXISTS ready version` guard. List/detail/version projections omit storage paths and other internal fields; reads are bounded. PostgreSQL tests cover published, unpublished, inconsistent public-without-ready, uncached-ready, and pending/failed cases. The fresh-database suite was skipped here; review remains until it runs against PostgreSQL |
-| P3-API-02 | `POST /_admin/api/cache/:countryId/public` + audit | PUB-1/2/4 | P3-API-01 | ⬜ | 422 without ready version |
+| P3-API-02 | `POST /_admin/api/cache/:countryId/public` + audit | PUB-1/2/4 | P3-API-01 | 🟦 | Strict boolean body; ready-version gate; transactional before/after audit on actual toggles; unpublish keeps data. Integration covers publish/unpublish, idempotence, 422, atomic audit failure, and visibility through the P3-API-01 read model. DB-backed integration is skipped here because a fresh PostgreSQL test database is unavailable; retain for review until it runs against PostgreSQL |
 | P3-API-03 | `GET /_public/api/countries` (+search/filter/pagination) | WEB-3a | P3-API-01 | ⬜ | Only published, only ready versions |
 | P3-API-04 | `GET /_public/api/countries/:slug` + `/versions` | WEB-3b | P3-API-01 | ⬜ | No internal fields leaked |
 | P3-API-05 | Public streaming download (Range/ETag/304/410) | WEB-3c, CACHE-5 | P2-API-09 | ⬜ | All header cases tested; acquire the shared per-country cache advisory lock before opening the file and hold it through response close so cache deletion cannot unlink an active transfer |

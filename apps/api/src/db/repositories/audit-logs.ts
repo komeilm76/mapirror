@@ -37,6 +37,8 @@ export const AUDIT_ACTIONS = {
   passwordReset: 'auth.password_reset',
   catalogSync: 'catalog.sync',
   cacheDeleteCountry: 'cache.delete_country',
+  cachePublish: 'cache.publish',
+  cacheUnpublish: 'cache.unpublish',
   versionDelete: 'version.delete',
 } as const;
 

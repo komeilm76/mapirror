@@ -383,9 +383,14 @@ and uncached/unknown countries return `404 NOT_FOUND`.
 
 #### `POST /_admin/api/cache/:countryId/public`
 
-Body: `{ "isPublic": true }` → `200 { "isPublic": true, "publicSince": "…" }`.
-`422 NO_READY_VERSION` when publishing a country with no `ready` version.
-Audit `cache.publish` / `cache.unpublish`.
+Body: strict `{ "isPublic": true|false }` → `200 { "isPublic": true, "publicSince": "…" }` when opening access, or
+`200 { "isPublic": false, "publicSince": null }` when closing it. Publishing requires at least one `ready` version;
+otherwise the endpoint returns `422 NO_READY_VERSION` without changing state. An unknown or uncached country is `404`.
+
+Each actual state transition appends `cache.publish` or `cache.unpublish` in the same transaction as the cache-row
+update; the audit records the admin snapshot, country, and before/after visibility. Repeating the already-current state
+is idempotent and does not create a second audit event. Closing access clears `public_since` but does not delete cache
+or version data. The route remains covered by the global admin Bearer guard.
 
 #### `POST /_admin/api/cache/:countryId/check-update`
 

@@ -21,6 +21,7 @@ import { createCacheVersionDeleteHandler } from './cache-version-delete-route';
 import { createCacheVersionDownloadHandler } from './cache-version-download-route';
 import { cancelJob, getJob, getJobs } from './jobs-route';
 import { getCacheDetail, getCacheList } from './cache-route';
+import { postCachePublic } from './cache-public-route';
 import { getCacheVersions } from './cache-versions-route';
 import { createCatalogRegionHandlers } from './catalog-region-route';
 import { getCatalog } from './catalog-route';
@@ -49,6 +50,7 @@ export const adminRoutes: FastifyPluginCallback<AdminRouteOptions> = (app, optio
   app.get('/catalog/regions/:slug/snapshots', regionHandlers.getSnapshots);
   app.get('/cache', getCacheList);
   app.get('/cache/:countryId', getCacheDetail);
+  app.post('/cache/:countryId/public', postCachePublic);
   app.get('/cache/:countryId/versions', getCacheVersions);
   app.post('/cache/:countryId/versions', cacheSpecificVersion);
   app.delete('/cache/:countryId/versions/:versionId', cacheVersionDelete);

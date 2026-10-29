@@ -87,8 +87,25 @@ export const CacheActiveJobSchema = z
   })
   .strict();
 
-/** Params accepted by `GET` and `DELETE /_admin/api/cache/:countryId`. */
+/** Params accepted by `GET`, `DELETE` and `POST /_admin/api/cache/:countryId/*`. */
 export const CacheCountryParamsSchema = z.object({ countryId: z.uuid() }).strict();
+
+/** Body accepted by `POST /_admin/api/cache/:countryId/public`. */
+export const CachePublicToggleBodySchema = z.object({ isPublic: z.boolean() }).strict();
+
+/** Successful `POST /_admin/api/cache/:countryId/public` response. */
+export const CachePublicToggleResponseSchema = z
+  .object({
+    isPublic: z.boolean(),
+    publicSince: z.iso.datetime().nullable(),
+  })
+  .strict();
+
+/** Request body for toggling one cached country's public visibility. */
+export type CachePublicToggleBody = z.infer<typeof CachePublicToggleBodySchema>;
+
+/** Successful public-visibility toggle response. */
+export type CachePublicToggleResponse = z.infer<typeof CachePublicToggleResponseSchema>;
 
 /** Query accepted by `DELETE /_admin/api/cache/:countryId`. */
 export const CacheCountryDeleteQuerySchema = z
