@@ -207,7 +207,7 @@ prove L1–L3.
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
 | P4-IMP-01 | `upload_sessions` table + staging in `/data/tmp` | §12 | P2-DB-01 | 🟦 | Migration 0004 and typed schema add expiring sessions; staging stores only a generated UUID filename under `TMP_DIR` with exclusive/no-follow create and safe removal. Bounded housekeeping runs after listen and every 15 min, removes at most 100 expired files/rows per pass, skips `installing`, and drains before shutdown. PostgreSQL migration/expiry integration awaits the Docker test run; invalid paths are retained and warned without deleting outside `TMP_DIR` |
-| P4-IMP-02 | Multipart endpoint with validation (ext/magic/size/version) | §12 | P4-IMP-01 | ⬜ | 415/413/400 correct |
+| P4-IMP-02 | Multipart endpoint with validation (ext/magic/size/version) | §12 | P4-IMP-01 | ✅ | Streamed `.osm.pbf` staging; validates OSM PBF BlobHeader, file size, catalog country and version; returns 415/413/400 and 409 correctly; atomically records upload session + queued import job |
 | P4-IMP-03 | Import job (checksum → install → ready) | §12 | P4-IMP-02, P2-JOB-06 | ⬜ | No `ready` row on failure |
 | P4-IMP-04 | Duplicate rejection + explicit replace | D-10 | P4-IMP-03 | ⬜ | 409 then replace-with-confirm succeeds |
 | P4-IMP-05 | Import form UI: file dropzone / country picker / version | §12, UX-3 | P4-IMP-02 | ⬜ | Exactly 3 fields; upload progress; job follow |

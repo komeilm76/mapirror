@@ -21,6 +21,7 @@
  * | `public-catalog` | public country-list query and response contract (`P3-API-03`) |
  * | `public-stats` | strict aggregate response for published-catalog statistics (`P3-API-06`) |
  * | `jobs` | admin job list/detail/cancel contracts (`P2-API-10`) |
+ * | `imports` | multipart import fields and accepted-upload response (`P4-IMP-02`) |
  *
  * Request/response schemas are added alongside their owning API contract tasks, so each implemented endpoint exports
  * one strict, reusable Zod shape instead of a prose-only or server-private contract.
@@ -37,6 +38,7 @@ export * from './catalog-region';
 export * from './constants';
 export * from './errors';
 export * from './license';
+export * from './imports';
 export * from './jobs';
 export * from './pagination';
 export * from './public-catalog';

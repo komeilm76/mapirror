@@ -58,6 +58,20 @@ describe('the three API prefixes are registered', () => {
     expect(response.headers['content-type']).toMatch(/^application\/json/);
   });
 
+  it('registers the multipart import route inside the protected admin namespace', async () => {
+    const response = await (
+      await app()
+    ).inject({
+      method: 'POST',
+      url: '/_admin/api/imports',
+      headers: { 'content-type': 'multipart/form-data; boundary=empty' },
+      payload: Buffer.alloc(0),
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json<{ error: { code: string } }>().error.code).toBe('UNAUTHENTICATED');
+  });
+
   it('auth answers under its prefix with a real handler, not a stub', async () => {
     // `P1-AUTH-03` replaced the `503`. An empty body is answered `400 VALIDATION_ERROR` by the shared schema, which
     // proves the route exists *and* that it validates before it queries.

@@ -5,6 +5,7 @@
   "type": "module",
   "description": "MapMirror API: Fastify routes, PostgreSQL-backed job worker and interval scheduler.",
   "dependencies": {
+    "@fastify/multipart": "9.4.0",
     "@mapirror/shared": "workspace:*",
     "@node-rs/argon2": "2.2.2",
     "fastify": "5.12.7",

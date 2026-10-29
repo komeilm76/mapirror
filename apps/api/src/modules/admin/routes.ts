@@ -8,7 +8,8 @@
  * @module modules/admin/routes
  */
 
-import type { FastifyPluginCallback } from 'fastify';
+import multipart from '@fastify/multipart';
+import type { FastifyPluginAsync } from 'fastify';
 
 import type { AppConfig } from '../../config/env';
 import { createGeofabrikMapSource } from '../geofabrik/map-source';
@@ -26,6 +27,7 @@ import { getCacheVersions } from './cache-versions-route';
 import { createCatalogRegionHandlers } from './catalog-region-route';
 import { getCatalog } from './catalog-route';
 import { postCatalogSync } from './catalog-sync-route';
+import { createImportHandler } from './import-route';
 
 /** The validated settings required to configure admin source reads. */
 export interface AdminRouteOptions {
@@ -33,7 +35,18 @@ export interface AdminRouteOptions {
 }
 
 /** Catalog, cache, versions, imports, intervals, jobs, system, settings, audit land here. */
-export const adminRoutes: FastifyPluginCallback<AdminRouteOptions> = (app, options) => {
+export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, options) => {
+  await app.register(multipart, {
+    throwFileSizeLimit: false,
+    limits: {
+      fileSize: options.config.maxUploadBytes,
+      files: 1,
+      fields: 3,
+      parts: 4,
+      fieldSize: 256,
+    },
+  });
+  const importHandler = createImportHandler({ config: options.config });
   const source = createGeofabrikMapSource(options.config.geofabrikBaseUrl);
   const regionHandlers = createCatalogRegionHandlers(source);
   const cacheDownload = createCacheDownloadHandler({ config: options.config, source });
@@ -57,6 +70,7 @@ export const adminRoutes: FastifyPluginCallback<AdminRouteOptions> = (app, optio
   app.get('/cache/:countryId/versions/:versionId/download', cacheVersionDownload);
   app.delete('/cache/:countryId', cacheDelete);
   app.post('/cache/downloads', cacheDownload);
+  app.post('/imports', importHandler);
   app.get('/jobs', getJobs);
   app.get('/jobs/:jobId', getJob);
   app.post('/jobs/:jobId/cancel', cancelJob);

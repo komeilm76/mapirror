@@ -468,23 +468,26 @@ opened and held until the response closes, so cache deletion cannot unlink an ac
 
 | Field | Type | Required | Rules |
 |---|---|---|---|
-| `file` | file | ✅ | `.osm.pbf`, magic/header check, ≤ `MAX_UPLOAD_BYTES` (default 8 GiB) |
+| `file` | file | ✅ | `.osm.pbf`; MIME must be `application/octet-stream`, `application/x-protobuf`, `application/protobuf`, or `application/x-osm-pbf`; streamed to UUID-only staging; PBF BlobHeader must declare `OSMHeader`; ≤ `MAX_UPLOAD_BYTES` (default 8 GiB) |
 | `countryId` | uuid | ✅ | must exist in the catalog |
 | `version` | string | ✅ | `^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$`, unique per country |
-| `replace` | `"true"` / `"false"` | ❌ | Multipart fields are strings; the server coerces to boolean via Zod and rejects anything else. Explicit replacement of an existing version (D-10). |
+| `replace` | `"true"` / `"false"` | ❌ | Multipart fields are strings; Zod accepts only these literals. Existing versions still return `409` in P4-IMP-02; explicit replacement is added by P4-IMP-04 (D-10). |
 
 ```json
 202 { "uploadId": "…", "jobId": "…", "version": "2026-09-01" }
 ```
 
-Errors: `409 VERSION_DUPLICATE` (retry with `replace=true` to overwrite intentionally),
-`413 FILE_TOO_LARGE`, `415 UNSUPPORTED_FORMAT`.
+A validated upload session and `import` job row are committed together. Until P4-IMP-03 registers the import worker handler, the job remains durably `queued`; it is not claimed or failed by the other job handlers.
 
-**Avoid the wasted upload:** the UI calls `GET /_admin/api/cache/:countryId/versions` first and, when
-the version already exists, asks "replace?" *before* sending any bytes. On the server, the duplicate
-check runs as soon as `countryId` + `version` have been parsed and destroys the request stream early,
-so a conflicting upload does not transfer a multi-gigabyte file to fail at the end. Multipart field
-order is not guaranteed, so this is an optimisation, not a guarantee — the 409 path stays correct.
+Errors: `400 VALIDATION_ERROR` (missing/invalid fields), `409 VERSION_DUPLICATE`,
+`413 FILE_TOO_LARGE`, `415 UNSUPPORTED_FORMAT` (wrong extension/media type or PBF header), and `503 DISK_FULL`.
+
+**Avoid needless transfer:** the UI calls `GET /_admin/api/cache/:countryId/versions` first and, when
+the version already exists, asks "replace?" *before* sending any bytes. The server also checks as soon as
+`countryId` + `version` are available and avoids creating a staging file when a conflict is already known.
+Multipart field order is not guaranteed, and the parser drains rejected requests to finish the response safely,
+so the server cannot promise that a conflicting file will not be transferred. The final transactional duplicate
+check remains authoritative. Explicit replacement is not available until P4-IMP-04.
 
 ```bash
 curl -X POST http://localhost:8080/_admin/api/imports \
@@ -493,13 +496,9 @@ curl -X POST http://localhost:8080/_admin/api/imports \
   -F countryId=6f1c… -F version=261001
 ```
 
-#### `GET /_admin/api/imports/:uploadId`
+#### `GET /_admin/api/imports/:uploadId` — planned with P4-IMP-03
 
-`{ "status": "received|installing|installed|failed|expired", "sizeBytes": …, "checksumMd5": "…",
-   "jobId": "…", "error": null }`
-
-The UI switches to a job progress view after `202`; the upload itself shows a browser progress bar
-(XHR `upload.onprogress`).
+The upload-session status read is not implemented in P4-IMP-02. Until P4-IMP-03 adds it, clients can follow the accepted `jobId` through `GET /_admin/api/jobs/:jobId`; the import job remains queued until its handler is registered. The upload itself can report browser transfer progress with XHR `upload.onprogress`.
 
 ---
 

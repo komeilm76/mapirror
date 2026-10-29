@@ -436,21 +436,23 @@ sequenceDiagram
   participant TMP as /data/tmp
   participant Q as jobs
   A->>API: POST multipart {file, countryId, version}
-  API->>API: extension + magic bytes + size + version format
-  alt duplicate version and !replace
-    API-->>A: 409 VERSION_DUPLICATE (offers explicit replace)
+  API->>API: extension + allowed MIME + OSMHeader BlobHeader + size + version format
+  alt duplicate country/version
+    API-->>A: 409 VERSION_DUPLICATE
   end
-  API->>TMP: stream to <uploadId>.osm.pbf (progress)
-  API->>Q: INSERT import job
+  API->>TMP: stream to generated UUID .osm.pbf path
+  API->>Q: transactionally insert upload session + import job
   API-->>A: 202 {uploadId, jobId}
+  Note over Q: Job stays queued until P4-IMP-03 registers its handler
   Q->>Q: checksum → move into cache dir → mark ready
   A->>A: row appears under the country with origin=upload
 ```
 
 **Rules:** exactly three required fields (file/country/version); uploads never overwrite silently;
-temp file removed on failure/expiry (24 h).
-**Tests:** success, duplicate rejected, replace accepted after confirmation, wrong extension `415`,
-oversized `413`, temp cleanup on failure.
+temp file removed on rejection/expiry (24 h). P4-IMP-02 rejects every duplicate; explicit replace is
+added by P4-IMP-04. Until P4-IMP-03 registers the import handler, accepted jobs remain queued.
+**Tests:** success, duplicate rejected, replace accepted after confirmation, wrong extension/header `415`,
+oversized `413`, invalid fields `400`, temp cleanup on failure.
 
 ---
 
