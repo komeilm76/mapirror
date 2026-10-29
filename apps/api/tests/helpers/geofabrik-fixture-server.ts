@@ -31,17 +31,19 @@ export interface GeofabrikFixtureServer {
   close(): Promise<void>;
 }
 
-/** A deliberately small deterministic byte stream served under `.osm.pbf` names. */
 // Pre-encoded minimal OSM PBF (OSMHeader + empty OSMData), checked in as hex so its bytes do not depend on zlib version.
-export const GEOFABRIK_PBF_FIXTURE = Buffer.from(
+const PBF_FIXTURE_BYTES = Buffer.from(
   '0000000d0a094f534d486561646572183510291a31789c53e2f32fce0d4ece48cd4dd40d33d0336b6214f34d2cf0cd2c2aca2f5228492d2e5148cbac28292d4a050010610e010000000b0a074f534d44617461180f10031a0b789ce3626400000023000c',
   'hex',
 );
 
-/** MD5 of {@link GEOFABRIK_PBF_FIXTURE}, matching the provider's sidecar format. */
-export const GEOFABRIK_PBF_FIXTURE_MD5 = createHash('md5')
-  .update(GEOFABRIK_PBF_FIXTURE)
-  .digest('hex');
+/** Returns a defensive copy of the small OSM PBF byte fixture. */
+export function getGeofabrikPbfFixture(): Buffer {
+  return Buffer.from(PBF_FIXTURE_BYTES);
+}
+
+/** MD5 of the fixture, matching the provider's sidecar format. */
+export const GEOFABRIK_PBF_FIXTURE_MD5 = createHash('md5').update(PBF_FIXTURE_BYTES).digest('hex');
 
 const PBF_FILES = new Set([
   '/europe-latest.osm.pbf',
@@ -75,6 +77,7 @@ const REGION_PAGES = new Map<string, URL>([
 export async function startGeofabrikFixtureServer(
   options: GeofabrikFixtureServerOptions = {},
 ): Promise<GeofabrikFixtureServer> {
+  validateOptions(options);
   const requests: string[] = [];
   const pages = new Map<string, string>();
   let fixtureOrigin = '';
@@ -162,6 +165,19 @@ export async function withGeofabrikFixtureServer<T>(
   }
 }
 
+function validateOptions(options: GeofabrikFixtureServerOptions): void {
+  for (const [pathname, status] of Object.entries(options.statusByPath ?? {})) {
+    if (!pathname.startsWith('/') || pathname.includes('?') || pathname.includes('#')) {
+      throw new TypeError('fixture status override keys must be URL pathnames');
+    }
+    if (!Number.isInteger(status) || (status !== 200 && (status < 400 || status > 599))) {
+      throw new RangeError(
+        'fixture status overrides must be HTTP 200 or an error status from 400 to 599',
+      );
+    }
+  }
+}
+
 function makeIndex(origin: string) {
   const features = [
     {
@@ -219,7 +235,7 @@ function servePbf(
   if (request.method === 'HEAD') {
     response.writeHead(200, {
       ...commonHeaders,
-      'content-length': String(GEOFABRIK_PBF_FIXTURE.byteLength),
+      'content-length': String(PBF_FIXTURE_BYTES.byteLength),
     });
     response.end();
     return;
@@ -230,21 +246,27 @@ function servePbf(
     return;
   }
 
-  const range = rangeMode === 'honor' ? parseRange(request.headers.range) : null;
+  const ifRange = request.headers['if-range'];
+  const validatorMatches =
+    ifRange === undefined ||
+    ifRange === commonHeaders.etag ||
+    ifRange === commonHeaders['last-modified'];
+  const range =
+    rangeMode === 'honor' && validatorMatches ? parseRange(request.headers.range) : null;
   if (range === 'invalid') {
     response.writeHead(416, {
       ...commonHeaders,
-      'content-range': `bytes */${String(GEOFABRIK_PBF_FIXTURE.byteLength)}`,
+      'content-range': `bytes */${String(PBF_FIXTURE_BYTES.byteLength)}`,
       'content-length': '0',
     });
     response.end();
     return;
   }
   if (range !== null) {
-    const chunk = GEOFABRIK_PBF_FIXTURE.subarray(range.start, range.end + 1);
+    const chunk = PBF_FIXTURE_BYTES.subarray(range.start, range.end + 1);
     response.writeHead(206, {
       ...commonHeaders,
-      'content-range': `bytes ${String(range.start)}-${String(range.end)}/${String(GEOFABRIK_PBF_FIXTURE.byteLength)}`,
+      'content-range': `bytes ${String(range.start)}-${String(range.end)}/${String(PBF_FIXTURE_BYTES.byteLength)}`,
       'content-length': String(chunk.byteLength),
       'content-type': 'application/octet-stream',
     });
@@ -252,13 +274,7 @@ function servePbf(
     return;
   }
 
-  send(
-    response,
-    200,
-    'application/octet-stream',
-    Buffer.from(GEOFABRIK_PBF_FIXTURE),
-    commonHeaders,
-  );
+  send(response, 200, 'application/octet-stream', Buffer.from(PBF_FIXTURE_BYTES), commonHeaders);
 }
 
 function parseRange(value: string | undefined): { start: number; end: number } | 'invalid' | null {
@@ -269,17 +285,17 @@ function parseRange(value: string | undefined): { start: number; end: number } |
   const endText = match[2];
   if (startText === undefined || endText === undefined) return 'invalid';
   const start = Number(startText);
-  const requestedEnd = endText === '' ? GEOFABRIK_PBF_FIXTURE.byteLength - 1 : Number(endText);
+  const requestedEnd = endText === '' ? PBF_FIXTURE_BYTES.byteLength - 1 : Number(endText);
   if (
     !Number.isSafeInteger(start) ||
     !Number.isSafeInteger(requestedEnd) ||
     start < 0 ||
     requestedEnd < start ||
-    start >= GEOFABRIK_PBF_FIXTURE.byteLength
+    start >= PBF_FIXTURE_BYTES.byteLength
   ) {
     return 'invalid';
   }
-  return { start, end: Math.min(requestedEnd, GEOFABRIK_PBF_FIXTURE.byteLength - 1) };
+  return { start, end: Math.min(requestedEnd, PBF_FIXTURE_BYTES.byteLength - 1) };
 }
 
 function send(
