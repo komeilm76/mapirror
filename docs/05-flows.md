@@ -337,12 +337,16 @@ sequenceDiagram
   API->>DB: assert ≥1 ready version
   API->>DB: UPDATE is_public=true, public_since=now()
   API->>DB: audit cache.publish
-  API-->>A: 200 {isPublic:true}
+  API-->>A: 200 {isPublic:true,publicSince:timestamp}
   P->>P: next request (≤5s) sees the country
 ```
 
-**Rules:** publish without a ready version ⇒ `422`; unpublish never deletes data; every toggle audited.
-**Tests:** publish/unpublish visible immediately in `/_public/api/countries`, `422` case, audit rows,
+For `{isPublic:false}`, the response is `200 {isPublic:false,publicSince:null}`; the cache and versions remain intact.
+Only actual visibility transitions create an audit row (`cache.publish` or `cache.unpublish`), committed atomically with the
+cache update and carrying the before/after state.
+
+**Rules:** publish without a ready version ⇒ `422 NO_READY_VERSION`; unpublish never deletes data.
+**Tests:** publish/unpublish visible immediately in `/_public/api/countries`, `422` case, atomic audit rows,
 `404` for unpublished country detail.
 
 ---
