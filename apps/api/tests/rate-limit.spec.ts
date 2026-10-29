@@ -297,9 +297,9 @@ describe('the stage charges the documented requests, and only those', () => {
     const app = await appWithClock(clock, { publicDownloadsPerMinute: 3 });
     try {
       const responses = await burst(app, 4, { url: DOWNLOAD_URL });
-      // The download route itself belongs to the public API (`P3-PUB-*`) and answers `404` today; what this case is
-      // about is that a *charged* request gets past the limiter, so `404` is the marker and `429` the refusal.
-      expect(responses.slice(0, 3).map((response) => response.statusCode)).toEqual([404, 404, 404]);
+      // The handler reaches its database-backed lookup with this test's minimal DB fixture; the important distinction
+      // here is that the configured number passes the limiter, while the next request is refused with 429.
+      expect(responses.slice(0, 3).every((response) => response.statusCode !== 429)).toBe(true);
       expect(responses[3]?.statusCode).toBe(429);
 
       // A download does not spend the *read* allowance: the two rules are separate windows on purpose, so a client
@@ -426,11 +426,11 @@ describe('the stage charges the documented requests, and only those', () => {
     const clock = clockAt('2026-10-25T09:00:00.000Z');
     const app = await appWithClock(clock, { publicDownloadsPerMinute: 1 });
     try {
-      expect((await burst(app, 1, { url: DOWNLOAD_URL }))[0]?.statusCode).toBe(404);
+      expect((await burst(app, 1, { url: DOWNLOAD_URL }))[0]?.statusCode).not.toBe(429);
       expect((await burst(app, 1, { url: DOWNLOAD_URL }))[0]?.statusCode).toBe(429);
 
       clock.advance(RATE_LIMIT_WINDOW_MS);
-      expect((await burst(app, 1, { url: DOWNLOAD_URL }))[0]?.statusCode).toBe(404);
+      expect((await burst(app, 1, { url: DOWNLOAD_URL }))[0]?.statusCode).not.toBe(429);
     } finally {
       await app.close();
     }

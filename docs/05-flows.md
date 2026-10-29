@@ -312,9 +312,8 @@ the lock remains held until cleanup completes.
 
 **Rules:** DB first, files second (a failed unlink leaves a sweepable orphan, never a dangling row that looks valid).
 The per-country advisory lock is shared with download admission and remains held across the commit and file cleanup, so a
-new worker cannot install into a path while it is being unlinked. When admin/public stream routes are implemented
-(P2-API-09/P3-API-05), they must hold the matching shared lock for the entire response so deletion cannot unlink an
-active transfer's file. All cache paths and unlinks go through
+new worker cannot install into a path while it is being unlinked. The admin and public stream routes (P2-API-09/P3-API-05) hold the matching shared lock before opening a file and for
+the full response lifetime, so deletion cannot unlink an active transfer's file. All cache paths and unlinks go through
 `modules/storage/storage.ts`: parent symlinks are never followed, only a named file or encountered link component is
 unlinked, and directories are never recursively deleted. A file-unlink failure is logged for the orphan sweep but does
 not change the committed `204`. The catalog row remains; P4-INT-01 must add cleanup for interval memberships when that

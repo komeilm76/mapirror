@@ -1,9 +1,10 @@
 /**
  * Public catalog read model. Every query here applies the publication and ready-version guard (L8).
  *
- * Public routes must use these projections instead of querying `countries`, `country_cache`, or `map_versions`
- * directly. The projections deliberately omit cache internals, job data, storage paths and row ids that have no public
- * meaning. Callers that combine page data and counts in one response should pass a repeatable-read transaction.
+ * Public routes must use these guarded queries instead of reading `countries`, `country_cache`, or `map_versions`
+ * directly. JSON projections omit cache internals, job data, storage paths and row ids that have no public meaning; the
+ * private download-file reference is deliberately separate and must never be serialized. Callers that combine page data
+ * and counts in one response should pass a repeatable-read transaction.
  *
  * @module db/repositories/public-catalog
  */
@@ -39,6 +40,18 @@ export interface PublicVersionRow {
   readonly file_size_bytes: string;
   readonly checksum_md5: string | null;
   readonly ready_at: Date | null;
+}
+
+/** Internal file reference used only by the public download stream; never serialize storage paths or row ids. */
+export interface PublicDownloadFileRow {
+  readonly country_id: string;
+  readonly slug: string;
+  readonly version_id: string;
+  readonly version: string;
+  readonly storage_path: string;
+  readonly checksum_md5: string | null;
+  readonly file_size_bytes: string;
+  readonly modified_at: Date;
 }
 
 /** A bounded page and the full matching count, both represented without bigint precision loss. */
@@ -96,6 +109,46 @@ export async function findPublicCountryBySlug(
   const row = await newestReadyCountryQuery(publicCountryBase(executor))
     .where('c.slug', '=', slug)
     .executeTakeFirst();
+  return row ?? null;
+}
+
+/**
+ * Finds a ready public version's private file reference for streaming, never for a JSON response.
+ *
+ * The public/readiness guard is shared with catalog reads. The returned storage path and row ids exist only at this
+ * boundary so the stream handler can open the file while holding the cache lock; it must not serialize the row.
+ */
+export async function findPublicDownloadFile(
+  executor: RepositoryExecutor,
+  slug: string,
+  requestedVersion: string,
+): Promise<PublicDownloadFileRow | null> {
+  let query = publicCountryBase(executor)
+    .innerJoin('map_versions as mv', (join) =>
+      join.onRef('mv.country_id', '=', 'c.id').on('mv.status', '=', 'ready'),
+    )
+    .select([
+      'c.id as country_id',
+      'c.slug',
+      'mv.id as version_id',
+      'mv.version',
+      'mv.storage_path',
+      'mv.checksum_md5',
+      'mv.file_size_bytes',
+      sql<Date>`coalesce(mv.data_timestamp, mv.ready_at, mv.created_at)`.as('modified_at'),
+    ])
+    .where('c.slug', '=', slug);
+
+  if (requestedVersion === 'latest') {
+    query = query
+      .orderBy(sql`mv.data_timestamp desc nulls last`)
+      .orderBy(sql`mv.ready_at desc nulls last`)
+      .orderBy('mv.id', 'desc');
+  } else {
+    query = query.where('mv.version', '=', requestedVersion);
+  }
+
+  const row = await query.executeTakeFirst();
   return row ?? null;
 }
 

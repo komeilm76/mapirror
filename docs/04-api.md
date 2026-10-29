@@ -369,8 +369,8 @@ and uncached/unknown countries return `404 NOT_FOUND`.
   reached a terminal state within 3 seconds, the endpoint still returns `409` and leaves cache rows/files intact.
 - Download admission and deletion share a per-country PostgreSQL advisory lock through post-commit file cleanup, so a
   new download cannot install a file at a path being unlinked. If another cache mutation/stream still holds its lock
-  after 5 seconds, deletion returns `409 JOB_ALREADY_RUNNING` without changing data. The admin stream (P2-API-09) and future public stream (P3-API-05) take a shared lock on the same country key before
-  opening a file and hold it until the response closes. The delete-side exclusive lock then waits for active transfers,
+  after 5 seconds, deletion returns `409 JOB_ALREADY_RUNNING` without changing data. The admin and public streams (P2-API-09/P3-API-05) take a shared lock on the same country key before opening a file
+  and hold it until the response closes. The delete-side exclusive lock then waits for active transfers,
   preserving CACHE-5.
 - The database deletes and audit `cache.delete_country` commit together; validated version paths are unlinked afterward
   through the storage boundary. An unlink failure is logged as an orphan for the sweep and does not turn a committed
@@ -694,19 +694,23 @@ No internal ids, job ids, or storage paths are exposed. Invalid MD5 values are r
 
 ### 3.4 `GET /_public/api/countries/:slug/download?version=latest|260101`
 
-Streams the file (no JSON). Behaviour:
+Streams one ready version (no JSON body). The country must be explicitly published; unknown, unpublished, and
+published-without-a-ready-version countries all return the same `404 NOT_FOUND`. An unknown or not-ready version also
+returns `404`. `version` defaults to `latest`; other values must be safe version labels, and unknown query keys or an
+invalid label return `400 VALIDATION_ERROR`.
 
 | Header / case | Handling |
 |---|---|
-| `version` omitted | `latest` |
-| `version` unknown or unpublished | `404 NOT_FOUND` |
-| `Range: bytes=1000-` | `206 Partial Content` with correct `Content-Range` (resumable clients) |
-| `If-None-Match` matches | `304 Not Modified` |
-| `HEAD` | Headers only, no body, **and no `download_events` row** (Fastify exposes HEAD automatically for GET routes — the handler must detect it, otherwise every preview inflates the stats) |
-| Unpublished country | `404` |
-| File missing on disk | `410 VERSION_FILE_MISSING` |
+| `version` omitted or `latest` | Streams the newest ready version, ordered by data timestamp, ready time, then row id |
+| `version=<label>` | Streams that exact ready version |
+| `Range: bytes=1000-` (also closed or suffix single ranges) | `206 Partial Content`, exact `Content-Range` and selected `Content-Length` |
+| Malformed, multiple, or unsatisfiable `Range` | Ignored; sends the complete `200` representation |
+| Matching `If-None-Match` (weak comparison or `*`) | `304 Not Modified`, no body or content length |
+| `If-Range` matches the strong ETag or a current HTTP date | Honors `Range`; otherwise sends the complete `200` representation |
+| `HEAD` | Same representation headers as `GET`, no body |
+| Missing file for a ready row | `410 VERSION_FILE_MISSING`, without exposing the storage path |
 
-Response headers:
+Response headers (an ETag and checksum header are omitted when the stored MD5 is absent or invalid):
 
 ```
 Content-Type: application/x-protobuf
@@ -716,23 +720,25 @@ Accept-Ranges: bytes
 ETag: "md5:5d41402abc4b2a76b9719d911017c592"
 Last-Modified: Thu, 23 Oct 2026 20:20:51 GMT
 X-Checksum-Md5: 5d41402abc4b2a76b9719d911017c592
-Cache-Control: public, max-age=31536000, immutable   # explicit version → never changes
-# …for ?version=latest (default) instead:
+Cache-Control: public, max-age=31536000, immutable   # explicit version label
+# …for ?version=latest (the default) instead:
 Cache-Control: no-cache                              # the alias moves; revalidate every time
 ```
 
 ```bash
-TOKEN=…  # admin
 curl -sS http://localhost:8080/_public/api/countries
 curl -L -o finland.osm.pbf http://localhost:8080/_public/api/countries/finland/download
-curl -r 0-1048575 -o part.bin http://localhost:8080/_public/api/countries/finland/download   # range test
+curl -r 0-1048575 -o part.bin 'http://localhost:8080/_public/api/countries/finland/download?version=261023'
 md5sum finland.osm.pbf   # verify against the version's checksumMd5
 ```
 
-Rate limit: `PUBLIC_DOWNLOADS_PER_MINUTE` (default 10 per IP per minute, `Retry-After` on refusal),
-**applied per request start**, not per byte — a large transfer is never interrupted mid-stream. The read
-endpoints have their own allowance (60 per IP per minute), so a client downloading files cannot lock itself out
-of the catalog (`14-security.md` §7).
+The public stream takes the same shared per-country advisory lock as the admin stream and holds it from before the file
+is opened until the HTTP response closes, so cache deletion cannot unlink an active transfer (CACHE-5). Public GET
+transfers are recorded by the later analytics task (P3-API-06); `HEAD` and `304` are not downloads and create no event.
+Rate limit: `PUBLIC_DOWNLOADS_PER_MINUTE` (default 10 per IP per minute, `Retry-After` on refusal), **applied per
+request start**, not per byte — a large transfer is never interrupted mid-stream. The read endpoints have their own
+allowance (60 per IP per minute), so a client downloading files cannot lock itself out of the catalog (`14-security.md`
+§7).
 
 ### 3.5 `GET /_public/api/stats`
 

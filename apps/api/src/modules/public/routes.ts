@@ -9,11 +9,17 @@
 
 import type { FastifyPluginCallback } from 'fastify';
 
+import type { AppConfig } from '../../config/env';
 import { getPublicCountries, getPublicCountry, getPublicCountryVersions } from './countries-route';
+import { createPublicCountryDownloadHandler } from './country-download-route';
 
 /** Countries, versions, download, stats land here. */
-export const publicRoutes: FastifyPluginCallback = (app) => {
+export const publicRoutes: FastifyPluginCallback<{ config: AppConfig }> = (app, options) => {
   app.get('/countries', getPublicCountries);
   app.get('/countries/:slug/versions', getPublicCountryVersions);
   app.get('/countries/:slug', getPublicCountry);
+  app.get(
+    '/countries/:slug/download',
+    createPublicCountryDownloadHandler({ config: options.config }),
+  );
 };

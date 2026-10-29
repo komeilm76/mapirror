@@ -385,7 +385,7 @@ CREATE TABLE metrics_samples (
 
 ### 2.10 `download_events` (usage + analytics)
 
-Created by `0003_download_events.sql` for admin streams (`P2-API-09`); the public stream task adds `channel=public` writes later.
+Created by `0003_download_events.sql` for admin streams (`P2-API-09`); P3-API-06 adds `channel=public` writes for public streams.
 
 ```sql
 CREATE TABLE download_events (
