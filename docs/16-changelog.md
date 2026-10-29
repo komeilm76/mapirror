@@ -3,11 +3,22 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 102 passes · 378 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4, pass 76: 4, pass 77: 4, pass 78: 4, pass 79: 5, pass 80: 7, pass 81: 7, pass 82: 9, pass 83: 8, pass 84: 1, pass 85: 3, pass 86: 1, pass 87: 2, pass 88: 2, pass 89: 1, pass 90: 1, pass 91: 3, pass 92: 1, pass 93: 1, pass 94: 1, pass 95: 1, pass 96: 1, pass 97: 1, pass 98: 2, pass 99: 4, pass 100: 2, pass 101: 3, pass 102: 3).
+**Totals:** 103 passes · 380 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4, pass 76: 4, pass 77: 4, pass 78: 4, pass 79: 5, pass 80: 7, pass 81: 7, pass 82: 9, pass 83: 8, pass 84: 1, pass 85: 3, pass 86: 1, pass 87: 2, pass 88: 2, pass 89: 1, pass 90: 1, pass 91: 3, pass 92: 1, pass 93: 1, pass 94: 1, pass 95: 1, pass 96: 1, pass 97: 1, pass 98: 2, pass 99: 4, pass 100: 2, pass 101: 3, pass 102: 3, pass 103: 2).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
 ---
+
+## Pass 103 — 2026-10-29 (public downloads could not be copied into a terminal)
+
+P3-WEB-03 review found the country detail offered a browser download but no ready-to-run terminal command. A useful snippet must use the visitor's actual origin and pin the same exact latest version as the download link; clipboard permission failures also need honest feedback rather than a false success.
+
+| # | Bug found | Fix |
+|---|---|---|
+| 1 | Public visitors had no copyable terminal download command for the exact latest ready version | Generate a same-origin cURL command from the validated country and latest version, with URL-encoded query data and a portable output filename |
+| 2 | Copy feedback and shell-argument safety were missing | Quote every shell argument, sanitize the filename separately, announce successful copy, and leave clear manual-copy guidance when clipboard access fails |
+
+Validation: full workspace `check` passed (99 test files passed; 1,230 tests passed; 33 test files / 297 database-dependent tests skipped). `build:web` passed; the country-detail route remains lazy at 10.19 kB (3.81 kB gzip). Production LCP remains unmeasured. **Totals after this pass: 103 passes · 380 defects fixed · 0 open.**
 
 ## Pass 102 — 2026-10-29 (public country detail was still a placeholder)
 

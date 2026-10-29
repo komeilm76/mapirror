@@ -1,4 +1,4 @@
-/* Public shell and home catalog (`P3-WEB-01`); every color and size comes from shared tokens. */
+/* Public shell, catalog, and country detail (`P3-WEB-01/02/03`); colors and sizes come from shared tokens. */
 
 .mm-public-layout {
   display: flex;
@@ -524,6 +524,65 @@
   background: rgb(var(--v-theme-primary-darken-1));
 }
 
+.mm-public-curl-panel {
+  margin-top: var(--mm-space-5);
+  padding-top: var(--mm-space-4);
+  border-top: var(--mm-border-width) solid rgb(var(--v-theme-border));
+}
+
+.mm-public-curl-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mm-space-3);
+}
+
+.mm-public-curl-heading h3 {
+  margin: 0;
+  font-size: var(--mm-text-body);
+}
+
+.mm-public-curl-copy {
+  min-height: var(--mm-touch-target);
+  padding: var(--mm-space-2) var(--mm-space-4);
+  border: var(--mm-border-width) solid rgb(var(--v-theme-border-strong));
+  border-radius: var(--mm-radius-md);
+  background: rgb(var(--v-theme-surface));
+  color: rgb(var(--v-theme-text-primary));
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mm-public-curl-copy:hover {
+  border-color: rgb(var(--v-theme-primary));
+  color: rgb(var(--v-theme-primary));
+}
+
+.mm-public-curl-command {
+  max-width: 100%;
+  overflow: auto;
+  margin: var(--mm-space-3) 0 0;
+  padding: var(--mm-space-3);
+  border: var(--mm-border-width) solid rgb(var(--v-theme-border));
+  border-radius: var(--mm-radius-md);
+  background: rgb(var(--v-theme-surface-variant));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mm-public-curl-command code {
+  color: rgb(var(--v-theme-text-primary));
+  font-family: var(--mm-font-mono);
+  font-size: var(--mm-text-mono-small);
+}
+
+.mm-public-curl-status {
+  margin: var(--mm-space-2) 0 0;
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: var(--mm-text-caption);
+}
+
 .mm-public-summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -669,8 +728,14 @@
     grid-column: 1 / -1;
   }
 
-  .mm-public-download-link {
+  .mm-public-download-link,
+  .mm-public-curl-copy {
     width: 100%;
+  }
+
+  .mm-public-curl-heading {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .mm-public-versions-table-wrap {

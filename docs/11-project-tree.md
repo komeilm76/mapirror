@@ -182,7 +182,7 @@ mapirror/
 │     │  │  ├─ admin/JobsPage.vue          # exists (P2-WEB-06): queue filters, progress rows/cards
 │     │  │  ├─ admin/{Dashboard,Intervals,Import,
 │     │  │  │        System,Settings,Audit}Page.vue
-│     │  │  ├─ public/{Home,CountryDetail,ApiDocs,NotFound}Page.vue  # Home (P3-WEB-01), CountryDetail (P3-WEB-02), NotFound exist
+│     │  │  ├─ public/{Home,CountryDetail,ApiDocs,NotFound}Page.vue  # Home (P3-WEB-01), CountryDetail (P3-WEB-02/03), NotFound exist
 │     │  ├─ components/
 │     │  │  ├─ common/             # PageHeader, DataTableShell, EmptyState, ErrorState,
 │     │  │  │                      # SkeletonBlock, ConfirmDialog, CopyField, StatCard

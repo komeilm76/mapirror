@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** Public country detail and ready-version history (`P3-WEB-02`, screen S3). */
+/** Public country detail, ready-version history, and latest-download tools (`P3-WEB-02/03`, screen S3). */
 
 import {
   PublicCountryDetailResponseSchema,
@@ -7,6 +7,7 @@ import {
   type PublicCountryDetailResponse,
   type PublicCountryVersionsResponse,
 } from '@mapirror/shared';
+import { useTimeoutFn } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -45,6 +46,29 @@ const latestVersion = computed(
 );
 const pageCount = computed(() => Math.max(1, versions.value?.meta.totalPages ?? 1));
 const countryFlag = computed(() => flagForIso(country.value?.iso ?? []));
+const curlCommand = computed(() => {
+  const version = latestVersion.value;
+  const currentCountry = country.value;
+  if (version === null || currentCountry === null) return '';
+
+  const downloadUrl = new URL(
+    `/_public/api/countries/${encodeURIComponent(currentCountry.slug)}/download`,
+    window.location.origin,
+  );
+  downloadUrl.searchParams.set('version', version.version);
+  const filename = `${currentCountry.slug}-${safeFilenamePart(version.version)}.osm.pbf`;
+  return `curl --fail --show-error --location --output ${shellQuote(filename)} ${shellQuote(downloadUrl.href)}`;
+});
+
+const copied = ref(false);
+const copyFailed = ref(false);
+const copiedReset = useTimeoutFn(
+  () => {
+    copied.value = false;
+  },
+  2_000,
+  { immediate: false },
+);
 
 watch(
   requestKey,
@@ -132,6 +156,33 @@ watch(
 /** Retries the active detail or versions request without changing the URL. */
 function retry(): void {
   retryCount.value += 1;
+}
+
+/** Copies the current latest-version command, leaving it visible for manual selection if blocked. */
+async function copyCurl(): Promise<void> {
+  copied.value = false;
+  copyFailed.value = false;
+  copiedReset.stop();
+
+  try {
+    if (typeof navigator.clipboard?.writeText !== 'function')
+      throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(curlCommand.value);
+    copied.value = true;
+    copiedReset.start();
+  } catch {
+    copyFailed.value = true;
+  }
+}
+
+/** Quotes a value as one POSIX-shell argument. */
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+/** Limits the output filename to a simple portable basename, never a path from API data. */
+function safeFilenamePart(value: string): string {
+  return value.replace(/[^A-Za-z0-9._-]/gu, '_').slice(0, 64) || 'version';
 }
 
 /** Changes version-history page while preserving other shareable query values. */
@@ -269,6 +320,27 @@ function setUnreadableResponse(resource: string): void {
             </dd>
           </div>
         </dl>
+        <div v-if="latestVersion" class="mm-public-curl-panel">
+          <div class="mm-public-curl-heading">
+            <h3>Download with cURL</h3>
+            <button class="mm-public-curl-copy" type="button" @click="copyCurl">
+              {{ copied ? 'Copied' : 'Copy command' }}
+            </button>
+          </div>
+          <pre class="mm-public-curl-command"><code>{{ curlCommand }}</code></pre>
+          <p
+            v-if="copied || copyFailed"
+            class="mm-public-curl-status"
+            role="status"
+            aria-live="polite"
+          >
+            {{
+              copied
+                ? 'cURL command copied.'
+                : 'Clipboard access failed. Select the command above and copy it manually.'
+            }}
+          </p>
+        </div>
       </div>
 
       <section class="mm-public-versions-section" aria-labelledby="public-versions-title">

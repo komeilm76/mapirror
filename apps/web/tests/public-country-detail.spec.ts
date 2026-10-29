@@ -8,6 +8,7 @@ import type { PublicCountryDetailResponse, PublicCountryVersionsResponse } from 
 import { createWebApp } from '../src/bootstrap';
 
 const mounted: VueApp<Element>[] = [];
+const clipboardRestorers: Array<() => void> = [];
 const MD5 = 'd41d8cd98f00b204e9800998ecf8427e';
 type PublicCountryVersion = PublicCountryDetailResponse['versions'][number];
 
@@ -75,6 +76,18 @@ function jsonResponse(value: unknown, status = 200): Response {
   });
 }
 
+function stubClipboard(writeText: (text: string) => Promise<void>): void {
+  const previousDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText },
+  });
+  clipboardRestorers.push(() => {
+    if (previousDescriptor) Object.defineProperty(navigator, 'clipboard', previousDescriptor);
+    else Reflect.deleteProperty(navigator, 'clipboard');
+  });
+}
+
 async function mountDetail(
   respond: (url: URL, init: RequestInit | undefined) => Response | Promise<Response>,
   path = '/_site/countries/finland',
@@ -103,6 +116,7 @@ async function mountDetail(
 
 afterEach(() => {
   for (const app of mounted.splice(0)) app.unmount();
+  for (const restore of clipboardRestorers.splice(0)) restore();
   document.body.innerHTML = '';
   localStorage.clear();
   vi.unstubAllGlobals();
@@ -155,6 +169,67 @@ describe('public country detail', () => {
     for (const [, init] of fetchMock.mock.calls) {
       expect(new Headers(init?.headers).has('authorization')).toBe(false);
     }
+  });
+
+  it('copies a same-origin cURL command for the exact latest version', async () => {
+    const writeText = vi.fn((_text: string): Promise<void> => Promise.resolve());
+    stubClipboard(writeText);
+    const { container } = await mountDetail((url) =>
+      url.pathname.endsWith('/versions')
+        ? jsonResponse(versionsResponse())
+        : jsonResponse(detailResponse()),
+    );
+    const expected = `curl --fail --show-error --location --output 'finland-261023.osm.pbf' '${window.location.origin}/_public/api/countries/finland/download?version=261023'`;
+
+    expect(container.querySelector('.mm-public-curl-command')?.textContent?.trim()).toBe(expected);
+    expect(container.querySelector('.mm-public-download-link')?.getAttribute('href')).toBe(
+      '/_public/api/countries/finland/download?version=261023',
+    );
+    container.querySelector<HTMLButtonElement>('.mm-public-curl-copy')?.click();
+    await flushPromises();
+
+    expect(writeText).toHaveBeenCalledWith(expected);
+    expect(container.querySelector('.mm-public-curl-status')?.textContent).toContain(
+      'cURL command copied.',
+    );
+    expect(container.querySelector('.mm-public-curl-copy')?.textContent).toContain('Copied');
+  });
+
+  it('shows manual-copy guidance when browser clipboard access is rejected', async () => {
+    const writeText = vi.fn((_text: string): Promise<void> =>
+      Promise.reject(new Error('permission denied')),
+    );
+    stubClipboard(writeText);
+    const { container } = await mountDetail((url) =>
+      url.pathname.endsWith('/versions')
+        ? jsonResponse(versionsResponse())
+        : jsonResponse(detailResponse()),
+    );
+
+    container.querySelector<HTMLButtonElement>('.mm-public-curl-copy')?.click();
+    await flushPromises();
+
+    expect(writeText).toHaveBeenCalledOnce();
+    expect(container.querySelector('.mm-public-curl-status')?.textContent).toContain(
+      'Clipboard access failed. Select the command above and copy it manually.',
+    );
+    expect(container.querySelector('.mm-public-curl-copy')?.textContent).toContain('Copy command');
+  });
+
+  it('shell-quotes untrusted version labels and sanitizes the output filename', async () => {
+    const unsafeVersion = version({ version: "261023'; touch /tmp/pwned; #" });
+    const { container } = await mountDetail((url) =>
+      url.pathname.endsWith('/versions')
+        ? jsonResponse(versionsResponse([unsafeVersion]))
+        : jsonResponse(
+            detailResponse({ latest: unsafeVersion.version, versions: [unsafeVersion] }),
+          ),
+    );
+    const command = container.querySelector('.mm-public-curl-command')?.textContent?.trim() ?? '';
+
+    expect(command).toContain("--output 'finland-261023___touch__tmp_pwned___");
+    expect(command).toContain('version=261023%27%3B+touch+%2Ftmp%2Fpwned%3B+%23');
+    expect(command).not.toContain('; touch /tmp/pwned');
   });
 
   it('restores and updates the shareable version-history page', async () => {
