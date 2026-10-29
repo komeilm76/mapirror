@@ -38,7 +38,7 @@ describe('x-request-id is returned on every response', () => {
   it('sets a UUIDv4 on a successful response', async () => {
     const instance = await buildTestApp();
 
-    const response = await instance.inject({ method: 'GET', url: '/_public/api/countries' });
+    const response = await instance.inject({ method: 'GET', url: '/healthz' });
     expect(response.headers[REQUEST_ID_HEADER]).toMatch(UUID_V4);
     await instance.close();
   });
@@ -57,8 +57,8 @@ describe('x-request-id is returned on every response', () => {
   it('gives every request its own id', async () => {
     const instance = await buildTestApp();
 
-    const first = await instance.inject({ method: 'GET', url: '/_public/api/countries' });
-    const second = await instance.inject({ method: 'GET', url: '/_public/api/countries' });
+    const first = await instance.inject({ method: 'GET', url: '/healthz' });
+    const second = await instance.inject({ method: 'GET', url: '/healthz' });
     expect(first.headers[REQUEST_ID_HEADER]).not.toBe(second.headers[REQUEST_ID_HEADER]);
     await instance.close();
   });
@@ -80,7 +80,7 @@ describe('x-request-id is returned on every response', () => {
     const captured = capture();
     const instance = await buildTestApp({ logger: { level: 'info', stream: captured.stream } });
 
-    const response = await instance.inject({ method: 'GET', url: '/_public/api/countries' });
+    const response = await instance.inject({ method: 'GET', url: '/healthz' });
     await instance.close();
 
     const id = response.headers[REQUEST_ID_HEADER];
@@ -95,7 +95,7 @@ describe('an inbound x-request-id is repeated only when it is safe', () => {
 
     const response = await instance.inject({
       method: 'GET',
-      url: '/_public/api/countries',
+      url: '/healthz',
       headers: { [REQUEST_ID_HEADER]: 'proxy-hop-000123' },
     });
     expect(response.headers[REQUEST_ID_HEADER]).toBe('proxy-hop-000123');
@@ -114,7 +114,7 @@ describe('an inbound x-request-id is repeated only when it is safe', () => {
 
     const response = await instance.inject({
       method: 'GET',
-      url: '/_public/api/countries',
+      url: '/healthz',
       headers: { [REQUEST_ID_HEADER]: value },
     });
 

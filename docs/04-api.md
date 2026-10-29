@@ -24,19 +24,16 @@ This table is the single normative source for route placement. `00-index.md` sum
 
 ### 0.3 Bootstrap state (temporary)
 
-The server is running before every module is. Exactly one route is still a stub, at a path this document
-already defines, and it answers `503 NOT_READY` with the standard envelope naming its owning task:
+No `503 NOT_READY` routes are currently registered. Implemented endpoints answer their contract; planned endpoints
+remain absent until their task registers them, so unknown paths return the standard `404 NOT_FOUND` envelope. The
+bootstrap test asserts this table stays empty rather than exposing placeholder routes.
 
 | Route | Replaced by |
 |---|---|
-| `GET /_public/api/countries` | `P3-API-03` |
 
-`POST /_auth/api/login` used to be the third; it is implemented as of `P1-AUTH-03` and documented in §1.
-
-No stub is registered at a bare prefix: `/_auth/api` with no trailing slash is not a route, which keeps the
-route table exactly as wide as the law allows. `apps/api/tests/app.spec.ts` asserts this set, so adding a
-fourth stub (or forgetting to delete one) fails the gate. The row disappears from this table as each module
-lands.
+`POST /_auth/api/login` and `GET /_public/api/countries` used to be bootstrap stubs; they are now implemented and
+documented in §§1 and 3.1. No stub is registered at a bare prefix: `/_auth/api` with no trailing slash is not a route,
+which keeps the route table exactly as wide as the law allows.
 
 ## 0.2 Conventions
 
@@ -639,7 +636,7 @@ Paginated audit log (`auth.*`, `cache.*`, `catalog.*`, `version.*`, `interval.*`
 
 ### 3.1 `GET /_public/api/countries`
 
-Query: `q`, `continent`, `page`, `limit` (≤ 100), `sort=name|size|updated`.
+Query: `q` (trimmed partial country-name or ISO-code match, up to 128 characters), `continent` (exact source parent id, up to 255 characters), `page`, `limit` (default 25, maximum 100), and `sort=name|size|updated` (default `name`). Pagination values follow §0.2's decimal-only clamping; unknown keys and invalid sort values return `400 VALIDATION_ERROR`. Names sort A–Z; `size` sorts by the newest ready version's size, largest first; `updated` sorts by its data timestamp, newest first with null timestamps last. Ties are stable. `updatedAt` is that newest ready version's data timestamp, or `null` when absent. The public projection does not expose internal country/version ids, publication state, cache internals, or storage paths.
 
 ```json
 200 {

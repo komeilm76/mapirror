@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { isApiPath, isProbePath, statusFor } from '@mapirror/shared';
+import { isApiPath, isProbePath } from '@mapirror/shared';
 
 import {
   assertRouteLaw,
@@ -42,18 +42,18 @@ afterEach(async () => {
 });
 
 describe('the three API prefixes are registered', () => {
-  const stubs: [string, 'GET' | 'POST', string][] = [['public', 'GET', '/_public/api/countries']];
-
-  for (const [scope, method, url] of stubs) {
-    it(`${scope} namespace answers under its prefix`, async () => {
-      const response = await (await app()).inject({ method, url });
-
-      // The admin catalog endpoint is implemented; the public countries endpoint is the only remaining stub.
-      expect(response.statusCode).toBe(statusFor('NOT_READY'));
-      expect(response.statusCode).toBe(503);
-      expect(response.headers['content-type']).toMatch(/^application\/json/);
+  it('validates the public countries query before touching the database', async () => {
+    const response = await (
+      await app()
+    ).inject({
+      method: 'GET',
+      url: '/_public/api/countries?sort=unsupported',
     });
-  }
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json<{ error: { code: string } }>().error.code).toBe('VALIDATION_ERROR');
+    expect(response.headers['content-type']).toMatch(/^application\/json/);
+  });
 
   it('auth answers under its prefix with a real handler, not a stub', async () => {
     // `P1-AUTH-03` replaced the `503`. An empty body is answered `400 VALIDATION_ERROR` by the shared schema, which
@@ -65,28 +65,15 @@ describe('the three API prefixes are registered', () => {
     expect(response.headers['content-type']).toMatch(/^application\/json/);
   });
 
-  it('returns the documented error envelope, with a request id and the owning task', async () => {
-    const response = await (await app()).inject({ method: 'GET', url: '/_public/api/countries' });
-    const body = response.json<{ error: { code: string; message: string; requestId: string } }>();
-
-    expect(body.error.code).toBe('NOT_READY');
-    expect(body.error.requestId).toBeTypeOf('string');
-    expect(body.error.requestId.length).toBeGreaterThan(0);
-    expect(body.error.message).toContain('GET /_public/api/countries');
-    // The task that replaces the stub is named in the response, so a stale stub explains itself.
-    expect(body.error.message).toContain(STUB_ROUTES['GET /_public/api/countries']);
-  });
-
-  it('registers exactly the routes the contract names, and no invented ones', () => {
-    // Every stub path is a documented route key, and every key names an owning task.
+  it('has no registered placeholder routes', () => {
+    // Completed handlers are real endpoints; future work remains absent instead of answering a misleading 503.
     for (const [route, task] of Object.entries(STUB_ROUTES)) {
       const [method, url] = route.split(' ') as [string, string];
       expect(['GET', 'POST'], route).toContain(method);
       expect(isApiPath(url), route).toBe(true);
       expect(task, route).toMatch(/^P[0-9]-[A-Z]+-[0-9]+$/);
     }
-    // The public countries route is the only remaining stub; catalog listing was implemented by P2-API-01.
-    expect(Object.keys(STUB_ROUTES)).toHaveLength(1);
+    expect(Object.keys(STUB_ROUTES)).toHaveLength(0);
   });
 
   it('serves nothing outside the three prefixes — no root, no bare prefix, no page', async () => {
@@ -102,7 +89,7 @@ describe('the three API prefixes are registered', () => {
     for (const [route, method] of [
       ['/_auth/api/login', 'POST'],
       ['/_admin/api/catalog', 'GET'],
-      ['/_public/api/countries', 'GET'],
+      ['/_public/api/countries?sort=unsupported', 'GET'],
     ] as const) {
       // Every route in every namespace, stub or not: a JSON API never answers HTML, including for a bad request.
       const response = await instance.inject({
@@ -119,9 +106,9 @@ describe('the three API prefixes are registered', () => {
     }
   });
 
-  it('keeps the stub methods honest: login is POST, reads are GET', async () => {
+  it('keeps the route methods honest: login is POST, reads are GET', async () => {
     const instance = await app();
-    // A GET on the login path must 404, not 503: the route exists only for the documented method.
+    // A GET on the login path must 404: the route exists only for the documented method.
     expect((await instance.inject({ method: 'GET', url: '/_auth/api/login' })).statusCode).toBe(
       404,
     );
@@ -155,7 +142,6 @@ describe('stub routes match the contract', () => {
       (match) => match[1] as string,
     );
 
-    expect(documented.length).toBeGreaterThan(0);
     expect([...Object.keys(STUB_ROUTES)].sort()).toEqual([...documented].sort());
   });
 });

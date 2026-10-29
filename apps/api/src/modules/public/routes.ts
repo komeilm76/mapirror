@@ -9,9 +9,9 @@
 
 import type { FastifyPluginCallback } from 'fastify';
 
-import { notImplemented } from '../../routes/not-implemented';
+import { getPublicCountries } from './countries-route';
 
 /** Countries, versions, download, stats land here. */
 export const publicRoutes: FastifyPluginCallback = (app) => {
-  app.get('/countries', notImplemented('GET /_public/api/countries'));
+  app.get('/countries', getPublicCountries);
 };

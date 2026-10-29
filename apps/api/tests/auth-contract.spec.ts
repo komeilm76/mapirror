@@ -99,6 +99,6 @@ describe('the login contract matches 04-api.md', () => {
     expect(section, '§0.3 must exist').toContain('| Route |');
 
     const rows = section.split('\n').filter((line) => line.startsWith('| `'));
-    expect(rows).toEqual(['| `GET /_public/api/countries` | `P3-API-03` |']);
+    expect(rows).toEqual([]);
   });
 });

@@ -202,15 +202,15 @@ describe('the error stage wraps a real pipeline', () => {
     await instance.close();
   });
 
-  it('keeps the 503 stubs working under the new handler', async () => {
-    // The stubs throw nothing today, but they must not be shadowed by the 404 handler. `POST /_auth/api/login` is a
-    // real route as of `P1-AUTH-03`, and catalog listing is now a guarded real handler — so the public route is the
-    // only one that still answers anonymously.
+  it('validates the public catalog query without reaching the database', async () => {
     const instance = await buildTestApp();
 
-    const response = await instance.inject({ method: 'GET', url: '/_public/api/countries' });
-    expect(response.statusCode).toBe(503);
-    expect(response.json<{ error: { code: string } }>().error.code).toBe('NOT_READY');
+    const response = await instance.inject({
+      method: 'GET',
+      url: '/_public/api/countries?sort=unsupported',
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json<{ error: { code: string } }>().error.code).toBe('VALIDATION_ERROR');
     await instance.close();
   });
 });

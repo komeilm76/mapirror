@@ -114,8 +114,12 @@ describe.skipIf(!available)('the db stage against a real server', () => {
     });
     try {
       expect(instance.db).toBeDefined();
-      const response = await instance.inject({ method: 'GET', url: '/_public/api/countries' });
-      expect(response.statusCode).toBe(503);
+      const response = await instance.inject({
+        method: 'GET',
+        url: '/_public/api/countries?sort=unsupported',
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json<{ error: { code: string } }>().error.code).toBe('VALIDATION_ERROR');
     } finally {
       await instance.close();
     }

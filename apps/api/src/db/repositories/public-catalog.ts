@@ -53,6 +53,16 @@ export interface PublicReadPageOptions {
   readonly offset?: number;
 }
 
+/** Public list sort keys; names are always ascending, while size and update recency are descending. */
+export type PublicCountrySort = 'name' | 'size' | 'updated';
+
+/** Filters, sort and pagination for the public country list. */
+export interface PublicCountryListOptions extends PublicReadPageOptions {
+  readonly search?: string;
+  readonly continent?: string;
+  readonly sort?: PublicCountrySort;
+}
+
 /**
  * Lists published countries with their newest ready version.
  *
@@ -62,16 +72,15 @@ export interface PublicReadPageOptions {
  */
 export async function listPublicCountries(
   executor: RepositoryExecutor,
-  options: PublicReadPageOptions,
+  options: PublicCountryListOptions,
 ): Promise<PublicReadPage<PublicCountryRow>> {
   const { limit, offset } = checkedPage(options);
-  const visible = publicCountryBase(executor);
+  const accentInsensitive = options.search?.trim() ? await supportsUnaccent(executor) : false;
+  const visible = publicCountryBase(executor, publicCountryFilters(options, accentInsensitive));
   const count = await visible
     .select(sql<string>`count(*)::text`.as('total'))
     .executeTakeFirstOrThrow();
-  const rows = await newestReadyCountryQuery(visible)
-    .orderBy('c.name', 'asc')
-    .orderBy('c.id', 'asc')
+  const rows = await orderPublicCountries(newestReadyCountryQuery(visible), options.sort ?? 'name')
     .limit(limit)
     .offset(offset)
     .execute();
@@ -132,12 +141,84 @@ export async function listPublicCountryVersions(
   return { rows, total: count.total };
 }
 
+/** Checks the optional extension without causing a missing-function error inside a caller transaction. */
+async function supportsUnaccent(executor: RepositoryExecutor): Promise<boolean> {
+  const result = await sql<{ available: boolean }>`
+    select to_regprocedure('unaccent(text)') is not null as available
+  `.execute(executor);
+  return result.rows[0]?.available === true;
+}
+
+/** Builds identical visibility-independent list filters for both count and row queries. */
+function publicCountryFilters(
+  options: PublicCountryListOptions,
+  accentInsensitive: boolean,
+): Expression<SqlBool>[] {
+  const conditions: Expression<SqlBool>[] = [];
+  const search = options.search?.trim();
+  if (search) {
+    const pattern = `%${escapeLike(search)}%`;
+    const escape = '\\';
+    const nameMatch = accentInsensitive
+      ? sql<SqlBool>`(
+          unaccent(c.name) ILIKE unaccent(${pattern}) ESCAPE ${escape}
+          OR c.name ILIKE ${pattern} ESCAPE ${escape}
+        )`
+      : sql<SqlBool>`c.name ILIKE ${pattern} ESCAPE ${escape}`;
+    conditions.push(sql<SqlBool>`(
+      ${nameMatch}
+      OR c.iso_alpha2 @> ARRAY[upper(${search})]::text[]
+      OR c.iso_other @> ARRAY[upper(${search})]::text[]
+      OR EXISTS (
+        SELECT 1 FROM unnest(c.iso_alpha2 || c.iso_other) AS iso(code)
+        WHERE iso.code ILIKE ${pattern} ESCAPE ${escape}
+      )
+    )`);
+  }
+  if (options.continent) {
+    conditions.push(sql<SqlBool>`c.parent_id = ${options.continent}`);
+  }
+  return conditions;
+}
+
+/** Escapes LIKE metacharacters so a search remains a literal, bounded substring. */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/gu, '\\$&');
+}
+
+/** Whitelisted public sort semantics: name A–Z, largest first, or most recently updated first. */
+function orderPublicCountries(
+  query: ReturnType<typeof newestReadyCountryQuery>,
+  sort: PublicCountrySort,
+) {
+  switch (sort) {
+    case 'size':
+      return query
+        .orderBy('latest.newest_size_bytes', (builder) => builder.desc().nullsLast())
+        .orderBy('c.name', 'asc')
+        .orderBy('c.id', 'asc');
+    case 'updated':
+      return query
+        .orderBy('latest.newest_data_timestamp', (builder) => builder.desc().nullsLast())
+        .orderBy('latest.newest_ready_at', (builder) => builder.desc().nullsLast())
+        .orderBy('c.name', 'asc')
+        .orderBy('c.id', 'asc');
+    case 'name':
+      return query.orderBy('c.name', 'asc').orderBy('c.id', 'asc');
+  }
+}
+
 /** Base query shared by every public read; keep the publication invariant here, not at individual route call sites. */
-function publicCountryBase(executor: RepositoryExecutor) {
-  return executor
+function publicCountryBase(
+  executor: RepositoryExecutor,
+  conditions: readonly Expression<SqlBool>[] = [],
+) {
+  let query = executor
     .selectFrom('countries as c')
     .innerJoin('country_cache as cc', 'cc.country_id', 'c.id')
     .where(PUBLIC_COUNTRY_GUARD);
+  for (const condition of conditions) query = query.where(condition);
+  return query;
 }
 
 /** Projects each visible country with its newest ready row using one lateral index-backed lookup. */

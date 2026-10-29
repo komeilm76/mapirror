@@ -286,7 +286,7 @@ describe('what the guard does not touch', () => {
     });
     try {
       for (const [method, url] of [
-        ['GET', '/_public/api/countries'],
+        ['GET', '/_public/api/countries?sort=unsupported'],
         ['POST', '/_auth/api/login'],
         ['GET', '/healthz'],
         ['GET', '/readyz'],
@@ -296,10 +296,11 @@ describe('what the guard does not touch', () => {
 
       // Not one token read: the guard is keyed on the scope, and the scope of these is not admin.
       expect(touched).toEqual([]);
-      // The public stub still answers its own `503`, i.e. the guard did not shadow it.
-      expect((await app.inject({ method: 'GET', url: '/_public/api/countries' })).statusCode).toBe(
-        503,
-      );
+      // Invalid public-list input reaches its validator, not the admin guard or the database.
+      expect(
+        (await app.inject({ method: 'GET', url: '/_public/api/countries?sort=unsupported' }))
+          .statusCode,
+      ).toBe(400);
     } finally {
       await app.close();
     }

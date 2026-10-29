@@ -66,7 +66,10 @@ describe('security headers', () => {
     const documented = documentedHeaders();
     const instance = await buildTestApp();
 
-    const response = await instance.inject({ method: 'GET', url: '/_public/api/countries' });
+    const response = await instance.inject({
+      method: 'GET',
+      url: '/_public/api/countries?sort=unsupported',
+    });
 
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
       expect(response.headers[name], name).toBe(value);
@@ -126,13 +129,13 @@ describe('CORS', () => {
 
     const response = await instance.inject({
       method: 'GET',
-      url: '/_public/api/countries',
+      url: '/_public/api/countries?sort=unsupported',
       headers: { origin: 'https://somewhere.example.org' },
     });
 
     // Answered, not refused: CORS is a browser-side read barrier. Without `access-control-allow-origin` the
     // browser hides the body; no other client is affected.
-    expect(response.statusCode).toBe(503);
+    expect(response.statusCode).toBe(400);
     expect(response.headers['access-control-allow-origin']).toBeUndefined();
     expect(response.headers.vary).toContain('Origin');
     await instance.close();
@@ -164,7 +167,7 @@ describe('CORS', () => {
 
     const response = await instance.inject({
       method: 'GET',
-      url: '/_public/api/countries',
+      url: '/_public/api/countries?sort=unsupported',
       headers: { origin: 'https://maps.example.org' },
     });
 
@@ -179,11 +182,11 @@ describe('CORS', () => {
 
     const response = await instance.inject({
       method: 'GET',
-      url: '/_public/api/countries',
+      url: '/_public/api/countries?sort=unsupported',
       headers: { origin: 'https://maps.example.org' },
     });
 
-    expect(response.statusCode).toBe(503);
+    expect(response.statusCode).toBe(400);
     expect(response.headers['access-control-allow-origin']).toBe('https://maps.example.org');
     expect(response.headers.vary).toContain('Origin');
     // Bearer tokens travel in a header, so the allow-headers list has to include authorization.
@@ -223,7 +226,7 @@ describe('CORS', () => {
 
     const response = await instance.inject({
       method: 'OPTIONS',
-      url: '/_public/api/countries',
+      url: '/_public/api/countries?sort=unsupported',
       headers: { origin: 'https://evil.example.org', 'access-control-request-method': 'GET' },
     });
     const body = response.json<{ error: { code: string; requestId: string } }>();
@@ -244,11 +247,11 @@ describe('CORS', () => {
 
     const response = await instance.inject({
       method: 'GET',
-      url: '/_public/api/countries',
+      url: '/_public/api/countries?sort=unsupported',
       headers: { origin: 'https://evil.example.org' },
     });
 
-    expect(response.statusCode).toBe(503);
+    expect(response.statusCode).toBe(400);
     expect(response.headers['access-control-allow-origin']).toBeUndefined();
     await instance.close();
   });
@@ -262,12 +265,12 @@ describe('CORS', () => {
 
     const allowed = await instance.inject({
       method: 'GET',
-      url: '/_public/api/countries',
+      url: '/_public/api/countries?sort=unsupported',
       headers: { origin: 'https://maps.example.org' },
     });
     const wildcard = await instance.inject({
       method: 'OPTIONS',
-      url: '/_public/api/countries',
+      url: '/_public/api/countries?sort=unsupported',
       headers: { origin: '*', 'access-control-request-method': 'GET' },
     });
 
@@ -283,8 +286,11 @@ describe('CORS', () => {
       config: configWithOrigins(['https://maps.example.org']),
     });
 
-    const response = await instance.inject({ method: 'GET', url: '/_public/api/countries' });
-    expect(response.statusCode).toBe(503);
+    const response = await instance.inject({
+      method: 'GET',
+      url: '/_public/api/countries?sort=unsupported',
+    });
+    expect(response.statusCode).toBe(400);
     expect(response.headers['access-control-allow-origin']).toBeUndefined();
     await instance.close();
   });

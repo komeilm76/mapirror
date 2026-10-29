@@ -84,7 +84,7 @@ describe('the logger redacts credentials at the logger level', () => {
 
     await instance.inject({
       method: 'GET',
-      url: '/_public/api/countries',
+      url: '/healthz',
       headers: { authorization: 'Bearer mm_INJECTED_TOKEN', cookie: 'session=INJECTED_COOKIE' },
     });
     await instance.close();

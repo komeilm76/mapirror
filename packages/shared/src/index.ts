@@ -17,7 +17,8 @@
  * | `constants` | token format, sort fields and the enums the DB `CHECK`s mirror |
  * | `auth` | login request/response shapes and their bounds (`P1-AUTH-03`) |
  * | `catalog` | admin catalog query, row and sync response contracts (`P2-API-01`) |
- * | `cache` | admin cache-list/detail query and response contracts (`P2-API-05`) |
+ * | `cache` | admin cache-list/detail and publication toggle contracts (`P2-API-05`, `P3-API-02`) |
+ * | `public-catalog` | public country-list query and response contract (`P3-API-03`) |
  * | `jobs` | admin job list/detail/cancel contracts (`P2-API-10`) |
  *
  * Request/response schemas are added alongside their owning API contract tasks, so each implemented endpoint exports
@@ -37,4 +38,5 @@ export * from './errors';
 export * from './license';
 export * from './jobs';
 export * from './pagination';
+export * from './public-catalog';
 export * from './routes';

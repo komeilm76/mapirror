@@ -236,7 +236,7 @@ function burst(
   count: number,
   options: { url?: string; address?: string; headers?: Record<string, string> } = {},
 ) {
-  const url = options.url ?? '/_public/api/countries';
+  const url = options.url ?? '/_public/api/countries?sort=unsupported';
   const address = options.address ?? '203.0.113.7';
   return Promise.all(
     Array.from({ length: count }, () =>
@@ -259,8 +259,8 @@ describe('the stage charges the documented requests, and only those', () => {
       const allowed = responses.slice(0, PUBLIC_READ_REQUESTS_PER_MINUTE);
       const refused = responses.at(-1);
 
-      // The stub's `503 NOT_READY` is the proof that a charged request reached the route.
-      for (const response of allowed) expect(response.statusCode).toBe(503);
+      // The invalid sort reaches the public handler and fails validation without a database query.
+      for (const response of allowed) expect(response.statusCode).toBe(400);
       expect(refused?.statusCode).toBe(429);
 
       const body = refused?.json<{ error: { code: string; details: unknown } }>();
@@ -285,7 +285,7 @@ describe('the stage charges the documented requests, and only those', () => {
         'the exhausted address',
       ).toBe(429);
       // One visitor cannot spend another's allowance — the reason the key is the address and not the process.
-      expect((await burst(app, 1, { address: '198.51.100.7' }))[0]?.statusCode).toBe(503);
+      expect((await burst(app, 1, { address: '198.51.100.7' }))[0]?.statusCode).toBe(400);
     } finally {
       await app.close();
     }
@@ -304,7 +304,7 @@ describe('the stage charges the documented requests, and only those', () => {
 
       // A download does not spend the *read* allowance: the two rules are separate windows on purpose, so a client
       // downloading files cannot be locked out of the country list (and the reverse).
-      expect((await burst(app, 1))[0]?.statusCode).toBe(503);
+      expect((await burst(app, 1))[0]?.statusCode).toBe(400);
     } finally {
       await app.close();
     }
@@ -401,7 +401,7 @@ describe('the stage charges the documented requests, and only those', () => {
 
       // The whole allowance is still there afterwards.
       const reads = await burst(app, PUBLIC_READ_REQUESTS_PER_MINUTE);
-      expect(reads.every((response) => response.statusCode === 503)).toBe(true);
+      expect(reads.every((response) => response.statusCode === 400)).toBe(true);
     } finally {
       await app.close();
     }

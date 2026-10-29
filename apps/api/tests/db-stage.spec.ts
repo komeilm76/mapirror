@@ -72,7 +72,7 @@ describe('the db stage', () => {
 
     // Once, not zero times (an unverified boot) and not once per request (a query in a hook).
     expect(calls.check).toBe(1);
-    await instance.inject({ method: 'GET', url: '/_public/api/countries' });
+    await instance.inject({ method: 'GET', url: '/_public/api/countries?sort=unsupported' });
     expect(calls.check).toBe(1);
     await instance.close();
   });
