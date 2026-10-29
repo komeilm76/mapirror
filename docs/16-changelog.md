@@ -3,11 +3,21 @@
 Review passes over the repository — documents first, then the code that implements them. Every entry
 is a defect that was found and fixed, kept so a reviewer can see what changed and why.
 
-**Totals:** 88 passes · 353 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4, pass 76: 4, pass 77: 4, pass 78: 4, pass 79: 5, pass 80: 7, pass 81: 7, pass 82: 9, pass 83: 8, pass 84: 1, pass 85: 3, pass 86: 1, pass 87: 2, pass 88: 2).
+**Totals:** 89 passes · 354 defects fixed · 0 open (pass 1: 20, pass 2: 18, pass 3: 16, pass 4: 4, pass 5: 4, pass 6: 10, pass 7: 8, pass 8: 6, pass 9: 6, pass 10: 2, pass 11: 1, pass 12: 1, pass 13: 3, pass 14: 3, pass 15: 2, pass 16: 3, pass 17: 2, pass 18: 2, pass 19: 3, pass 20: 3, pass 21: 2, pass 22: 2, pass 23: 2, pass 24: 1, pass 25: 1, pass 26: 2, pass 27: 2, pass 28: 2, pass 29: 2, pass 30: 2, pass 31: 4, pass 32: 4, pass 33: 7, pass 34: 2, pass 35: 1, pass 36: 3, pass 37: 4, pass 38: 3, pass 39: 2, pass 40: 3, pass 41: 3, pass 42: 4, pass 43: 4, pass 44: 3, pass 45: 1, pass 46: 3, pass 47: 4, pass 48: 1, pass 49: 2, pass 50: 2, pass 51: 3, pass 52: 1, pass 53: 4, pass 54: 1, pass 55: 2, pass 56: 1, pass 57: 2, pass 58: 1, pass 59: 2, pass 60: 5, pass 61: 4, pass 62: 6, pass 63: 3, pass 64: 1, pass 65: 5, pass 66: 8, pass 67: 6, pass 68: 8, pass 69: 5, pass 70: 5, pass 71: 8, pass 72: 7, pass 73: 8, pass 74: 1, pass 75: 4, pass 76: 4, pass 77: 4, pass 78: 4, pass 79: 5, pass 80: 7, pass 81: 7, pass 82: 9, pass 83: 8, pass 84: 1, pass 85: 3, pass 86: 1, pass 87: 2, pass 88: 2, pass 89: 1).
 Scope of a pass: consistency with `PROMPT.md`, consistency between docs, and correctness of the
 mechanisms described (SQL, state machines, HTTP semantics).
 
 ---
+
+## Pass 89 — 2026-10-29 (catalog search needed HTTP-contract coverage)
+
+P2-TST-04's repository tests already covered ISO, partial-name, literal wildcard, and optional accent-folding behavior. The catalog route suite exercised plain-name and ISO searches, but never proved that URL query parsing and response counts preserved accent behavior end to end.
+
+| # | Bug found in test review | Fix |
+|---|---|---|
+| 1 | A regression in the catalog endpoint's `q` contract could break accent-folded matching or return a count inconsistent with its rows while repository-only tests still passed | Add a PostgreSQL route regression for partial name, ISO code, and `aland` matching against `Åland Islands`, with expected accent behavior conditional on optional `unaccent` availability and a count/rows parity assertion |
+
+Full `bun run check` passes 22 workspace checks, 54 hygiene checks, typechecking, ESLint and formatting; Vitest reports **1,200 passed, 286 skipped** across 119 files. PostgreSQL catalog route/repository tests, including the new route case, were skipped because a fresh test database is unavailable; P2-TST-04 remains in review pending a database-backed run. **Totals after this pass: 89 passes · 354 defects fixed · 0 open.**
 
 ## Pass 88 — 2026-10-29 (documentation index retained stale manual summaries)
 

@@ -295,6 +295,45 @@ describe.skipIf(skipReason !== null)('GET /_admin/api/catalog', () => {
     });
   });
 
+  it('searches partial names and ISO codes, with optional accent folding through the route', async () => {
+    await withCatalogApp(async ({ app, token }) => {
+      await app.db.db
+        .insertInto('countries')
+        .values({
+          source_id: 'europe/aland',
+          parent_id: 'europe',
+          slug: 'aland-islands',
+          name: 'Åland Islands',
+          iso_alpha2: ['AX'],
+          iso_other: ['AX-01'],
+        })
+        .execute();
+
+      const partialName = await getCatalog(app, token, '?q=land');
+      expect(
+        partialName.json<{ data: { slug: string }[]; meta: { total: number } }>(),
+      ).toMatchObject({ data: [{ slug: 'aland-islands' }], meta: { total: 1 } });
+
+      const isoCode = await getCatalog(app, token, '?q=ax');
+      expect(isoCode.json<{ data: { slug: string }[] }>().data.map(({ slug }) => slug)).toEqual([
+        'aland-islands',
+      ]);
+
+      const unaccent = await sql<{ available: boolean }>`
+        select to_regprocedure('unaccent(text)') is not null as available
+      `.execute(app.db.db);
+      const accentInsensitive = await getCatalog(app, token, '?q=aland');
+      const accentResult = accentInsensitive.json<{
+        data: { slug: string }[];
+        meta: { total: number };
+      }>();
+      expect(accentResult.data.map(({ slug }) => slug)).toEqual(
+        unaccent.rows[0]!.available ? ['aland-islands'] : [],
+      );
+      expect(accentResult.meta.total).toBe(unaccent.rows[0]!.available ? 1 : 0);
+    });
+  });
+
   it('returns validation errors for invalid filters, sort keys, unknown keys, and excessive search text', async () => {
     await withCatalogApp(async ({ app, token }) => {
       for (const query of [
