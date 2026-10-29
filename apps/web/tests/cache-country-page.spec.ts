@@ -12,6 +12,7 @@ import type {
 import { SESSION_TOKEN_KEY } from '../src/auth/token-storage';
 import { createWebApp } from '../src/bootstrap';
 import { adminPagePaths } from '../src/router/paths';
+import { useNotifications } from '../src/stores/notifications';
 
 const COUNTRY_ID = '00000000-0000-4000-8000-000000000001';
 const OTHER_COUNTRY_ID = '00000000-0000-4000-8000-000000000005';
@@ -131,6 +132,7 @@ async function mountCountry(
 ): Promise<{
   container: HTMLElement;
   router: Router;
+  notifications: ReturnType<typeof useNotifications>;
 }> {
   sessionStorage.setItem(SESSION_TOKEN_KEY, 'mm_country_test');
   window.history.replaceState({}, '', `${adminPagePaths.cacheCountry(COUNTRY_ID)}${query}`);
@@ -144,7 +146,8 @@ async function mountCountry(
   await router.isReady();
   await flushPromises();
   await flushPromises();
-  return { container, router };
+  const pinia = (app.config.globalProperties as unknown as { $pinia: unknown }).$pinia;
+  return { container, router, notifications: useNotifications(pinia as never) };
 }
 
 afterEach(() => {
@@ -194,6 +197,114 @@ describe('admin cached-country detail', () => {
     for (const [, init] of adminRequests) {
       expect(new Headers(init?.headers).get('authorization')).toBe('Bearer mm_country_test');
     }
+  });
+
+  it('optimistically publishes through the shared contract and adopts the authoritative response', async () => {
+    let toggleStarted!: () => void;
+    let finishToggle!: (response: Response) => void;
+    const started = new Promise<void>((resolve) => {
+      toggleStarted = resolve;
+    });
+    const fetchMock = makeFetch((url, init) => {
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}`)
+        return jsonResponse(detail({ isPublic: false, publicSince: null }));
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}/versions`)
+        return jsonResponse(versionPage([READY]));
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}/public` && init?.method === 'POST') {
+        expect(init.body).toBe(JSON.stringify({ isPublic: true }));
+        toggleStarted();
+        return new Promise<Response>((resolve) => {
+          finishToggle = resolve;
+        });
+      }
+      throw new Error(`Unexpected request ${url.pathname}`);
+    });
+    const { container, notifications } = await mountCountry(fetchMock);
+
+    await vi.waitFor(() => expect(container.querySelector('h1')?.textContent).toBe('Finland'));
+    const toggle = container.querySelector<HTMLInputElement>(
+      '.mm-cache-public-switch-target input[type="checkbox"]',
+    );
+    expect(toggle?.disabled).toBe(false);
+    expect(toggle?.getAttribute('role')).toBe('switch');
+    expect(toggle?.checked).toBe(false);
+    toggle?.click();
+    await started;
+
+    expect(toggle?.checked).toBe(true);
+    expect(container.textContent).toContain('Public');
+    expect(notifications.items).toHaveLength(0);
+    finishToggle?.(jsonResponse({ isPublic: true, publicSince: '2026-10-29T12:00:00.000Z' }));
+    await vi.waitFor(() => expect(notifications.items[0]?.message).toBe('Finland is now public.'));
+    expect(toggle?.checked).toBe(true);
+    const request = fetchMock.mock.calls.find(([input]) =>
+      requestUrl(input).endsWith(`/${COUNTRY_ID}/public`),
+    );
+    expect(request?.[1]?.method).toBe('POST');
+    expect(request?.[1]?.credentials).toBe('omit');
+  });
+
+  it('rolls public visibility back and shows an actionable toast when publishing fails', async () => {
+    const fetchMock = makeFetch((url, init) => {
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}`)
+        return jsonResponse(detail({ isPublic: false, publicSince: null }));
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}/versions`)
+        return jsonResponse(versionPage([READY]));
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}/public` && init?.method === 'POST') {
+        return jsonResponse(
+          {
+            error: {
+              code: 'NO_READY_VERSION',
+              message: 'This country has no ready map version to publish.',
+              requestId: 'req-public',
+            },
+          },
+          422,
+        );
+      }
+      throw new Error(`Unexpected request ${url.pathname}`);
+    });
+    const { container, notifications } = await mountCountry(fetchMock);
+
+    await vi.waitFor(() => expect(container.querySelector('h1')?.textContent).toBe('Finland'));
+    const toggle = container.querySelector<HTMLInputElement>(
+      '.mm-cache-public-switch-target input[type="checkbox"]',
+    );
+    toggle?.click();
+    expect(toggle?.checked).toBe(true);
+    await vi.waitFor(() => expect(toggle?.checked).toBe(false));
+
+    expect(notifications.items).toHaveLength(1);
+    expect(notifications.items[0]).toMatchObject({
+      kind: 'error',
+      message: 'There is no completed map version to publish.',
+      detail: 'Download or import a version and wait for verification to finish.',
+      requestId: 'req-public',
+    });
+  });
+
+  it('disables publishing without a ready version and explains why without sending a request', async () => {
+    const fetchMock = makeFetch((url) => {
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}`)
+        return jsonResponse(detail({ isPublic: false, publicSince: null, versionsReady: 0 }));
+      if (url.pathname === `/_admin/api/cache/${COUNTRY_ID}/versions`)
+        return jsonResponse(versionPage([FAILED]));
+      throw new Error(`Unexpected request ${url.pathname}`);
+    });
+    const { container } = await mountCountry(fetchMock);
+
+    await vi.waitFor(() => expect(container.querySelector('h1')?.textContent).toBe('Finland'));
+    const toggle = container.querySelector<HTMLInputElement>(
+      '.mm-cache-public-switch-target input[type="checkbox"]',
+    );
+    expect(toggle?.disabled).toBe(true);
+    expect(container.textContent).toContain(
+      'At least one ready map version is required to make this country public.',
+    );
+    toggle?.click();
+    expect(fetchMock.mock.calls.some(([input]) => requestUrl(input).endsWith('/public'))).toBe(
+      false,
+    );
   });
 
   it('keeps version pagination in the URL and requests the selected page', async () => {

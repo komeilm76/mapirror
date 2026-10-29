@@ -178,7 +178,7 @@ mapirror/
 │     │  │  ├─ auth/LoginPage.vue        # exists (P1-WEB-06): the one page outside /_site
 │     │  │  ├─ admin/CatalogPage.vue     # exists (P2-WEB-01): filters, sort, pagination, responsive table/cards
 │     │  │  ├─ admin/CachePage.vue        # exists (P2-WEB-03): cache list, size sort, URL filters, table/cards
-│     │  │  ├─ admin/CacheCountryPage.vue # exists (P2-WEB-04): detail, active jobs, paginated versions, streamed download/delete
+│     │  │  ├─ admin/CacheCountryPage.vue # exists (P2-WEB-04, P3-WEB-06): detail, public switch, active jobs, paginated versions, streamed download/delete
 │     │  │  ├─ admin/JobsPage.vue          # exists (P2-WEB-06): queue filters, progress rows/cards
 │     │  │  ├─ admin/{Dashboard,Intervals,Import,
 │     │  │  │        System,Settings,Audit}Page.vue

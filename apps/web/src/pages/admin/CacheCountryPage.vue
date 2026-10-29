@@ -5,6 +5,8 @@ import {
   CacheCountryDeleteQuerySchema,
   CacheCountryParamsSchema,
   CacheDetailResponseSchema,
+  CachePublicToggleBodySchema,
+  CachePublicToggleResponseSchema,
   CacheVersionDeleteParamsSchema,
   CacheVersionDeleteQuerySchema,
   CacheVersionListResponseSchema,
@@ -16,9 +18,11 @@ import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { ApiError } from '@/api/errors';
+import { notifyApiError } from '@/api/notify-error';
 import { useApi } from '@/composables/useApi';
 import { adminPagePaths } from '@/router/paths';
 import { useBreadcrumbs } from '@/stores/breadcrumbs';
+import { useNotifications } from '@/stores/notifications';
 
 const VERSION_PAGE_SIZE = 25;
 const CACHE_API = '/_admin/api/cache';
@@ -34,6 +38,7 @@ const route = useRoute();
 const router = useRouter();
 const api = useApi();
 const pageLabels = useBreadcrumbs();
+const notifications = useNotifications();
 
 const detail = ref<CacheDetailResponse | null>(null);
 const versions = ref<CacheVersionListResponse | null>(null);
@@ -50,6 +55,7 @@ const deleteTarget = ref<CacheVersionListItem | null>(null);
 const deleteDialogElement = ref<HTMLElement | null>(null);
 const deleteAcknowledgeElement = ref<HTMLInputElement | null>(null);
 const deleteFocusReturn = ref<HTMLElement | null>(null);
+const publicUpdating = ref(false);
 const countryDeleteDialogOpen = ref(false);
 const countryDeleteSlug = ref('');
 const countryDeleteCancelJobs = ref(false);
@@ -69,12 +75,15 @@ const downloadAnnouncementElement = ref<HTMLElement | null>(null);
 const pageAnnouncement = ref<string | null>(null);
 const pageHeadingElement = ref<HTMLHeadingElement | null>(null);
 let deleteOperationId = 0;
+let publicOperationId = 0;
+let publicStateRevision = 0;
 let countryDeleteOperationId = 0;
 let pageMounted = true;
 
 onUnmounted(() => {
   pageMounted = false;
   deleteOperationId += 1;
+  publicOperationId += 1;
   countryDeleteOperationId += 1;
   downloadController.value?.abort();
 });
@@ -90,6 +99,17 @@ const page = computed(() => pageFromQuery(route.query.page));
 
 /** Exact version count for pagination bounds. */
 const totalPages = computed(() => versions.value?.meta.totalPages ?? 0);
+const hasNoReadyVersions = computed(() => (detail.value?.cache.versionsReady ?? 0) === 0);
+const publicSwitchDisabled = computed(
+  () =>
+    detail.value === null ||
+    hasNoReadyVersions.value ||
+    publicUpdating.value ||
+    deleting.value ||
+    countryDeleting.value,
+);
+const publicSwitchDisabledReason =
+  'At least one ready map version is required to make this country public.';
 
 /** Confirmation copy changes when deleting the last ready version would close public access. */
 const deletionClosesPublicAccess = computed(
@@ -111,6 +131,9 @@ watch(
   async ([id], [previousId], onCleanup) => {
     if (id !== previousId) {
       deleteOperationId += 1;
+      publicOperationId += 1;
+      publicStateRevision += 1;
+      publicUpdating.value = false;
       downloadController.value?.abort();
       downloadController.value = null;
       downloadingVersionId.value = null;
@@ -135,6 +158,7 @@ watch(
       countryDeleteErrorRequestId.value = null;
       countryDeleteFocusReturn.value = null;
     }
+    const detailRevisionAtStart = publicStateRevision;
     const controller = new AbortController();
     let current = true;
     onCleanup(() => {
@@ -180,9 +204,11 @@ watch(
         return;
       }
       if (current) {
-        detail.value = detailParsed.data;
+        if (detailRevisionAtStart === publicStateRevision && !publicUpdating.value) {
+          detail.value = detailParsed.data;
+          pageLabels.setCacheCountryLabel(detailParsed.data.country.name);
+        }
         versions.value = versionsParsed.data;
-        pageLabels.setCacheCountryLabel(detailParsed.data.country.name);
         if (downloadMessage.value === null) downloadErrorMessage.value = null;
         void nextTick(() => pageHeadingElement.value?.focus());
       }
@@ -204,13 +230,99 @@ watch(
 
 /** Moves between pages without losing a bookmarked version-table page. */
 function setPage(nextPage: number): void {
-  if (!Number.isSafeInteger(nextPage) || nextPage < 1 || nextPage > totalPages.value) return;
+  if (
+    publicUpdating.value ||
+    !Number.isSafeInteger(nextPage) ||
+    nextPage < 1 ||
+    nextPage > totalPages.value
+  )
+    return;
   void router.replace({ query: { ...route.query, page: String(nextPage) } });
 }
 
 /** Repeats both country and version-list reads while preserving route state. */
 function retry(): void {
   retryNumber.value += 1;
+}
+
+/** Optimistically changes public visibility, then applies the validated server result or restores the prior state. */
+async function setPublicVisibility(nextIsPublic: boolean | null): Promise<void> {
+  const previousDetail = detail.value;
+  if (
+    nextIsPublic === null ||
+    previousDetail === null ||
+    publicSwitchDisabled.value ||
+    previousDetail.cache.isPublic === nextIsPublic
+  )
+    return;
+
+  const params = CacheCountryParamsSchema.safeParse({ countryId: countryId.value });
+  const body = CachePublicToggleBodySchema.safeParse({ isPublic: nextIsPublic });
+  if (!params.success || !body.success) {
+    notifications.error('Public access could not be updated.', {
+      detail: 'Reload the cached-country page and try again.',
+    });
+    return;
+  }
+
+  const requestedCountryId = params.data.countryId;
+  const operationId = ++publicOperationId;
+  publicStateRevision += 1;
+  publicUpdating.value = true;
+  detail.value = {
+    ...previousDetail,
+    cache: { ...previousDetail.cache, isPublic: nextIsPublic },
+  };
+
+  try {
+    const response = await api.post<unknown>(
+      `${CACHE_API}/${encodeURIComponent(requestedCountryId)}/public`,
+      body.data,
+    );
+    const parsedResponse = CachePublicToggleResponseSchema.safeParse(response);
+    if (!parsedResponse.success) throw new Error('The public-visibility response was invalid.');
+    if (!pageMounted || countryId.value !== requestedCountryId || operationId !== publicOperationId)
+      return;
+
+    publicStateRevision += 1;
+    const currentDetail = detail.value ?? previousDetail;
+    detail.value = {
+      ...currentDetail,
+      cache: {
+        ...currentDetail.cache,
+        isPublic: parsedResponse.data.isPublic,
+        publicSince: parsedResponse.data.publicSince,
+      },
+    };
+    pageLabels.setCacheCountryLabel(currentDetail.country.name);
+    notifications.success(
+      `${currentDetail.country.name} is now ${parsedResponse.data.isPublic ? 'public' : 'private'}.`,
+    );
+  } catch (cause) {
+    if (!pageMounted || countryId.value !== requestedCountryId || operationId !== publicOperationId)
+      return;
+
+    publicStateRevision += 1;
+    const currentDetail = detail.value ?? previousDetail;
+    detail.value = {
+      ...currentDetail,
+      cache: {
+        ...currentDetail.cache,
+        isPublic: previousDetail.cache.isPublic,
+        publicSince: previousDetail.cache.publicSince,
+      },
+    };
+    pageLabels.setCacheCountryLabel(currentDetail.country.name);
+    if (cause instanceof ApiError) {
+      notifyApiError(notifications, cause);
+    } else {
+      notifications.error('Public access could not be updated.', {
+        detail: 'The previous setting has been restored. Try again, or reload the page.',
+      });
+    }
+  } finally {
+    if (operationId === publicOperationId) publicUpdating.value = false;
+  }
 }
 
 /** Begins a secure, direct-to-file stream after the browser's save picker is opened in the click gesture. */
@@ -279,6 +391,7 @@ function cancelDownload(): void {
 
 /** Opens an accessible confirmation and remembers where focus should return. */
 function openDeleteDialog(version: CacheVersionListItem, event: MouseEvent): void {
+  if (publicUpdating.value) return;
   deleteTarget.value = version;
   deleteAcknowledged.value = false;
   deleteErrorMessage.value = null;
@@ -334,7 +447,8 @@ async function confirmDelete(): Promise<void> {
     target === null ||
     currentDetail === null ||
     currentVersions === null ||
-    !deleteAcknowledged.value
+    !deleteAcknowledged.value ||
+    publicUpdating.value
   )
     return;
 
@@ -422,7 +536,13 @@ async function confirmDelete(): Promise<void> {
 
 /** Opens the country-wide confirmation after preserving the triggering control for focus restoration. */
 function openCountryDeleteDialog(event: MouseEvent): void {
-  if (detail.value === null || deleting.value || downloadingVersionId.value !== null) return;
+  if (
+    detail.value === null ||
+    deleting.value ||
+    publicUpdating.value ||
+    downloadingVersionId.value !== null
+  )
+    return;
   countryDeleteSlug.value = '';
   countryDeleteCancelJobs.value = false;
   countryDeleteJobConflict.value = false;
@@ -480,6 +600,7 @@ async function deleteCountry(): Promise<void> {
     !countryDeleteSlugMatches.value ||
     (countryDeleteNeedsCancel.value && !countryDeleteCancelJobs.value) ||
     deleting.value ||
+    publicUpdating.value ||
     downloadingVersionId.value !== null
   )
     return;
@@ -615,7 +736,11 @@ const deletionWarning = computed(() =>
           class="mm-cache-button mm-cache-button-danger"
           type="button"
           :disabled="
-            detail === null || deleting || downloadingVersionId !== null || countryDeleting
+            detail === null ||
+            deleting ||
+            publicUpdating ||
+            downloadingVersionId !== null ||
+            countryDeleting
           "
           aria-haspopup="dialog"
           @click="openCountryDeleteDialog"
@@ -663,7 +788,38 @@ const deletionWarning = computed(() =>
         </div>
         <div class="mm-cache-summary-card">
           <span class="mm-cache-summary-label">Public state</span>
-          <strong>{{ detail.cache.isPublic ? 'Public' : 'Private' }}</strong>
+          <v-tooltip
+            location="bottom"
+            :text="publicSwitchDisabledReason"
+            :disabled="!hasNoReadyVersions"
+          >
+            <template #activator="{ props }">
+              <span
+                v-bind="props"
+                class="mm-cache-public-switch-target"
+                :tabindex="hasNoReadyVersions ? 0 : undefined"
+                :aria-describedby="hasNoReadyVersions ? 'cache-public-switch-help' : undefined"
+              >
+                <v-switch
+                  :model-value="detail.cache.isPublic"
+                  :label="detail.cache.isPublic ? 'Public' : 'Private'"
+                  :disabled="publicSwitchDisabled"
+                  :loading="publicUpdating"
+                  :true-icon="''"
+                  :false-icon="''"
+                  color="primary"
+                  density="comfortable"
+                  hide-details
+                  role="switch"
+                  :aria-label="`Public access for ${detail.country.name}`"
+                  @update:model-value="setPublicVisibility"
+                />
+              </span>
+            </template>
+          </v-tooltip>
+          <span v-if="hasNoReadyVersions" id="cache-public-switch-help" class="mm-cache-secondary">
+            {{ publicSwitchDisabledReason }}
+          </span>
         </div>
         <div class="mm-cache-summary-card">
           <span class="mm-cache-summary-label">Update</span>
@@ -808,7 +964,7 @@ const deletionWarning = computed(() =>
                   <button
                     class="mm-cache-button mm-cache-button-danger"
                     type="button"
-                    :disabled="deleting || downloadingVersionId !== null"
+                    :disabled="deleting || publicUpdating || downloadingVersionId !== null"
                     :aria-label="`Delete ${version.version}`"
                     @click="openDeleteDialog(version, $event)"
                   >
@@ -869,7 +1025,7 @@ const deletionWarning = computed(() =>
               <button
                 class="mm-cache-button mm-cache-button-danger"
                 type="button"
-                :disabled="deleting || downloadingVersionId !== null"
+                :disabled="deleting || publicUpdating || downloadingVersionId !== null"
                 :aria-label="`Delete ${version.version}`"
                 @click="openDeleteDialog(version, $event)"
               >
@@ -948,7 +1104,7 @@ const deletionWarning = computed(() =>
           <button
             class="mm-cache-button mm-cache-button-danger"
             type="button"
-            :disabled="!deleteAcknowledged || deleting"
+            :disabled="!deleteAcknowledged || deleting || publicUpdating"
             @click="confirmDelete"
           >
             {{ deleting ? 'Deleting…' : 'Delete version' }}
@@ -1038,6 +1194,7 @@ const deletionWarning = computed(() =>
               !countryDeleteSlugMatches ||
               (countryDeleteNeedsCancel && !countryDeleteCancelJobs) ||
               deleting ||
+              publicUpdating ||
               downloadingVersionId !== null ||
               countryDeleting
             "
