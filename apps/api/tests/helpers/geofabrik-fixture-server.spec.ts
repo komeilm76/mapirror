@@ -71,7 +71,18 @@ describe('Geofabrik fixture HTTP server', () => {
     });
   });
 
-  it('rejects status overrides that cannot be served as ordinary fixture responses', async () => {
+  it('serves a configured checksum mismatch as a well-formed MD5 sidecar', async () => {
+    const wrongMd5 = '0'.repeat(32);
+    await withGeofabrikFixtureServer(
+      { md5ByPath: { '/europe/finland-261023.osm.pbf': wrongMd5 } },
+      async ({ baseUrl }) => {
+        const response = await fetch(`${baseUrl}/europe/finland-261023.osm.pbf.md5`);
+        expect(await response.text()).toBe(`${wrongMd5}  finland-261023.osm.pbf\n`);
+      },
+    );
+  });
+
+  it('rejects status and checksum overrides that cannot be served safely', async () => {
     await expect(
       withGeofabrikFixtureServer({ statusByPath: { '/europe/finland.html': 204 } }, async () => {}),
     ).rejects.toThrow(RangeError);
@@ -81,12 +92,24 @@ describe('Geofabrik fixture HTTP server', () => {
     await expect(
       withGeofabrikFixtureServer({ statusByPath: { 'europe/finland.html': 503 } }, async () => {}),
     ).rejects.toThrow(TypeError);
+    await expect(
+      withGeofabrikFixtureServer(
+        { md5ByPath: { '/europe/finland-261023.osm.pbf': 'not-an-md5' } },
+        async () => {},
+      ),
+    ).rejects.toThrow(TypeError);
+    await expect(
+      withGeofabrikFixtureServer(
+        { md5ByPath: { '/unknown.osm.pbf': '0'.repeat(32) } },
+        async () => {},
+      ),
+    ).rejects.toThrow(TypeError);
   });
 
   it('supports local byte ranges and per-path status overrides without contacting a live source', async () => {
     await withGeofabrikFixtureServer(
       { statusByPath: { '/europe/finland.html': 503 } },
-      async ({ baseUrl, requests }) => {
+      async ({ baseUrl, requests, requestDetails }) => {
         const page = await fetch(`${baseUrl}/europe/finland.html`);
         expect(page.status).toBe(503);
 
@@ -110,6 +133,14 @@ describe('Geofabrik fixture HTTP server', () => {
           'GET /europe/finland-261023.osm.pbf',
           'GET /europe/finland-261023.osm.pbf',
           'GET /not-a-fixture',
+        ]);
+        expect(
+          requestDetails
+            .filter(({ url }) => url === '/europe/finland-261023.osm.pbf')
+            .map(({ range, ifRange }) => ({ range, ifRange })),
+        ).toEqual([
+          { range: 'bytes=0-3', ifRange: '"mapirror-fixture-pbf-v1"' },
+          { range: 'bytes=0-3', ifRange: '"stale-pbf"' },
         ]);
       },
     );

@@ -168,7 +168,7 @@ prove L1–L3.
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
 | P2-TST-01 | Fixture HTTP server (serves pbf + md5 + region pages) | ENG-4 | P2-SRC-03 | ✅ | Shared loopback server serves the checked-in Geofabrik region pages, local index JSON, deterministic PBF bytes + matching MD5 sidecars, HEAD metadata and byte ranges; matching/stale `If-Range`, failure statuses and ignored-range behavior are deterministic. Catalog/download route tests use this offline fixture, HTTP-client unit tests inject offline fetches, and focused fixture-contract tests pass; no live network in CI |
-| P2-TST-02 | Download suite (happy/resume/checksum/cancel/disk-full) | CACHE-1 | P2-JOB-05 | ⬜ | All five green |
+| P2-TST-02 | Download suite (happy/resume/checksum/cancel/disk-full) | CACHE-1 | P2-JOB-05 | 🟦 | Happy, Range+If-Range resume, and bad-sidecar MD5 run through the local fixture HTTP server; cooperative cancellation and ENOSPC use deterministic stream/writer seams. Assertions cover installed byte identity, actual resume headers, checksum failure, terminal cleanup, and version/cache state. PostgreSQL-backed execution still needs an available test database; these cases were skipped in the current environment |
 | P2-TST-03 | Delete + uniqueness semantics | CACHE-3/4 | P2-API-06/08 | ⬜ | Invariants from `03` §3 hold |
 | P2-TST-04 | Catalog/search query tests | GEO-1 | P2-API-01 | ⬜ | ISO, accent, partial matches |
 

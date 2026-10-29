@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,14 +5,20 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ResolvedDownload, MapSource } from '../../src/modules/geofabrik/source';
+import { createGeofabrikMapSource } from '../../src/modules/geofabrik/map-source';
 import { createDownloadHandler } from '../../src/modules/jobs/download-handler';
 import { startJobWorker } from '../../src/modules/jobs/worker';
 import { freshDatabaseSkipReason, withFreshDatabase } from '../helpers/fresh-db';
+import {
+  GEOFABRIK_PBF_FIXTURE_MD5,
+  getGeofabrikPbfFixture,
+  withGeofabrikFixtureServer,
+} from '../helpers/geofabrik-fixture-server';
 
 const skipReason = await freshDatabaseSkipReason();
 const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-const payloadBytes = new TextEncoder().encode('map data bytes; exact and verifiable\n');
-const md5 = createHash('md5').update(payloadBytes).digest('hex');
+const payloadBytes = getGeofabrikPbfFixture();
+const md5 = GEOFABRIK_PBF_FIXTURE_MD5;
 
 function source(
   checksumMd5: string | null = md5,
@@ -63,147 +68,169 @@ async function withWorkspace<T>(run: (cacheDirectory: string) => Promise<T>): Pr
 
 describe.skipIf(skipReason !== null)('PostgreSQL download handler', () => {
   it('streams byte-identical data, verifies MD5, installs atomically, and publishes the ready version', async () => {
-    await withFreshDatabase(
-      async ({ db }) => {
-        await withWorkspace(async (cacheDirectory) => {
-          const country = await db
-            .insertInto('countries')
-            .values({ source: 'geofabrik', source_id: 'europe/test', slug: 'test', name: 'Test' })
-            .returning('id')
-            .executeTakeFirstOrThrow();
-          const job = await db
-            .insertInto('jobs')
-            .values({ type: 'download', payload: { countryId: country.id, version: '261023' } })
-            .returningAll()
-            .executeTakeFirstOrThrow();
-          const handler = createDownloadHandler({
-            source: source(null),
-            cacheDirectory,
-            fetchImpl: (url) =>
-              Promise.resolve(
-                String(url).endsWith('.md5')
-                  ? new Response(`${md5}  test-261023.osm.pbf\n`)
-                  : bytesResponse(payloadBytes),
-              ),
-          });
-          const worker = startJobWorker(
-            db,
-            { download: handler },
-            {
-              concurrency: 1,
-              pollIntervalMs: 5,
-              heartbeatIntervalMs: 1_000,
-              cancellationPollIntervalMs: 5,
-              retryBaseDelayMs: 5,
-              retryMaxDelayMs: 5,
-              log,
-            },
-          );
+    await withGeofabrikFixtureServer({}, async ({ baseUrl, requests }) => {
+      await withFreshDatabase(
+        async ({ db }) => {
+          await withWorkspace(async (cacheDirectory) => {
+            const country = await db
+              .insertInto('countries')
+              .values({
+                source: 'geofabrik',
+                source_id: 'europe/finland',
+                slug: 'finland',
+                name: 'Finland',
+              })
+              .returning('id')
+              .executeTakeFirstOrThrow();
+            const job = await db
+              .insertInto('jobs')
+              .values({ type: 'download', payload: { countryId: country.id, version: '261023' } })
+              .returningAll()
+              .executeTakeFirstOrThrow();
+            const handler = createDownloadHandler({
+              source: createGeofabrikMapSource(baseUrl, {
+                metadataMaxAttempts: 1,
+                metadataRetryDelayMs: 0,
+              }),
+              cacheDirectory,
+            });
+            const worker = startJobWorker(
+              db,
+              { download: handler },
+              {
+                concurrency: 1,
+                pollIntervalMs: 5,
+                heartbeatIntervalMs: 1_000,
+                cancellationPollIntervalMs: 5,
+                retryBaseDelayMs: 5,
+                retryMaxDelayMs: 5,
+                log,
+              },
+            );
 
-          try {
-            await waitForStatus(db, job.id, 'succeeded');
-          } finally {
-            await worker.stop();
-          }
+            try {
+              await waitForStatus(db, job.id, 'succeeded');
+            } finally {
+              await worker.stop();
+            }
 
-          const version = await db
-            .selectFrom('map_versions')
-            .selectAll()
-            .where('country_id', '=', country.id)
-            .executeTakeFirstOrThrow();
-          expect(version).toMatchObject({
-            version: '261023',
-            origin: 'geofabrik_snapshot',
-            source_filename: 'test-261023.osm.pbf',
-            file_size_bytes: String(payloadBytes.byteLength),
-            checksum_md5: md5,
-            status: 'ready',
-            storage_path: 'test/261023/test-261023.osm.pbf',
+            const version = await db
+              .selectFrom('map_versions')
+              .selectAll()
+              .where('country_id', '=', country.id)
+              .executeTakeFirstOrThrow();
+            expect(version).toMatchObject({
+              version: '261023',
+              origin: 'geofabrik_snapshot',
+              source_filename: 'finland-261023.osm.pbf',
+              file_size_bytes: String(payloadBytes.byteLength),
+              checksum_md5: md5,
+              status: 'ready',
+              storage_path: 'finland/261023/finland-261023.osm.pbf',
+            });
+            expect(
+              Uint8Array.from(await readFile(join(cacheDirectory, version.storage_path))),
+            ).toEqual(payloadBytes);
+            await expect(
+              stat(join(cacheDirectory, '.partial', `${job.id}.part`)),
+            ).rejects.toMatchObject({
+              code: 'ENOENT',
+            });
+            const summary = await db
+              .selectFrom('country_cache')
+              .select(['versions_ready_count', 'total_size_bytes'])
+              .where('country_id', '=', country.id)
+              .executeTakeFirstOrThrow();
+            expect(summary).toEqual({
+              versions_ready_count: 1,
+              total_size_bytes: String(payloadBytes.byteLength),
+            });
+            expect(requests).toEqual([
+              'GET /europe/finland.html',
+              'HEAD /europe/finland-261023.osm.pbf',
+              'GET /europe/finland-261023.osm.pbf.md5',
+              'GET /europe/finland-261023.osm.pbf',
+            ]);
           });
-          expect(
-            Uint8Array.from(await readFile(join(cacheDirectory, version.storage_path))),
-          ).toEqual(payloadBytes);
-          await expect(
-            stat(join(cacheDirectory, '.partial', `${job.id}.part`)),
-          ).rejects.toMatchObject({
-            code: 'ENOENT',
-          });
-          const summary = await db
-            .selectFrom('country_cache')
-            .select(['versions_ready_count', 'total_size_bytes'])
-            .where('country_id', '=', country.id)
-            .executeTakeFirstOrThrow();
-          expect(summary).toEqual({
-            versions_ready_count: 1,
-            total_size_bytes: String(payloadBytes.byteLength),
-          });
-        });
-      },
-      { migrate: true, prefix: 'jobdownload' },
-    );
+        },
+        { migrate: true, prefix: 'jobdownload' },
+      );
+    });
   });
 
   it('resumes a valid partial file with Range and preserves byte identity', async () => {
-    await withFreshDatabase(
-      async ({ db }) => {
-        await withWorkspace(async (cacheDirectory) => {
-          const country = await db
-            .insertInto('countries')
-            .values({ source: 'geofabrik', source_id: 'europe/test', slug: 'test', name: 'Test' })
-            .returning('id')
-            .executeTakeFirstOrThrow();
-          const job = await db
-            .insertInto('jobs')
-            .values({ type: 'download', payload: { countryId: country.id, version: '261023' } })
-            .returningAll()
-            .executeTakeFirstOrThrow();
-          const partialDirectory = join(cacheDirectory, '.partial');
-          await mkdir(partialDirectory, { recursive: true });
-          const prefix = payloadBytes.slice(0, 11);
-          await writeFile(join(partialDirectory, `${job.id}.part`), prefix);
-          let rangeHeader: string | null = null;
-          let ifRangeHeader: string | null = null;
-          const handler = createDownloadHandler({
-            source: source(),
-            cacheDirectory,
-            fetchImpl: (_url, init) => {
-              const headers = new Headers(init?.headers);
-              rangeHeader = headers.get('range');
-              ifRangeHeader = headers.get('if-range');
-              return Promise.resolve(
-                bytesResponse(payloadBytes.slice(prefix.byteLength), 206, {
-                  'content-range': `bytes ${prefix.byteLength}-${payloadBytes.byteLength - 1}/${payloadBytes.byteLength}`,
-                }),
-              );
-            },
-          });
-          const worker = startJobWorker(
-            db,
-            { download: handler },
-            {
-              concurrency: 1,
-              pollIntervalMs: 5,
-              heartbeatIntervalMs: 1_000,
-              cancellationPollIntervalMs: 5,
-              retryBaseDelayMs: 5,
-              retryMaxDelayMs: 5,
-              log,
-            },
-          );
+    await withGeofabrikFixtureServer({}, async ({ baseUrl, requests, requestDetails }) => {
+      await withFreshDatabase(
+        async ({ db }) => {
+          await withWorkspace(async (cacheDirectory) => {
+            const country = await db
+              .insertInto('countries')
+              .values({
+                source: 'geofabrik',
+                source_id: 'europe/finland',
+                slug: 'finland',
+                name: 'Finland',
+              })
+              .returning('id')
+              .executeTakeFirstOrThrow();
+            const job = await db
+              .insertInto('jobs')
+              .values({ type: 'download', payload: { countryId: country.id, version: '261023' } })
+              .returningAll()
+              .executeTakeFirstOrThrow();
+            const partialDirectory = join(cacheDirectory, '.partial');
+            await mkdir(partialDirectory, { recursive: true });
+            const prefix = payloadBytes.slice(0, 11);
+            await writeFile(join(partialDirectory, `${job.id}.part`), prefix);
+            const handler = createDownloadHandler({
+              source: createGeofabrikMapSource(baseUrl, {
+                metadataMaxAttempts: 1,
+                metadataRetryDelayMs: 0,
+              }),
+              cacheDirectory,
+            });
+            const worker = startJobWorker(
+              db,
+              { download: handler },
+              {
+                concurrency: 1,
+                pollIntervalMs: 5,
+                heartbeatIntervalMs: 1_000,
+                cancellationPollIntervalMs: 5,
+                retryBaseDelayMs: 5,
+                retryMaxDelayMs: 5,
+                log,
+              },
+            );
 
-          try {
-            await waitForStatus(db, job.id, 'succeeded');
-          } finally {
-            await worker.stop();
-          }
-          const installed = await readFile(join(cacheDirectory, 'test/261023/test-261023.osm.pbf'));
-          expect(Uint8Array.from(installed)).toEqual(payloadBytes);
-          expect(rangeHeader).toBe(`bytes=${prefix.byteLength}-`);
-          expect(ifRangeHeader).toBe('"immutable-test-snapshot"');
-        });
-      },
-      { migrate: true, prefix: 'jobresume' },
-    );
+            try {
+              await waitForStatus(db, job.id, 'succeeded');
+            } finally {
+              await worker.stop();
+            }
+            const installed = await readFile(
+              join(cacheDirectory, 'finland/261023/finland-261023.osm.pbf'),
+            );
+            expect(Uint8Array.from(installed)).toEqual(payloadBytes);
+            const resumedRequest = requestDetails.find(
+              (request) =>
+                request.method === 'GET' && request.url === '/europe/finland-261023.osm.pbf',
+            );
+            expect(resumedRequest).toMatchObject({
+              range: `bytes=${prefix.byteLength}-`,
+              ifRange: '"mapirror-fixture-pbf-v1"',
+            });
+            expect(requests).toEqual([
+              'GET /europe/finland.html',
+              'HEAD /europe/finland-261023.osm.pbf',
+              'GET /europe/finland-261023.osm.pbf.md5',
+              'GET /europe/finland-261023.osm.pbf',
+            ]);
+          });
+        },
+        { migrate: true, prefix: 'jobresume' },
+      );
+    });
   });
 
   it('restarts from zero when a range request receives a full 200 response', async () => {
@@ -406,76 +433,94 @@ describe.skipIf(skipReason !== null)('PostgreSQL download handler', () => {
   });
 
   it('rejects a bad MD5 and removes the partial artifact before the worker records terminal failure', async () => {
-    await withFreshDatabase(
-      async ({ db }) => {
-        await withWorkspace(async (cacheDirectory) => {
-          const country = await db
-            .insertInto('countries')
-            .values({ source: 'geofabrik', source_id: 'europe/test', slug: 'test', name: 'Test' })
-            .returning('id')
-            .executeTakeFirstOrThrow();
-          const job = await db
-            .insertInto('jobs')
-            .values({
-              type: 'download',
-              payload: { countryId: country.id, version: '261023' },
-              max_attempts: 1,
-            })
-            .returningAll()
-            .executeTakeFirstOrThrow();
-          const handler = createDownloadHandler({
-            source: source('0'.repeat(32)),
-            cacheDirectory,
-            fetchImpl: () => Promise.resolve(bytesResponse(payloadBytes)),
-          });
-          const worker = startJobWorker(
-            db,
-            { download: handler },
-            {
-              concurrency: 1,
-              pollIntervalMs: 5,
-              heartbeatIntervalMs: 1_000,
-              cancellationPollIntervalMs: 5,
-              log,
-            },
-          );
-          try {
-            await waitForStatus(db, job.id, 'failed');
-          } finally {
-            await worker.stop();
-          }
-          const failed = await db
-            .selectFrom('jobs')
-            .select(['error_code', 'error_message'])
-            .where('id', '=', job.id)
-            .executeTakeFirstOrThrow();
-          expect(failed).toEqual({
-            error_code: 'JOB_HANDLER_FAILED',
-            error_message: 'The job handler failed.',
-          });
-          expect(
-            await db
-              .selectFrom('map_versions')
-              .select('status')
-              .where('country_id', '=', country.id)
-              .executeTakeFirst(),
-          ).toEqual({ status: 'failed' });
-          await expect(
-            db
-              .selectFrom('country_cache')
-              .select(['versions_ready_count', 'total_size_bytes'])
-              .where('country_id', '=', country.id)
-              .executeTakeFirstOrThrow(),
-          ).resolves.toEqual({ versions_ready_count: 0, total_size_bytes: '0' });
-          await expect(
-            stat(join(cacheDirectory, '.partial', `${job.id}.part`)),
-          ).rejects.toMatchObject({ code: 'ENOENT' });
-          await expect(
-            stat(join(cacheDirectory, 'test/261023/test-261023.osm.pbf')),
-          ).rejects.toMatchObject({ code: 'ENOENT' });
-        });
+    await withGeofabrikFixtureServer(
+      { md5ByPath: { '/europe/finland-261023.osm.pbf': '0'.repeat(32) } },
+      async ({ baseUrl, requests }) => {
+        await withFreshDatabase(
+          async ({ db }) => {
+            await withWorkspace(async (cacheDirectory) => {
+              const country = await db
+                .insertInto('countries')
+                .values({
+                  source: 'geofabrik',
+                  source_id: 'europe/finland',
+                  slug: 'finland',
+                  name: 'Finland',
+                })
+                .returning('id')
+                .executeTakeFirstOrThrow();
+              const job = await db
+                .insertInto('jobs')
+                .values({
+                  type: 'download',
+                  payload: { countryId: country.id, version: '261023' },
+                  max_attempts: 1,
+                })
+                .returningAll()
+                .executeTakeFirstOrThrow();
+              const handler = createDownloadHandler({
+                source: createGeofabrikMapSource(baseUrl, {
+                  metadataMaxAttempts: 1,
+                  metadataRetryDelayMs: 0,
+                }),
+                cacheDirectory,
+              });
+              const worker = startJobWorker(
+                db,
+                { download: handler },
+                {
+                  concurrency: 1,
+                  pollIntervalMs: 5,
+                  heartbeatIntervalMs: 1_000,
+                  cancellationPollIntervalMs: 5,
+                  log,
+                },
+              );
+              try {
+                await waitForStatus(db, job.id, 'failed');
+              } finally {
+                await worker.stop();
+              }
+              const failed = await db
+                .selectFrom('jobs')
+                .select(['error_code', 'error_message'])
+                .where('id', '=', job.id)
+                .executeTakeFirstOrThrow();
+              expect(failed).toEqual({
+                error_code: 'JOB_HANDLER_FAILED',
+                error_message: 'The job handler failed.',
+              });
+              expect(
+                await db
+                  .selectFrom('map_versions')
+                  .select('status')
+                  .where('country_id', '=', country.id)
+                  .executeTakeFirst(),
+              ).toEqual({ status: 'failed' });
+              await expect(
+                db
+                  .selectFrom('country_cache')
+                  .select(['versions_ready_count', 'total_size_bytes'])
+                  .where('country_id', '=', country.id)
+                  .executeTakeFirstOrThrow(),
+              ).resolves.toEqual({ versions_ready_count: 0, total_size_bytes: '0' });
+              await expect(
+                stat(join(cacheDirectory, '.partial', `${job.id}.part`)),
+              ).rejects.toMatchObject({ code: 'ENOENT' });
+              await expect(
+                stat(join(cacheDirectory, 'finland/261023/finland-261023.osm.pbf')),
+              ).rejects.toMatchObject({ code: 'ENOENT' });
+              expect(requests).toEqual([
+                'GET /europe/finland.html',
+                'HEAD /europe/finland-261023.osm.pbf',
+                'GET /europe/finland-261023.osm.pbf.md5',
+                'GET /europe/finland-261023.osm.pbf',
+              ]);
+            });
+          },
+          { migrate: true, prefix: 'jobchecksum' },
+        );
       },
-      { migrate: true, prefix: 'jobchecksum' },
     );
   });
 

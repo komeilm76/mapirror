@@ -19,6 +19,16 @@ export interface GeofabrikFixtureServerOptions {
   readonly statusByPath?: Readonly<Record<string, number>>;
   /** Whether GET requests with a valid Range header receive a partial response. Defaults to `honor`. */
   readonly rangeMode?: 'honor' | 'ignore';
+  /** MD5 sidecar overrides keyed by the corresponding PBF pathname; values must be 32 hexadecimal digits. */
+  readonly md5ByPath?: Readonly<Record<string, string>>;
+}
+
+/** Request details needed to assert resume headers without changing the compact request log. */
+export interface GeofabrikFixtureRequest {
+  readonly method: string;
+  readonly url: string;
+  readonly range: string | null;
+  readonly ifRange: string | null;
 }
 
 /** A running offline Geofabrik fixture with its loopback origin and a request audit trail. */
@@ -27,6 +37,8 @@ export interface GeofabrikFixtureServer {
   readonly baseUrl: string;
   /** HTTP method and URL recorded in arrival order. */
   readonly requests: string[];
+  /** Range and If-Range headers for each request, preserving arrival order. */
+  readonly requestDetails: GeofabrikFixtureRequest[];
   /** Stops accepting requests and waits for active connections to close. */
   close(): Promise<void>;
 }
@@ -79,6 +91,7 @@ export async function startGeofabrikFixtureServer(
 ): Promise<GeofabrikFixtureServer> {
   validateOptions(options);
   const requests: string[] = [];
+  const requestDetails: GeofabrikFixtureRequest[] = [];
   const pages = new Map<string, string>();
   let fixtureOrigin = '';
   await Promise.all(
@@ -89,7 +102,15 @@ export async function startGeofabrikFixtureServer(
 
   const server = createServer((request, response) => {
     const pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
-    requests.push(`${request.method ?? 'GET'} ${request.url ?? '/'}`);
+    const method = request.method ?? 'GET';
+    const requestUrl = request.url ?? '/';
+    requests.push(`${method} ${requestUrl}`);
+    requestDetails.push({
+      method,
+      url: requestUrl,
+      range: typeof request.headers.range === 'string' ? request.headers.range : null,
+      ifRange: typeof request.headers['if-range'] === 'string' ? request.headers['if-range'] : null,
+    });
     const statusOverrides = options.statusByPath;
     const forcedStatus =
       statusOverrides !== undefined && Object.hasOwn(statusOverrides, pathname)
@@ -121,7 +142,8 @@ export async function startGeofabrikFixtureServer(
     const pbfPath = pathname.endsWith('.md5') ? pathname.slice(0, -4) : null;
     if (pbfPath !== null && PBF_FILES.has(pbfPath) && request.method === 'GET') {
       const filename = pbfPath.slice(pbfPath.lastIndexOf('/') + 1);
-      const sidecar = `${GEOFABRIK_PBF_FIXTURE_MD5}  ${filename}\n`;
+      const checksum = options.md5ByPath?.[pbfPath] ?? GEOFABRIK_PBF_FIXTURE_MD5;
+      const sidecar = `${checksum}  ${filename}\n`;
       send(response, 200, 'text/plain; charset=utf-8', Buffer.from(sidecar));
       return;
     }
@@ -145,6 +167,7 @@ export async function startGeofabrikFixtureServer(
   return {
     baseUrl,
     requests,
+    requestDetails,
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.close((error) => (error === undefined ? resolve() : reject(error)));
@@ -174,6 +197,14 @@ function validateOptions(options: GeofabrikFixtureServerOptions): void {
       throw new RangeError(
         'fixture status overrides must be HTTP 200 or an error status from 400 to 599',
       );
+    }
+  }
+  for (const [pathname, checksum] of Object.entries(options.md5ByPath ?? {})) {
+    if (!PBF_FILES.has(pathname)) {
+      throw new TypeError('fixture MD5 override keys must name a served PBF pathname');
+    }
+    if (!/^[a-f0-9]{32}$/iu.test(checksum)) {
+      throw new TypeError('fixture MD5 overrides must contain exactly 32 hexadecimal digits');
     }
   }
 }
