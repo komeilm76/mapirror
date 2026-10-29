@@ -18,9 +18,20 @@ export const JsonIntegerSchema = z.union([
 export const CatalogQuerySchema = z
   .object({
     /** Case-insensitive partial match against region names and ISO codes. */
-    q: z.string().trim().max(128).optional(),
+    q: z
+      .string()
+      .trim()
+      .max(128)
+      .refine((value) => !value.includes('\u0000'), 'NUL characters are not allowed')
+      .optional(),
     /** Upstream parent id, e.g. `europe`. */
-    continent: z.string().trim().min(1).max(255).optional(),
+    continent: z
+      .string()
+      .trim()
+      .min(1)
+      .max(255)
+      .refine((value) => !value.includes('\u0000'), 'NUL characters are not allowed')
+      .optional(),
     /** Cache-row presence filter. */
     cache: z.enum(['all', 'uncached', 'cached']).optional(),
     /** Whether to restrict results to a known upstream update. */

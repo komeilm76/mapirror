@@ -636,7 +636,7 @@ Paginated audit log (`auth.*`, `cache.*`, `catalog.*`, `version.*`, `interval.*`
 
 ### 3.1 `GET /_public/api/countries`
 
-Query: `q` (trimmed partial country-name or ISO-code match, up to 128 characters), `continent` (exact source parent id, up to 255 characters), `page`, `limit` (default 25, maximum 100), and `sort=name|size|updated` (default `name`). Pagination values follow §0.2's decimal-only clamping; unknown keys and invalid sort values return `400 VALIDATION_ERROR`. Names sort A–Z; `size` sorts by the newest ready version's size, largest first; `updated` sorts by its data timestamp, newest first with null timestamps last. Ties are stable. `updatedAt` is that newest ready version's data timestamp, or `null` when absent. The public projection does not expose internal country/version ids, publication state, cache internals, or storage paths.
+Query: `q` (trimmed partial country-name or ISO-code match, up to 128 characters), `continent` (exact source parent id, up to 255 characters), `page`, `limit` (default 25, maximum 100), and `sort=name|size|updated` (default `name`). Pagination values follow §0.2's decimal-only clamping; unknown keys, invalid sort values, and NUL characters in `q` or `continent` return `400 VALIDATION_ERROR`. Names sort A–Z; `size` sorts by the newest ready version's size, largest first; `updated` sorts by its data timestamp, newest first with null timestamps last. Ties are stable. `updatedAt` is that newest ready version's data timestamp, or `null` when absent. The public projection does not expose internal country/version ids, publication state, cache internals, or storage paths.
 
 ```json
 200 {

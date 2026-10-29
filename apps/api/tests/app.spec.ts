@@ -42,13 +42,12 @@ afterEach(async () => {
 });
 
 describe('the three API prefixes are registered', () => {
-  it('validates the public countries query before touching the database', async () => {
-    const response = await (
-      await app()
-    ).inject({
-      method: 'GET',
-      url: '/_public/api/countries?sort=unsupported',
-    });
+  it.each([
+    '/_public/api/countries?sort=unsupported',
+    '/_public/api/countries?q=%00',
+    '/_public/api/countries?continent=%00',
+  ])('validates public countries query %s before touching the database', async (url) => {
+    const response = await (await app()).inject({ method: 'GET', url });
 
     expect(response.statusCode).toBe(400);
     expect(response.json<{ error: { code: string } }>().error.code).toBe('VALIDATION_ERROR');

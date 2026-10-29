@@ -45,6 +45,8 @@ describe('catalog contracts', () => {
     expect(CatalogQuerySchema.safeParse({ cache: 'sometimes' }).success).toBe(false);
     expect(CatalogQuerySchema.safeParse({ arbitrary: 'value' }).success).toBe(false);
     expect(CatalogQuerySchema.safeParse({ q: 'a'.repeat(129) }).success).toBe(false);
+    expect(CatalogQuerySchema.safeParse({ q: 'fin\u0000land' }).success).toBe(false);
+    expect(CatalogQuerySchema.safeParse({ continent: 'europe\u0000' }).success).toBe(false);
   });
 
   it('accepts only safe non-negative JSON numbers or canonical decimal strings for int8 values', () => {

@@ -11,9 +11,20 @@ import { JsonIntegerSchema } from './catalog';
 export const PublicCountriesQuerySchema = z
   .object({
     /** Trimmed partial match against names and ISO codes. */
-    q: z.string().trim().max(128).optional(),
+    q: z
+      .string()
+      .trim()
+      .max(128)
+      .refine((value) => !value.includes('\u0000'), 'NUL characters are not allowed')
+      .optional(),
     /** Exact source parent id, such as `europe`. */
-    continent: z.string().trim().min(1).max(255).optional(),
+    continent: z
+      .string()
+      .trim()
+      .min(1)
+      .max(255)
+      .refine((value) => !value.includes('\u0000'), 'NUL characters are not allowed')
+      .optional(),
     /** Decimal pagination values are clamped by `parsePagination`. */
     page: z.unknown().optional(),
     limit: z.unknown().optional(),

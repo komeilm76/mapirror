@@ -17,6 +17,8 @@ describe('public catalog contracts', () => {
       { sort: 'created' },
       { continent: '' },
       { q: 'x'.repeat(129) },
+      { q: 'fin\u0000land' },
+      { continent: 'europe\u0000' },
       { extra: 'nope' },
     ]) {
       expect(PublicCountriesQuerySchema.safeParse(query).success).toBe(false);
