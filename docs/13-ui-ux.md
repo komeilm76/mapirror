@@ -157,7 +157,7 @@ fails above 40 kB, so the exemption stays earned.
 | # | Route | Purpose | Key elements | Empty state |
 |---|---|---|---|---|
 | S1 | `/_auth/login` | Sign in | username, password, submit, error | — |
-| S2 | `/_site/` | Public catalog | search, continent chips, country cards, license note | "No maps published yet" |
+| S2 | `/_site/` | Public catalog | search, continent chips, country cards, license note | Centered map illustration, honest no-published-maps message, and a refresh action; filtered no-match stays distinct with a clear-filters action |
 | S3 | `/_site/countries/:slug` | Country detail | Latest download + copyable exact-version cURL command, versions table, md5, size, updated | (always has a version if visible) |
 | S4 | `/_site/api-docs` | API documentation | public endpoints, response shapes, copyable same-origin cURL examples, error codes and rate limits | — |
 | S5 | `/_site/admin/` | Dashboard | 4 stat cards, CPU/RAM/disk charts, updates, jobs | "No data yet — sampling…" |
@@ -170,7 +170,7 @@ fails above 40 kB, so the exemption stays earned.
 | S12 | `/_site/admin/system` | Status | disk, counts, source freshness, orphan report | — |
 | S13 | `/_site/admin/settings` | Settings | display name, retention, limits | — |
 | S14 | `/_site/admin/audit` | Audit log | filter by action, paginated | "No entries" |
-| S15 | `/_site/*` (unmatched) | Not found | friendly 404 + link home | — |
+| S15 | `/_site/*` (unmatched) | Not found | Decorative map/route illustration, 404, requested address, concise guidance and a primary catalog link | — |
 
 The admin detail URL carries the local country UUID because the cache detail/version APIs are UUID-scoped. The page reads the country name from the API for its heading and breadcrumb. Version download/delete belongs to P2-WEB-04; whole-country deletion is P2-WEB-05 and requires exact slug typing, with explicit opt-in before canceling active work. The publication switch is P3-WEB-06, and update-check actions remain outside these tasks.
 

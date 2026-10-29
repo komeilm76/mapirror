@@ -1,4 +1,4 @@
-/* Public shell, catalog, country detail, and API guide (`P3-WEB-01…04`); shared tokens drive styling. */
+/* Public shell, catalog, country detail, API guide and empty/not-found states (`P3-WEB-01…05`). */
 
 .mm-public-layout {
   display: flex;
@@ -345,14 +345,56 @@
 
 .mm-public-error h2,
 .mm-public-empty h2 {
-  margin: 0 0 var(--mm-space-2);
   font-family: var(--mm-font-display);
   font-size: 1.125rem;
 }
 
-.mm-public-error p,
-.mm-public-empty p {
+.mm-public-error h2 {
+  margin: 0 0 var(--mm-space-2);
+}
+
+.mm-public-error p {
   margin: 0 0 var(--mm-space-4);
+}
+
+.mm-public-empty {
+  display: grid;
+  min-height: 17rem;
+  align-content: center;
+  justify-items: center;
+  gap: var(--mm-space-3);
+  text-align: center;
+}
+
+.mm-public-empty h2,
+.mm-public-empty p {
+  margin: 0;
+}
+
+.mm-public-empty p {
+  max-width: 36rem;
+  color: rgb(var(--v-theme-text-secondary));
+}
+
+.mm-public-empty-art {
+  display: grid;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin-bottom: var(--mm-space-1);
+  place-items: center;
+  border-radius: var(--mm-radius-pill);
+  background: rgb(var(--v-theme-surface-variant));
+  color: rgb(var(--v-theme-primary));
+}
+
+.mm-public-empty-art svg {
+  width: 2.5rem;
+  height: 2.5rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
 }
 
 .mm-public-error-id {
@@ -1042,5 +1084,138 @@
 
   .mm-public-api-table-wrap {
     overflow-x: auto;
+  }
+}
+
+.mm-public-not-found {
+  display: grid;
+  width: min(calc(100% - var(--mm-space-8)), var(--mm-container-public));
+  min-height: clamp(24rem, 58vh, 42rem);
+  margin-inline: auto;
+  padding-block: var(--mm-space-8);
+  place-items: center;
+}
+
+.mm-public-not-found-card {
+  display: grid;
+  width: min(100%, 42rem);
+  justify-items: center;
+  gap: var(--mm-space-3);
+  padding: var(--mm-space-8);
+  border: var(--mm-border-width) solid rgb(var(--v-theme-border));
+  border-radius: var(--mm-radius-lg);
+  background: rgb(var(--v-theme-surface));
+  text-align: center;
+}
+
+.mm-public-not-found-art {
+  display: grid;
+  width: 4.5rem;
+  height: 4.5rem;
+  margin-bottom: var(--mm-space-1);
+  place-items: center;
+  border-radius: var(--mm-radius-pill);
+  background: rgb(var(--v-theme-surface-variant));
+  color: rgb(var(--v-theme-primary));
+}
+
+.mm-public-not-found-art svg {
+  width: 3.5rem;
+  height: 3.5rem;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.mm-not-found-map,
+.mm-not-found-fold {
+  stroke: rgb(var(--v-theme-border-strong));
+}
+
+.mm-not-found-route {
+  stroke: rgb(var(--v-theme-primary));
+  stroke-dasharray: 2 3;
+}
+
+.mm-not-found-point {
+  fill: rgb(var(--v-theme-primary));
+  stroke: rgb(var(--v-theme-surface));
+}
+
+.mm-public-not-found-code,
+.mm-public-not-found-card h1,
+.mm-public-not-found-message {
+  margin: 0;
+}
+
+.mm-public-not-found-code {
+  color: rgb(var(--v-theme-primary));
+  font-family: var(--mm-font-mono);
+  font-size: var(--mm-text-mono-small);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.mm-public-not-found-card h1 {
+  font-size: clamp(1.5rem, 4vw, 2rem);
+}
+
+.mm-public-not-found-message {
+  max-width: 34rem;
+  color: rgb(var(--v-theme-text-secondary));
+}
+
+.mm-public-not-found-address {
+  display: grid;
+  width: min(100%, 34rem);
+  gap: var(--mm-space-1);
+  margin-block: var(--mm-space-2);
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: var(--mm-text-caption);
+}
+
+.mm-public-not-found-address code {
+  max-width: 100%;
+  padding: var(--mm-space-2) var(--mm-space-3);
+  overflow-wrap: anywhere;
+  border-radius: var(--mm-radius-md);
+  background: rgb(var(--v-theme-surface-variant));
+  color: rgb(var(--v-theme-text-primary));
+  font-family: var(--mm-font-mono);
+  font-size: var(--mm-text-mono-small);
+}
+
+.mm-public-not-found-action {
+  display: inline-flex;
+  min-height: var(--mm-touch-target);
+  padding: var(--mm-space-2) var(--mm-space-5);
+  align-items: center;
+  justify-content: center;
+  border: var(--mm-border-width) solid rgb(var(--v-theme-primary));
+  border-radius: var(--mm-radius-md);
+  background: rgb(var(--v-theme-primary));
+  color: rgb(var(--v-theme-on-primary));
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.mm-public-not-found-action:hover {
+  background: rgb(var(--v-theme-primary-darken-1));
+}
+
+@media (max-width: 639px) {
+  .mm-public-not-found {
+    width: min(calc(100% - var(--mm-space-6)), var(--mm-container-public));
+    min-height: auto;
+    padding-block: var(--mm-space-6);
+  }
+
+  .mm-public-not-found-card {
+    padding: var(--mm-space-5) var(--mm-space-4);
+  }
+
+  .mm-public-not-found-action {
+    width: 100%;
   }
 }

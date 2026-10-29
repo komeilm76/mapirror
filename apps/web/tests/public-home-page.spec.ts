@@ -172,6 +172,10 @@ describe('public home catalog', () => {
     });
 
     expect(container.textContent).toContain('No maps published yet');
+    expect(container.textContent).toContain('No ready maps are available to the public right now.');
+    expect(container.querySelector('.mm-public-empty-art')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    );
     const refresh = [...container.querySelectorAll('button')].find(
       (button) => button.textContent?.trim() === 'Refresh catalog',
     );
@@ -191,6 +195,7 @@ describe('public home catalog', () => {
     const router = (app.config.globalProperties as unknown as { $router: Router }).$router;
 
     expect(container.textContent).toContain('No countries match these filters');
+    expect(container.querySelector('.mm-public-empty-art')).toBeNull();
     expect(container.querySelector<HTMLInputElement>('#public-country-search')?.value).toBe(
       'Atlantis',
     );

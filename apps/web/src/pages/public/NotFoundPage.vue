@@ -1,41 +1,44 @@
 <script setup lang="ts">
 /**
- * The not-found page (`P1-WEB-03`; copy and illustration are `P3-WEB-05`'s).
+ * Public 404 page with the attempted route and a clear catalog return path (`P1-WEB-03`, `P3-WEB-05`, S15).
  *
- * `13-ui-ux.md` §4 S15: "friendly 404 + link home", and §5's empty-state rule applies to it in spirit — an icon, one
- * sentence, and the next action as a button, never a dead end.
- *
- * It renders **at the URL the visitor typed** (`/_site/:pathMatch(.*)*` matches without redirecting), because a 404 that
- * silently rewrites the address bar hides the typo the visitor needs to see. The one case where the URL changes is a
- * path outside `/_site/` altogether, which the route table redirects here — L1 has no page outside the site but
- * `/_auth/login`, so there is no page to render *at* that address.
- *
- * The wording is deliberately plain: "Not found" is what the reader needs, and the request id belongs to error states
- * that come from the API (`P2-WEB-07`), not to a client-side miss.
+ * The site catch-all renders at the URL the visitor typed rather than rewriting the address bar, so the typo remains
+ * visible. This is a client-side miss, not an API failure; it has no request id to report.
  */
 
-import { useRoute } from 'vue-router';
 import { computed } from 'vue';
+import { useRoute } from 'vue-router';
 
 const route = useRoute();
 
-/** What the visitor asked for, so the page can name it back to them. */
+/** What the visitor asked for, so a mistyped or stale address remains easy to identify. */
 const attempted = computed(() => route.fullPath);
 </script>
 
 <template>
-  <v-container class="py-16" max-width="var(--mm-container-public)">
-    <v-row justify="center">
-      <v-col cols="12" md="8" lg="6" class="text-center">
-        <p class="mm-caption mb-2">404</p>
-        <h1 class="mm-display mb-4">That page does not exist</h1>
-        <p class="mm-body-public mm-text-secondary mb-2">
-          Nothing is published at this address. Check the link, or start from the catalog.
-        </p>
-        <p class="mm-mono-small mm-text-secondary mb-8">{{ attempted }}</p>
-
-        <v-btn color="primary" :to="{ name: 'home' }">Browse the catalog</v-btn>
-      </v-col>
-    </v-row>
-  </v-container>
+  <section class="mm-public-not-found" aria-labelledby="public-not-found-title">
+    <div class="mm-public-not-found-card">
+      <div class="mm-public-not-found-art" aria-hidden="true">
+        <svg viewBox="0 0 64 64" focusable="false">
+          <path class="mm-not-found-map" d="m7 14 15-5 20 6 15-5v40l-15 5-20-6-15 5V14Z" />
+          <path class="mm-not-found-fold" d="M22 9v40m20-34v40" />
+          <path class="mm-not-found-route" d="M16 37c5-9 9-9 14 0s9 9 14 0" />
+          <circle class="mm-not-found-point" cx="16" cy="37" r="3" />
+          <circle class="mm-not-found-point" cx="44" cy="37" r="3" />
+        </svg>
+      </div>
+      <p class="mm-public-not-found-code">404</p>
+      <h1 id="public-not-found-title" class="mm-display">Page not found</h1>
+      <p class="mm-public-not-found-message">
+        We couldn't find a page at this address. Start from the catalog to find a published map.
+      </p>
+      <div class="mm-public-not-found-address">
+        <span>Requested address</span>
+        <code>{{ attempted }}</code>
+      </div>
+      <RouterLink class="mm-public-not-found-action" :to="{ name: 'home' }">
+        Browse published maps
+      </RouterLink>
+    </div>
+  </section>
 </template>

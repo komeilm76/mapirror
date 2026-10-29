@@ -386,12 +386,20 @@ function countryLink(item: PublicCountryListItem): { name: string; params: { slu
       </div>
 
       <section v-else class="mm-public-empty" aria-live="polite">
+        <div v-if="!hasFilters" class="mm-public-empty-art" aria-hidden="true">
+          <svg viewBox="0 0 48 48" focusable="false">
+            <path d="m5 11 11-4 16 5 11-4v28l-11 4-16-5-11 4V11Z" />
+            <path d="M16 7v28m16-23v28" />
+            <circle cx="24" cy="22" r="4" />
+            <path d="M24 26v5" />
+          </svg>
+        </div>
         <h2>{{ hasFilters ? 'No countries match these filters' : 'No maps published yet' }}</h2>
         <p>
           {{
             hasFilters
               ? 'Try another name or continent, or clear the filters to see every published map.'
-              : 'There are no ready maps available to the public right now. Check back later.'
+              : 'No ready maps are available to the public right now. Try again later.'
           }}
         </p>
         <button

@@ -161,7 +161,7 @@ mapirror/
 │     │  │  ├─ catalog.css         # exists: responsive catalog table/cards (P2-WEB-01)
 │     │  │  ├─ cache.css            # exists: responsive cache table/cards + detail/version actions (P2-WEB-03/04)
 │     │  │  ├─ jobs.css             # exists: queue table/cards and persistent progress panel (P2-WEB-06)
-│     │  │  ├─ public.css           # exists: public shell, responsive country grid and filter states (P3-WEB-01)
+│     │  │  ├─ public.css           # public shell, catalog empty state, detail/API guide and not-found states (P3-WEB-01…05)
 │     │  │  └─ typography.css      # @font-face (Space Grotesk, 22 kB) + the type roles
 │     │  ├─ assets/fonts/          # space-grotesk-latin-wght.woff2 + OFL.txt
 │     │  ├─ stores/                # notifications, auth and jobProgress exist; catalog, cache,
@@ -182,7 +182,7 @@ mapirror/
 │     │  │  ├─ admin/JobsPage.vue          # exists (P2-WEB-06): queue filters, progress rows/cards
 │     │  │  ├─ admin/{Dashboard,Intervals,Import,
 │     │  │  │        System,Settings,Audit}Page.vue
-│     │  │  ├─ public/{Home,CountryDetail,ApiDocs,NotFound}Page.vue  # Home (P3-WEB-01), CountryDetail (P3-WEB-02/03), ApiDocs (P3-WEB-04), NotFound exist
+│     │  │  ├─ public/{Home,CountryDetail,ApiDocs,NotFound}Page.vue  # Home (P3-WEB-01/05), CountryDetail (P3-WEB-02/03), ApiDocs (P3-WEB-04), NotFound (P3-WEB-05)
 │     │  ├─ components/
 │     │  │  ├─ common/             # PageHeader, DataTableShell, EmptyState, ErrorState,
 │     │  │  │                      # SkeletonBlock, ConfirmDialog, CopyField, StatCard
