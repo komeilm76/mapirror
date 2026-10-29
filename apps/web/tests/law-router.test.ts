@@ -248,7 +248,7 @@ describe('every route says what it is and who builds it', () => {
   });
 
   it('marks exactly the routes that still render a placeholder', () => {
-    // Eight screens render real components: public catalog and country detail (`P3-WEB-01/02`), admin catalog
+    // Nine screens render real components: public catalog, country detail and API docs (`P3-WEB-01…04`), admin catalog
     // (`P2-WEB-01`), cached-country table (`P2-WEB-03`), cached-country detail (`P2-WEB-04`), Jobs (`P2-WEB-06`),
     // login (`P1-WEB-06`) and not-found. Placeholder status is explicit metadata, so this list is checked rather than
     // inferred from components.
@@ -258,7 +258,6 @@ describe('every route says what it is and who builds it', () => {
       'S12',
       'S13',
       'S14',
-      'S4',
       'S5',
       'S9',
     ]);

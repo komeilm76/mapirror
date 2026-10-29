@@ -159,7 +159,7 @@ fails above 40 kB, so the exemption stays earned.
 | S1 | `/_auth/login` | Sign in | username, password, submit, error | — |
 | S2 | `/_site/` | Public catalog | search, continent chips, country cards, license note | "No maps published yet" |
 | S3 | `/_site/countries/:slug` | Country detail | Latest download + copyable exact-version cURL command, versions table, md5, size, updated | (always has a version if visible) |
-| S4 | `/_site/api-docs` | API documentation | endpoint list, copyable curl, error codes | — |
+| S4 | `/_site/api-docs` | API documentation | public endpoints, response shapes, copyable same-origin cURL examples, error codes and rate limits | — |
 | S5 | `/_site/admin/` | Dashboard | 4 stat cards, CPU/RAM/disk charts, updates, jobs | "No data yet — sampling…" |
 | S6 | `/_site/admin/catalog` | Search Geofabrik | search, continent, cache filter, table with Download | "No country matches" |
 | S7 | `/_site/admin/cache` | Cached countries | search/update filter; sortable, paginated table: name, ready versions, local size, public/private state, update badge, catalog sync/source-download times | "Nothing cached yet — browse catalog" |
