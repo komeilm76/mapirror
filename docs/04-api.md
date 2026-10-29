@@ -84,7 +84,7 @@ the response ever describing the server's internals. `details` is omitted entire
 | 410 | `VERSION_FILE_MISSING`, `SOURCE_VERSION_GONE` |
 | 413 | `FILE_TOO_LARGE` |
 | 415 | `UNSUPPORTED_FORMAT` |
-| 422 | `SEMANTIC_ERROR`, `NO_READY_VERSION` (publish with nothing cached) |
+| 422 | `SEMANTIC_ERROR`, `NO_READY_VERSION` (publish without a ready version) |
 | 429 | `RATE_LIMITED` |
 | 500 | `INTERNAL_ERROR` |
 | 502 | `SOURCE_UNAVAILABLE` (upstream failed — retryable) |
