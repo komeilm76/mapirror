@@ -180,7 +180,7 @@ prove L1–L3.
 
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
-| P3-API-01 | Public read model + `is_public` guard in one place | L8 | P2-API-05 | ⬜ | No public query bypasses the guard |
+| P3-API-01 | Public read model + `is_public` guard in one place | L8 | P2-API-05 | 🟦 | `public-catalog.ts` centralizes every public read behind `is_public = true` plus an `EXISTS ready version` guard. List/detail/version projections omit storage paths and other internal fields; reads are bounded. PostgreSQL tests cover published, unpublished, inconsistent public-without-ready, uncached-ready, and pending/failed cases. The fresh-database suite was skipped here; review remains until it runs against PostgreSQL |
 | P3-API-02 | `POST /_admin/api/cache/:countryId/public` + audit | PUB-1/2/4 | P3-API-01 | ⬜ | 422 without ready version |
 | P3-API-03 | `GET /_public/api/countries` (+search/filter/pagination) | WEB-3a | P3-API-01 | ⬜ | Only published, only ready versions |
 | P3-API-04 | `GET /_public/api/countries/:slug` + `/versions` | WEB-3b | P3-API-01 | ⬜ | No internal fields leaked |
