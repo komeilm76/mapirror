@@ -161,6 +161,7 @@ mapirror/
 │     │  │  ├─ catalog.css         # exists: responsive catalog table/cards (P2-WEB-01)
 │     │  │  ├─ cache.css            # exists: responsive cache table/cards + detail/version actions (P2-WEB-03/04)
 │     │  │  ├─ jobs.css             # exists: queue table/cards and persistent progress panel (P2-WEB-06)
+│     │  │  ├─ public.css           # exists: public shell, responsive country grid and filter states (P3-WEB-01)
 │     │  │  └─ typography.css      # @font-face (Space Grotesk, 22 kB) + the type roles
 │     │  ├─ assets/fonts/          # space-grotesk-latin-wght.woff2 + OFL.txt
 │     │  ├─ stores/                # notifications, auth and jobProgress exist; catalog, cache,
@@ -170,7 +171,8 @@ mapirror/
 │     │  ├─ layouts/
 │     │  │  ├─ AdminLayout.vue     # exists: topbar, drawer, trail, skip link (P1-WEB-07)
 │     │  │  ├─ adminShell.ts       # exists: 248 / 64 / 1024, the numbers §3 states
-│     │  │  └─ PublicLayout.vue, AuthLayout.vue  # owed (P3-WEB-01, P2)
+│     │  │  ├─ PublicLayout.vue     # exists: public header, theme preference, attribution footer (P3-WEB-01)
+│     │  │  └─ (auth remains a focused bare v-main)
 │     │  ├─ pages/
 │     │  │  ├─ PlaceholderPage.vue       # Shared fallback for admin screens not built yet
 │     │  │  ├─ auth/LoginPage.vue        # exists (P1-WEB-06): the one page outside /_site
@@ -180,7 +182,7 @@ mapirror/
 │     │  │  ├─ admin/JobsPage.vue          # exists (P2-WEB-06): queue filters, progress rows/cards
 │     │  │  ├─ admin/{Dashboard,Intervals,Import,
 │     │  │  │        System,Settings,Audit}Page.vue
-│     │  │  ├─ public/{Home,CountryDetail,ApiDocs,NotFound}Page.vue  # HomePage + NotFoundPage exist
+│     │  │  ├─ public/{Home,CountryDetail,ApiDocs,NotFound}Page.vue  # HomePage (P3-WEB-01) + NotFoundPage exist
 │     │  ├─ components/
 │     │  │  ├─ common/             # PageHeader, DataTableShell, EmptyState, ErrorState,
 │     │  │  │                      # SkeletonBlock, ConfirmDialog, CopyField, StatCard

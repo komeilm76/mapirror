@@ -98,7 +98,7 @@ export function installThemeSync(
   const active = () => router.currentRoute.value.path;
 
   const apply = (path: string): void => {
-    vuetify.theme.global.name.value = themeForPath(path, { prefersDark: prefersDark.value });
+    vuetify.theme.change(themeForPath(path, { prefersDark: prefersDark.value }));
   };
 
   // Before the first navigation: `main.ts` mounts immediately, and waiting for `afterEach` would paint one frame in

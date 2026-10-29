@@ -74,4 +74,6 @@ afterEach(() => {
   // the theme follows the route, the app under test would mount dark for no visible reason. Measured: a fresh app
   // rendered `v-theme--dark` on the public home page because an earlier case had pushed an admin path.
   window.history.replaceState({}, '', '/');
+  // The public theme toggle persists by design; a browser preference from one test must not leak into the next mount.
+  localStorage.clear();
 });

@@ -92,8 +92,8 @@ i.e. the cheapest possible LCP — and Space Grotesk stays for display at 22 288
 `apps/web/src/assets/fonts/` with its OFL license beside it. `apps/web/tests/tokens.spec.ts` reads that file's size and
 fails above 40 kB, so the exemption stays earned.
 
-Preloading is still owed to `P3-WEB-01`: the rule is "only on the public landing page", and that page does not exist
-yet. Until then `font-display: swap` means text paints in the fallback face first, which is the LCP-safe order anyway.
+`P3-WEB-01` adds a `font/woff2` preload only while the public landing page is mounted; other routes use the self-hosted
+`@font-face` with `font-display: swap` and do not receive a preload hint.
 
 ### Space, radius, elevation, motion
 

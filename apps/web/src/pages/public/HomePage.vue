@@ -1,144 +1,435 @@
 <script setup lang="ts">
-/**
- * The public home page — a placeholder that doubles as the token preview (`P1-WEB-01`, tokens from `P1-WEB-02`).
- *
- * **This is not the catalog.** Its job is to put something on the screen that only renders if the whole chain is
- * intact: the SFC compiled, Vuetify's components resolved and its styles loaded, the router matched `/_site/`, Pinia
- * and VueUse are installed, and the two themes are built from the palette. The real home — search, continent chips,
- * the country grid, the compact intro of `13-ui-ux.md` §3 — is `P3-WEB-01`, and it replaces this file wholesale.
- *
- * It says what is wired rather than showing a fake catalog: a placeholder that invents five countries teaches a
- * reviewer to distrust every screenshot in the repository.
- *
- * It also holds **no colour of its own** — every patch of ink below is a theme key (`bg-primary`, `mm-text-secondary`)
- * or a switch of theme scope (`.v-theme--dark`), which is the acceptance criterion of `P1-WEB-02` made visible:
- * `tests/tokens.spec.ts` scans this file and would fail on a hex.
- */
+/** Public country catalog with shareable search, continent filtering and pagination (`P3-WEB-01`, S2). */
 
-import { usePreferredDark } from '@vueuse/core';
-import { computed } from 'vue';
+import {
+  PublicCountriesQuerySchema,
+  PublicCountriesResponseSchema,
+  type PublicCountriesQuery,
+  type PublicCountriesResponse,
+  type PublicCountryListItem,
+} from '@mapirror/shared';
+import { useDebounceFn } from '@vueuse/core';
+import { computed, onUnmounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
-import { DARK_PALETTE, LIGHT_PALETTE, type Palette } from '@/styles/tokens';
+import { ApiError } from '@/api/errors';
+import { errorCopyFor } from '@/api/error-copy';
+import { useApi } from '@/composables/useApi';
+import spaceGroteskFontUrl from '@/assets/fonts/space-grotesk-latin-wght.woff2?url';
 
-/** The stack, as the reader would check it against `09-development.md` §2. */
-const STACK = [
-  { label: 'Vue', version: '3.5' },
-  { label: 'Vuetify', version: '3.13' },
-  { label: 'Pinia', version: '3.0' },
-  { label: 'Vue Router', version: '4.6' },
-  { label: 'VueUse', version: '13.9' },
+const PAGE_SIZE = 25;
+const CONTINENTS = [
+  { id: 'africa', label: 'Africa' },
+  { id: 'asia', label: 'Asia' },
+  { id: 'australia-oceania', label: 'Australia & Oceania' },
+  { id: 'central-america', label: 'Central America' },
+  { id: 'europe', label: 'Europe' },
+  { id: 'north-america', label: 'North America' },
+  { id: 'south-america', label: 'South America' },
 ] as const;
 
-/** The colours worth showing side by side: the two surfaces, the inks, and the two semantic extremes. */
-const SWATCHES = [
-  'background',
-  'surface',
-  'text-primary',
-  'text-secondary',
-  'primary',
-  'accent',
-  'success',
-  'error',
-] as const;
+const route = useRoute();
+const router = useRouter();
+const api = useApi();
+const fontPreload = document.createElement('link');
+fontPreload.rel = 'preload';
+fontPreload.as = 'font';
+fontPreload.type = 'font/woff2';
+fontPreload.crossOrigin = 'anonymous';
+fontPreload.href = spaceGroteskFontUrl;
+document.head.append(fontPreload);
+onUnmounted(() => fontPreload.remove());
 
-/** One row of the preview: a theme name, the class that switches Vuetify's variables to it, and its palette. */
-const THEMES: readonly {
-  readonly name: string;
-  readonly scope: string;
-  readonly palette: Palette;
-}[] = [
-  { name: 'Public · light', scope: '', palette: LIGHT_PALETTE },
-  { name: 'Admin · dark', scope: 'v-theme--dark', palette: DARK_PALETTE },
-];
+const searchInput = ref(queryText(route.query.q) ?? '');
+const response = ref<PublicCountriesResponse | null>(null);
+const loading = ref(true);
+const errorMessage = ref<string | null>(null);
+const errorAction = ref<string | null>(null);
+const errorRequestId = ref<string | null>(null);
+const retryCount = ref(0);
 
-// A live VueUse composable, so the dependency is *used* rather than merely installed: it subscribes to the OS colour
-// preference and cleans itself up on unmount. `P1-WEB-02` uses the same composable for the login page's theme.
-const prefersDark = usePreferredDark();
-const systemNote = computed(() =>
-  prefersDark.value ? 'Your system prefers dark.' : 'Your system prefers light.',
+/** Validated filter and page state for the public endpoint. */
+const publicQuery = computed<PublicCountriesQuery>(() => {
+  const query: Record<string, unknown> = {
+    page: pageFromQuery(route.query.page),
+    limit: PAGE_SIZE,
+    sort: 'name',
+  };
+  const search = boundedText(route.query.q, 128);
+  const continent = boundedText(route.query.continent, 255);
+  if (search !== undefined) query.q = search;
+  if (continent !== undefined) query.continent = continent;
+  const parsed = PublicCountriesQuerySchema.safeParse(query);
+  return parsed.success ? parsed.data : { page: 1, limit: PAGE_SIZE, sort: 'name' };
+});
+
+/** Stable watcher key; unrelated route metadata does not trigger another list request. */
+const requestKey = computed(() => JSON.stringify(publicQuery.value));
+const currentPage = computed(() => pageFromQuery(route.query.page));
+const activeContinent = computed(() => publicQuery.value.continent ?? null);
+const hasFilters = computed(() => Boolean(publicQuery.value.q || publicQuery.value.continent));
+const pageCount = computed(() => Math.max(1, response.value?.meta.totalPages ?? 1));
+
+/** Keep the input in sync with back/forward navigation and shared URLs. */
+watch(
+  () => route.query.q,
+  (value) => {
+    const next = queryText(value) ?? '';
+    if (searchInput.value !== next) searchInput.value = next;
+  },
 );
 
-/**
- * The colour a swatch paints, from the palette rather than from a class.
- *
- * `bg-*` classes resolve against the *current* theme, so a dark preview inside a light page needs the value itself —
- * and `.v-theme--dark` on the wrapper makes Vuetify's own components inside it dark too.
- */
-function swatch(name: (typeof SWATCHES)[number], palette: Palette): string {
-  if (name === 'background') return palette.surface;
-  if (name === 'surface') return palette['surface-variant'];
-  return palette[name];
+/** The URL changes only after a short pause, not once per keystroke. */
+const updateSearchLater = useDebounceFn(() => {
+  void updateFilters({ q: searchInput.value.trim() || null });
+}, 300);
+watch(searchInput, () => void updateSearchLater());
+
+watch(
+  [requestKey, retryCount],
+  async (_values, _previous, onCleanup) => {
+    const controller = new AbortController();
+    let current = true;
+    onCleanup(() => {
+      current = false;
+      controller.abort();
+    });
+
+    const query = publicQuery.value;
+    loading.value = true;
+    response.value = null;
+    errorMessage.value = null;
+    errorAction.value = null;
+    errorRequestId.value = null;
+
+    try {
+      const result = await api.get<unknown>('/_public/api/countries', {
+        query: queryForRequest(query),
+        signal: controller.signal,
+      });
+      const parsed = PublicCountriesResponseSchema.safeParse(result);
+      if (!parsed.success) {
+        if (current) {
+          errorMessage.value = 'The published catalog response could not be read.';
+          errorAction.value = 'Retry the request. If this continues, contact the mirror operator.';
+        }
+        return;
+      }
+
+      const requestedPage = typeof query.page === 'number' ? query.page : 1;
+      if (requestedPage > Math.max(1, parsed.data.meta.totalPages)) {
+        const nextQuery = { ...route.query };
+        if (parsed.data.meta.totalPages <= 1) delete nextQuery.page;
+        else nextQuery.page = String(parsed.data.meta.totalPages);
+        await router.replace({ query: nextQuery });
+        return;
+      }
+      if (current) response.value = parsed.data;
+    } catch (cause) {
+      if (!current || (cause instanceof ApiError && cause.code === 'ABORTED')) return;
+      if (cause instanceof ApiError) {
+        const copy = errorCopyFor(cause.code);
+        errorMessage.value = copy.message;
+        errorAction.value = copy.action;
+        errorRequestId.value = cause.requestId;
+      } else {
+        errorMessage.value = 'The published catalog could not be loaded.';
+        errorAction.value = 'Check your connection and try again.';
+      }
+    } finally {
+      if (current) loading.value = false;
+    }
+  },
+  { immediate: true },
+);
+
+/** Applies a shareable filter or page change; changing filters always returns to the first page. */
+async function updateFilters(
+  patch: Partial<Record<'q' | 'continent' | 'page', string | null>>,
+): Promise<void> {
+  const query = { ...route.query };
+  let changed = false;
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null || value === '') {
+      if (query[key] !== undefined) {
+        delete query[key];
+        changed = true;
+      }
+    } else if (query[key] !== value) {
+      query[key] = value;
+      changed = true;
+    }
+  }
+  if (('q' in patch || 'continent' in patch) && query.page !== undefined) {
+    delete query.page;
+    changed = true;
+  }
+  if (changed) await router.replace({ query });
+}
+
+/** Commits the current search immediately when the form is submitted. */
+function submitSearch(): void {
+  void updateFilters({ q: searchInput.value.trim() || null });
+}
+
+/** Selects a source continent or returns to all public countries. */
+function selectContinent(continent: string | null): void {
+  void updateFilters({ continent });
+}
+
+/** Changes the current page without altering filters. */
+function selectPage(page: number): void {
+  void updateFilters({ page: page <= 1 ? null : String(page) });
+}
+
+/** Retries the same request while leaving the URL and filters intact. */
+function retry(): void {
+  retryCount.value += 1;
+}
+
+/** Clears text and continent filters, and resets to the initial list. */
+function clearFilters(): void {
+  searchInput.value = '';
+  void updateFilters({ q: null, continent: null, page: null });
+}
+
+/** Builds a request query with only documented scalar values. */
+function queryForRequest(query: PublicCountriesQuery): Record<string, string | number> {
+  const result: Record<string, string | number> = {
+    page: typeof query.page === 'number' ? query.page : pageFromQuery(route.query.page),
+    limit: PAGE_SIZE,
+    sort: 'name',
+  };
+  if (typeof query.q === 'string') result.q = query.q;
+  if (typeof query.continent === 'string') result.continent = query.continent;
+  return result;
+}
+
+/** Parses only a single bounded route-query value. */
+function queryText(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+/** Trims route text and rejects values outside the shared schema's limits. */
+function boundedText(value: unknown, maxLength: number): string | undefined {
+  const text = queryText(value)?.trim();
+  return text && text.length <= maxLength && !text.includes('\u0000') ? text : undefined;
+}
+
+/** Parses one positive decimal page number from an untrusted URL. */
+function pageFromQuery(value: unknown): number {
+  if (typeof value !== 'string' || !/^[1-9]\d{0,5}$/u.test(value)) return 1;
+  const page = Number(value);
+  return Number.isSafeInteger(page) ? page : 1;
+}
+
+/** Human-readable bytes with exact byte count available in the card's accessible description. */
+function formatBytes(value: number | string): string {
+  const bytes = BigInt(value);
+  const labels = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'] as const;
+  let unit = 0;
+  let divisor = 1n;
+  while (unit < labels.length - 1 && bytes >= divisor * 1_000n) {
+    divisor *= 1_000n;
+    unit += 1;
+  }
+  if (unit === 0) return `${bytes.toString()} B`;
+  const tenths = (bytes * 10n + divisor / 2n) / divisor;
+  return `${(tenths / 10n).toString()}.${(tenths % 10n).toString()} ${labels[unit]}`;
+}
+
+/** Formats an upstream timestamp in UTC, or reports that it was not supplied. */
+function formatUpdatedAt(value: string | null): string {
+  if (value === null) return 'Date unavailable';
+  return `${new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  }).format(new Date(value))} UTC`;
+}
+
+/** Converts source parent ids into calm display labels without exposing source-path punctuation. */
+function continentLabel(value: string | null): string {
+  if (value === null) return 'Region';
+  return (
+    CONTINENTS.find((continent) => continent.id === value)?.label ??
+    value
+      .split(/[-_]/u)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+  );
+}
+
+/** The item type is named in the template helper to keep link/card projections explicit. */
+function countryLink(item: PublicCountryListItem): { name: string; params: { slug: string } } {
+  return { name: 'country', params: { slug: item.slug } };
 }
 </script>
 
 <template>
-  <v-container class="py-12" max-width="var(--mm-container-public)">
-    <v-row align="center" justify="center">
-      <v-col cols="12">
-        <p class="mm-caption mb-2">MapMirror</p>
-        <h1 class="mm-display mb-3">A self-hosted mirror for OpenStreetMap extracts</h1>
-        <p class="mm-body-public mm-text-secondary mb-6">
-          The application shell is running. The catalog, the download flow and the admin panel
-          arrive with their own tasks; this page exists so the wiring can be seen working end to
-          end.
+  <section class="mm-public-catalog" aria-labelledby="public-catalog-title" :aria-busy="loading">
+    <header class="mm-public-intro">
+      <p class="mm-caption mb-1">OpenStreetMap data · ODbL 1.0</p>
+      <h1 id="public-catalog-title" class="mm-display">Browse published maps</h1>
+      <p class="mm-body-public mm-text-secondary">
+        Find ready regional extracts from this mirror. Search by country name or ISO code, then open
+        a country for versions and download details.
+      </p>
+    </header>
+
+    <div class="mm-public-controls">
+      <form class="mm-public-search-form" role="search" @submit.prevent="submitSearch">
+        <label class="mm-public-search-label" for="public-country-search"
+          >Search published maps</label
+        >
+        <input
+          id="public-country-search"
+          v-model="searchInput"
+          class="mm-public-search-input"
+          type="search"
+          name="q"
+          autocomplete="off"
+          placeholder="Search countries or ISO codes"
+        />
+        <button class="mm-public-search-button" type="submit">Search</button>
+      </form>
+
+      <div class="mm-public-filter-group" role="group" aria-label="Filter maps by continent">
+        <span class="mm-public-filter-label">Continent</span>
+        <button
+          class="mm-public-filter-chip"
+          type="button"
+          :aria-pressed="activeContinent === null"
+          @click="selectContinent(null)"
+        >
+          All
+        </button>
+        <button
+          v-for="continent in CONTINENTS"
+          :key="continent.id"
+          class="mm-public-filter-chip"
+          type="button"
+          :aria-pressed="activeContinent === continent.id"
+          @click="selectContinent(continent.id)"
+        >
+          {{ continent.label }}
+        </button>
+      </div>
+    </div>
+
+    <section aria-labelledby="published-countries-title">
+      <div class="mm-public-results-heading">
+        <h2 id="published-countries-title">Published countries</h2>
+        <p v-if="response" class="mm-public-results-summary" aria-live="polite">
+          {{ response.meta.total }} {{ response.meta.total === 1 ? 'country' : 'countries' }}
         </p>
+      </div>
 
-        <v-card border flat rounded="lg">
-          <v-card-text>
-            <div class="mm-title mb-3">Wired and rendering</div>
-            <div class="d-flex flex-wrap ga-2">
-              <v-chip
-                v-for="entry in STACK"
-                :key="entry.label"
-                color="primary"
-                size="small"
-                variant="tonal"
-              >
-                {{ entry.label }} <span class="mm-mono-small ms-1">{{ entry.version }}</span>
-              </v-chip>
-            </div>
-            <v-divider class="my-4" />
-            <p class="mm-caption ma-0">{{ systemNote }}</p>
-          </v-card-text>
-        </v-card>
+      <div
+        v-if="loading"
+        class="mm-public-country-grid"
+        role="status"
+        aria-label="Loading published maps"
+      >
+        <div v-for="index in 6" :key="index" class="mm-public-loading-card" aria-hidden="true">
+          <div class="mm-public-skeleton-line" />
+          <div class="mm-public-skeleton-line" />
+          <div class="mm-public-skeleton-line" />
+        </div>
+      </div>
 
-        <div class="mm-title mt-8 mb-1">Theme tokens</div>
-        <p class="mm-caption mb-4">
-          Both palettes of <code>13-ui-ux.md</code> §2, painted from <code>styles/tokens.ts</code>.
-          The admin row is scoped with <code>.v-theme--dark</code>, so it is the real dark theme
-          rather than a screenshot of one.
-        </p>
+      <section v-else-if="errorMessage" class="mm-public-error" role="alert">
+        <h2>Catalog unavailable</h2>
+        <p>{{ errorMessage }} {{ errorAction }}</p>
+        <button class="mm-public-retry" type="button" @click="retry">Retry</button>
+        <span v-if="errorRequestId" class="mm-public-error-id"
+          >Request ID: {{ errorRequestId }}</span
+        >
+      </section>
 
-        <v-card v-for="theme in THEMES" :key="theme.name" border flat class="mb-4" rounded="lg">
-          <div :class="theme.scope">
-            <div class="pa-4" :style="{ background: theme.palette.surface }">
-              <div class="mm-caption mb-3" :style="{ color: theme.palette['text-secondary'] }">
-                {{ theme.name }}
-              </div>
-              <div class="d-flex flex-wrap ga-3">
-                <div v-for="name in SWATCHES" :key="name" class="d-flex flex-column ga-1">
-                  <div
-                    class="rounded-sm mm-border-decorative"
-                    :style="{
-                      background: swatch(name, theme.palette),
-                      width: '72px',
-                      height: '40px',
-                    }"
-                  />
-                  <span class="mm-mono-small" :style="{ color: theme.palette['text-secondary'] }">
-                    {{ name }}
-                  </span>
-                </div>
-              </div>
-            </div>
+      <div v-else-if="response?.data.length" class="mm-public-country-grid">
+        <RouterLink
+          v-for="item in response.data"
+          :key="item.slug"
+          class="mm-public-country-card"
+          :to="countryLink(item)"
+          :aria-label="`${item.name}, ${continentLabel(item.continent)}, latest ${item.newestVersion}, ${formatBytes(item.sizeBytes)}`"
+        >
+          <div>
+            <p class="mm-public-country-meta">{{ continentLabel(item.continent) }}</p>
+            <h3>{{ item.name }}</h3>
           </div>
-        </v-card>
+          <dl class="mm-public-country-facts">
+            <div>
+              <dt>Latest version</dt>
+              <dd>{{ item.newestVersion }}</dd>
+            </div>
+            <div>
+              <dt>Size</dt>
+              <dd :title="`${item.sizeBytes} bytes`">{{ formatBytes(item.sizeBytes) }}</dd>
+            </div>
+            <div>
+              <dt>Updated</dt>
+              <dd :title="item.updatedAt ?? 'No upstream timestamp'">
+                {{ formatUpdatedAt(item.updatedAt) }}
+              </dd>
+            </div>
+            <div>
+              <dt>ISO</dt>
+              <dd>{{ item.iso.join(', ') || 'Not listed' }}</dd>
+            </div>
+          </dl>
+        </RouterLink>
+      </div>
 
-        <p class="mm-caption ma-0">
-          Placeholder page: the catalog, search and the download flow arrive with
-          <code>P3-WEB-01</code>.
+      <section v-else class="mm-public-empty" aria-live="polite">
+        <h2>{{ hasFilters ? 'No countries match these filters' : 'No maps published yet' }}</h2>
+        <p>
+          {{
+            hasFilters
+              ? 'Try another name or continent, or clear the filters to see every published map.'
+              : 'There are no ready maps available to the public right now. Check back later.'
+          }}
         </p>
-      </v-col>
-    </v-row>
-  </v-container>
+        <button
+          v-if="hasFilters"
+          class="mm-public-empty-action"
+          type="button"
+          @click="clearFilters"
+        >
+          Clear filters
+        </button>
+        <button v-else class="mm-public-empty-action" type="button" @click="retry">
+          Refresh catalog
+        </button>
+      </section>
+
+      <nav
+        v-if="!loading && !errorMessage && response && response.meta.totalPages > 1"
+        class="mm-public-pagination"
+        aria-label="Catalog pages"
+      >
+        <button
+          class="mm-public-pagination-button"
+          type="button"
+          :disabled="currentPage <= 1"
+          @click="selectPage(currentPage - 1)"
+        >
+          Previous
+        </button>
+        <span class="mm-public-pagination-status">Page {{ currentPage }} of {{ pageCount }}</span>
+        <button
+          class="mm-public-pagination-button"
+          type="button"
+          :disabled="currentPage >= pageCount"
+          @click="selectPage(currentPage + 1)"
+        >
+          Next
+        </button>
+      </nav>
+    </section>
+  </section>
 </template>

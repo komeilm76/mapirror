@@ -86,8 +86,8 @@ describe('themeForPath', () => {
   });
 
   it('is light for the public area, whatever the system prefers', () => {
-    // §1: "Public — light (default)". The per-visitor toggle that overrides this is `P3-WEB-01`'s, and it will be
-    // explicit; the system preference on its own must not repaint the catalog.
+    // §1: "Public — light (default)". `PublicLayout` applies the persisted visitor override separately; the system
+    // preference on its own must not repaint the catalog.
     for (const path of ['/_site/', '/_site/countries/finland']) {
       expect(themeForPath(path, { prefersDark: true }), path).toBe(LIGHT_THEME_NAME);
       expect(themeForPath(path, { prefersDark: false }), path).toBe(LIGHT_THEME_NAME);
@@ -253,9 +253,8 @@ describe('the mounted app', () => {
     expect(application?.className).toContain('v-theme--light');
   });
 
-  it('paints the dark palette inside a dark-scoped subtree', async () => {
-    // The home page previews both palettes; the dark one is scoped with `.v-theme--dark`, which redeclares the theme
-    // variables for that subtree. This is what makes the preview a real dark render rather than a screenshot.
+  it('restores a visitor-selected dark theme on the public page', async () => {
+    localStorage.setItem('mapirror.public-theme', 'dark');
     const container = document.createElement('div');
     document.body.append(container);
     const app = createWebApp();
@@ -264,10 +263,9 @@ describe('the mounted app', () => {
     await nextTick();
     await flushPromises();
 
-    const dark = container.querySelector('.v-theme--dark');
-    expect(dark, 'the dark preview subtree must render').not.toBeNull();
-    // ...and it is inside the light application, not a second mount.
+    expect(container.querySelector('.v-application')?.className).toContain('v-theme--dark');
     expect(container.querySelectorAll('.v-application')).toHaveLength(1);
+    expect(container.textContent).toContain('Light theme');
   });
 
   it('wears the dark theme on an admin page, once there is a session', async () => {

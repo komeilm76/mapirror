@@ -4,9 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!--
-      `theme-color` and the rest of the head (preloads, fonts, Open Graph) arrive with the design tokens in
-      `P1-WEB-02`. What matters here is the one thing the boot depends on: the mount point below is `#app`, and
-      `src/main.ts` mounts to exactly that selector.
+      The public landing page adds its font preload only while it is mounted; this shared HTML shell has no route-wide
+      preload hint. The mount point below is `#app`, and `src/main.ts` mounts to exactly that selector.
     -->
     <meta name="color-scheme" content="light dark" />
     <title>MapMirror</title>

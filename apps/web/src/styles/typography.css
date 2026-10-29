@@ -17,9 +17,8 @@
  * Licensing: Space Grotesk is under the SIL Open Font License 1.1 and `assets/fonts/OFL.txt` ships beside it, which
  * the license requires.
  *
- * Preloading is *not* here. §2 says "preloaded only on the public landing page", and that page does not exist yet
- * (`P3-WEB-01`); the `@font-face` rule below is enough until then, because `font-display: swap` means text paints in
- * the fallback face first either way.
+ * Preloading is owned by the public landing component, not this global stylesheet: it adds the font preload only while
+ * `/_site/` is mounted (`P3-WEB-01`). Other routes rely on the `@font-face` rule below and `font-display: swap`.
  */
 
 /* The display face, self-hosted: one variable file, weights 300–700, Latin subset. */

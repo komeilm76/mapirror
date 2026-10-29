@@ -101,17 +101,17 @@ describe('the build and the typechecker agree about imports', () => {
 });
 
 describe('the plugins are installed, and each one works', () => {
-  it('renders the shell through Vue, Vuetify and the router', async () => {
+  it('renders the public shell and catalog through Vue, Vuetify and the router', async () => {
     const container = await mountInto(createWebApp());
 
-    // Vuetify's root wrapper, without which `v-main` has no height and the page is a blank strip.
+    // Vuetify's root wrapper is installed, and the shared public shell provides its navigation and attribution.
     expect(container.querySelector('.v-application')).not.toBeNull();
-    // The route's own content, which only renders if the router matched and the SFC compiled.
-    expect(container.textContent).toContain('self-hosted mirror');
-    // The stack the page claims, read off the rendered chips rather than off the source.
-    for (const label of ['Vue ', 'Vuetify ', 'Pinia ', 'Vue Router ', 'VueUse ']) {
-      expect(container.textContent, label).toContain(label);
-    }
+    expect(container.querySelector('.mm-public-layout')).not.toBeNull();
+    expect(container.textContent).toContain('Browse maps');
+    expect(container.textContent).toContain('© OpenStreetMap contributors');
+    // The home route's catalog UI renders only if the router matched and the page SFC compiled.
+    expect(container.textContent).toContain('Search published maps');
+    expect(container.textContent).toContain('Published countries');
   });
 
   it('gives a store a working Pinia, from a component setup', async () => {
