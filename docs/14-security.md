@@ -222,7 +222,7 @@ recorded here so a future reviewer does not "fix" the missing token check.
 - [ ] Security headers present on HTML and API responses
 - [ ] CSP has no `unsafe-eval`; no `v-html` in the codebase
 - [x] Rate limits verified with a loop test (login, public download) — `login-route.spec.ts` (burst, `401`×N then `429`) and `rate-limit.spec.ts` (public reads, downloads, admin token; the download bucket proved separate by pointing it at the read window)
-- [ ] Unpublished country returns 404 on all public endpoints
+- [ ] Unpublished country returns 404 on all public endpoints (`P3-TST-01` matrix added; awaiting a fresh PostgreSQL run)
 - [ ] Public payloads contain no `storage_path`, job ids, admin ids, or IP data
 - [ ] Secrets absent from git history (`git log -p | grep -i password` sanity check)
 - [ ] Error responses expose no stack traces (`NODE_ENV=production`)

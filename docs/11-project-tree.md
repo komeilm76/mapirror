@@ -104,6 +104,7 @@ mapirror/
 │  │  │     └─ logger.ts           # Pino config with redaction
 │  │  └─ tests/                    # API, integration, and source-adapter tests
 │  │     ├─ integration/catalog-repositories.spec.ts # Real-Postgres search, filters, cache, paging and versions
+│  │     ├─ integration/public-visibility-matrix.spec.ts # Real-Postgres published/private/unknown visibility across public reads
 │  │     ├─ integration/catalog-route.spec.ts # Authenticated API projection, contract, filtering and 400-row budget
 │  │     ├─ integration/catalog-region-route.spec.ts # Slug detail, source snapshots, cache fallback and validation
 │  │     ├─ integration/catalog-sync-route.spec.ts # Auth, attributed 202, concurrency and active-job reuse
