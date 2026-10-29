@@ -136,7 +136,7 @@ describe.skipIf(skipReason !== null)('POST /_admin/api/cache/:countryId/public',
             .selectFrom('audit_logs')
             .select(['actor_id', 'actor_name', 'action', 'target_id', 'metadata', 'created_at'])
             .where('target_id', '=', finlandId)
-            .orderBy('created_at', 'asc')
+            .orderBy('action', 'asc')
             .execute();
           expect(audit).toHaveLength(2);
           expect(audit[0]?.created_at.toISOString()).toBe(publication.publicSince);
