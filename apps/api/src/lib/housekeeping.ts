@@ -1,37 +1,26 @@
 /**
- * Startup housekeeping: delete token rows that expired long ago (task `P1-AUTH-02`, `03-data-model.md` §2.2).
+ * Startup housekeeping for old authentication tokens and expired upload sessions.
  *
- * It lives in `lib/` rather than in `server.ts` for one reason: **it has to be testable without starting a process.**
- * The first version of this ran inline in `start()`, before the socket opened, with no bound — and a single row lock
- * held on an expired token by some other transaction made the `DELETE` wait, so the process sat in boot and never
- * called `listen`. Measured: `healthz` never answered, the log stopped after the schema check, and the container looked
- * alive to Docker while answering nothing. Two changes came out of that probe, and both are the point of this module:
- *
- * 1. **It is bounded.** `statement_timeout` (via `withTransaction`) cancels the statement after
- *    {@link HOUSEKEEPING_TIMEOUT_MS}, so a contended table costs at most a few seconds and a warning line.
- * 2. **It is never on the boot path.** `server.ts` calls it *after* `listen`, fire-and-forget. Housekeeping is
- *    optional work: nothing a client asks for depends on it, so nothing a client asks for may wait for it.
- *
- * A failure here is always `warn` and never fatal. The alternative — refusing to serve because an old row could not be
- * deleted — turns a maintenance problem into an outage.
+ * Work is bounded and never holds the listening socket hostage: `server.ts` calls this after `listen`, fire-and-forget.
+ * A failure is a warning, not a reason to take the API offline. Upload cleanup locks a bounded batch, skips active
+ * installs, removes only validated UUID-derived paths under `TMP_DIR`, then deletes the rows in the same DB transaction.
  *
  * @module lib/housekeeping
  */
 
 import type { Kysely } from 'kysely';
 
-import { pruneExpiredTokens } from '../modules/auth/tokens';
 import type { Database } from '../db/schema';
 import { withTransaction } from '../db/transaction';
+import { pruneExpiredTokens } from '../modules/auth/tokens';
+import type { UploadStorage } from '../modules/storage/upload-storage';
 
-/**
- * How long the pruning statement may run.
- *
- * Five seconds is generous for an indexed delete on a table this size, and short enough that it cannot be confused
- * with a hung process. The point is not to finish slowly, it is to **give up**: the row will be there on the next
- * boot, and a stopped boot is an outage while a skipped prune is nothing.
- */
+/** How long one housekeeping transaction may run before it is rolled back and abandoned. */
 export const HOUSEKEEPING_TIMEOUT_MS = 5_000;
+/** Maximum expired upload rows/files handled in one pass, keeping filesystem work bounded. */
+export const EXPIRED_UPLOAD_BATCH_SIZE = 100;
+/** Housekeeping runs immediately after listen, then this often while the API remains up. */
+export const HOUSEKEEPING_INTERVAL_MS = 15 * 60 * 1_000;
 
 /** The two log levels this module uses; `app.log` satisfies it, and so does a stub in a test. */
 export interface HousekeepingLog {
@@ -40,35 +29,145 @@ export interface HousekeepingLog {
 }
 
 /**
- * Prunes expired tokens, bounded and non-fatal.
+ * Prunes expired rows and staged files in one bounded transaction.
  *
- * @param database - Kysely instance (the pool's, not a transaction: it opens its own, so the timeout applies).
- * @param log - Logger for the outcome; `info` only when something was deleted, `warn` on any failure.
- * @param options - `timeoutMs` and `now` exist for tests; the defaults suit the real boot.
- * @returns How many rows were deleted, or `null` when the attempt was abandoned — the two are different, and a caller
- * that only saw `0` could not tell "nothing to do" from "we gave up".
+ * If `uploadStorage` is omitted, only token pruning runs; production supplies it so the configured `TMP_DIR` is used.
+ * Expired `installing` sessions are skipped because their job owns the staged file. At most one batch is removed per
+ * invocation; a later interval sweep drains any larger backlog.
+ *
+ * @param database - Kysely pool instance, not an existing transaction.
+ * @param log - Logger for the outcome; silent when nothing was deleted and warning-only on failure.
+ * @param options - Injectable clock, timeout and upload-storage root for tests.
+ * @returns Total number of token rows and upload-session rows deleted, or `null` if the transaction was abandoned.
  */
 export async function runHousekeeping(
   database: Kysely<Database>,
   log: HousekeepingLog,
-  options: { readonly timeoutMs?: number; readonly now?: Date } = {},
+  options: {
+    readonly timeoutMs?: number;
+    readonly now?: Date;
+    readonly uploadStorage?: UploadStorage;
+  } = {},
 ): Promise<number | null> {
   const timeoutMs = options.timeoutMs ?? HOUSEKEEPING_TIMEOUT_MS;
+  const now = options.now ?? new Date();
 
   try {
-    const pruned = await withTransaction(
+    const result = await withTransaction(
       database,
-      (trx) => pruneExpiredTokens(trx, options.now === undefined ? {} : { now: options.now }),
+      async (trx) => {
+        const prunedTokens = await pruneExpiredTokens(trx, { now });
+        let prunedUploads = 0;
+
+        if (options.uploadStorage !== undefined) {
+          const expired = await trx
+            .selectFrom('upload_sessions')
+            .select(['id', 'temp_path'])
+            .where('expires_at', '<=', now)
+            .where('status', '!=', 'installing')
+            .orderBy('expires_at', 'asc')
+            .orderBy('id', 'asc')
+            .limit(EXPIRED_UPLOAD_BATCH_SIZE)
+            .forUpdate()
+            .skipLocked()
+            .execute();
+
+          const cleanedIds: string[] = [];
+          for (const session of expired) {
+            try {
+              // Strict `fileAt()` validation prevents a corrupt row from turning cleanup into arbitrary path deletion.
+              // A corrupt/unremovable file is retained and reported; it must not starve other expired sessions.
+              await options.uploadStorage.fileAt(session.temp_path).remove();
+              cleanedIds.push(session.id);
+            } catch (error) {
+              log.warn(
+                { err: error, uploadSessionId: session.id },
+                'expired upload file could not be safely removed; session retained',
+              );
+            }
+          }
+
+          if (cleanedIds.length > 0) {
+            const deleted = await trx
+              .deleteFrom('upload_sessions')
+              .where('id', 'in', cleanedIds)
+              .where('expires_at', '<=', now)
+              .where('status', '!=', 'installing')
+              .executeTakeFirst();
+            prunedUploads = Number(deleted.numDeletedRows);
+          }
+        }
+
+        return { prunedTokens, prunedUploads };
+      },
       { statementTimeoutMs: timeoutMs },
     );
 
-    // Silent when there was nothing to do: a log line every boot saying "0 rows" trains people to ignore the line.
-    if (pruned > 0) log.info({ pruned }, 'expired tokens pruned');
-    return pruned;
+    if (result.prunedTokens > 0) {
+      log.info({ pruned: result.prunedTokens }, 'expired tokens pruned');
+    }
+    if (result.prunedUploads > 0) {
+      log.info({ pruned: result.prunedUploads }, 'expired upload sessions pruned');
+    }
+    return result.prunedTokens + result.prunedUploads;
   } catch (error) {
-    // Includes the timeout (`57014`), a lock that never came free, and a database that went away mid-statement. All
-    // three mean the same thing for the caller: nothing was deleted, and serving continues.
-    log.warn({ err: error, timeoutMs }, 'could not prune expired tokens; continuing');
+    log.warn({ err: error, timeoutMs }, 'could not run housekeeping; continuing');
     return null;
   }
+}
+
+/**
+ * Starts an immediate housekeeping sweep and repeats it without overlapping transactions.
+ *
+ * @param database - Kysely pool instance used by each bounded sweep.
+ * @param log - Logger for sweep outcomes.
+ * @param options - Sweep options plus the repeat interval.
+ * @returns A stop handle that clears the timer and waits for any in-flight sweep to finish.
+ */
+export function startHousekeeping(
+  database: Kysely<Database>,
+  log: HousekeepingLog,
+  options: {
+    readonly timeoutMs?: number;
+    readonly intervalMs?: number;
+    readonly uploadStorage?: UploadStorage;
+  } = {},
+): { stop: () => Promise<void> } {
+  const intervalMs = options.intervalMs ?? HOUSEKEEPING_INTERVAL_MS;
+  if (!Number.isSafeInteger(intervalMs) || intervalMs <= 0) {
+    throw new RangeError(`intervalMs must be a positive whole number, got ${intervalMs}`);
+  }
+  const sweepOptions = {
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(options.uploadStorage === undefined ? {} : { uploadStorage: options.uploadStorage }),
+  };
+  let stopped = false;
+  let active: Promise<number | null> | undefined;
+
+  const run = (): void => {
+    if (stopped || active !== undefined) return;
+    const pending = runHousekeeping(database, log, sweepOptions);
+    active = pending;
+    void pending.then(
+      () => {
+        if (active === pending) active = undefined;
+      },
+      (error: unknown) => {
+        if (active === pending) active = undefined;
+        log.warn({ err: error }, 'housekeeping sweep failed unexpectedly');
+      },
+    );
+  };
+
+  run();
+  const timer = setInterval(run, intervalMs);
+  timer.unref();
+
+  return {
+    stop: async () => {
+      stopped = true;
+      clearInterval(timer);
+      await active;
+    },
+  };
 }

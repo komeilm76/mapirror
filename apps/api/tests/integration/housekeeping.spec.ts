@@ -1,9 +1,14 @@
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import pg from 'pg';
 import { sql } from 'kysely';
 import { describe, expect, it, vi } from 'vitest';
 
 import { runHousekeeping } from '../../src/lib/housekeeping';
 import { issueToken } from '../../src/modules/auth/tokens';
+import { createUploadStorage } from '../../src/modules/storage/upload-storage';
 import type { SqlDatabase } from '../../src/index';
 import { dsnFor, freshDatabaseSkipReason, withFreshDatabase } from '../helpers/fresh-db';
 
@@ -115,7 +120,7 @@ describe.skipIf(skipReason !== null)('runHousekeeping', () => {
           expect(result).toBeNull();
           expect(elapsed).toBeLessThan(4_000);
           expect(log.warn).toHaveBeenCalledTimes(1);
-          expect(log.warn.mock.calls[0]?.[1]).toContain('could not prune expired tokens');
+          expect(log.warn.mock.calls[0]?.[1]).toContain('could not run housekeeping');
 
           // Nothing was deleted, and the row is still there afterwards — the statement rolled back.
           await blocker.query('rollback');
@@ -146,6 +151,143 @@ describe.skipIf(skipReason !== null)('runHousekeeping', () => {
       },
       { prefix: 'hk', migrate: true },
     );
+  });
+
+  it('removes expired upload files and rows but leaves a future session and an active install alone', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'mapirror-expired-uploads-'));
+    const uploadStorage = createUploadStorage(directory);
+    const expiredId = '2f99631f-8a5f-43c3-9fcb-c0e03f5fb001';
+    const installingId = '2f99631f-8a5f-43c3-9fcb-c0e03f5fb002';
+    const freshId = '2f99631f-8a5f-43c3-9fcb-c0e03f5fb003';
+
+    async function stage(uploadId: string, content: string): Promise<void> {
+      const handle = await uploadStorage.file(uploadId).openForWrite();
+      await handle.writeFile(content);
+      await handle.close();
+    }
+
+    try {
+      await stage(expiredId, 'expired bytes');
+      await stage(installingId, 'active install bytes');
+      await stage(freshId, 'new bytes');
+
+      await withFreshDatabase(
+        async (database) => {
+          const country = await database.db
+            .insertInto('countries')
+            .values({ source_id: 'europe/finland', slug: 'finland', name: 'Finland' })
+            .returning('id')
+            .executeTakeFirstOrThrow();
+          const oldCreatedAt = new Date(NOW.getTime() - 25 * 60 * 60 * 1000);
+          await database.db
+            .insertInto('upload_sessions')
+            .values([
+              {
+                country_id: country.id,
+                version: '261024',
+                original_name: 'finland.osm.pbf',
+                temp_path: uploadStorage.file(expiredId).relativePath,
+                created_at: oldCreatedAt,
+                expires_at: new Date(NOW.getTime() - 1),
+              },
+              {
+                country_id: country.id,
+                version: '261023',
+                original_name: 'finland.osm.pbf',
+                temp_path: uploadStorage.file(installingId).relativePath,
+                status: 'installing',
+                created_at: oldCreatedAt,
+                expires_at: new Date(NOW.getTime() - 1),
+              },
+              {
+                country_id: country.id,
+                version: '261025',
+                original_name: 'finland.osm.pbf',
+                temp_path: uploadStorage.file(freshId).relativePath,
+                created_at: NOW,
+                expires_at: new Date(NOW.getTime() + 24 * 60 * 60 * 1000),
+              },
+            ])
+            .execute();
+
+          const log = recordingLog();
+          await expect(
+            runHousekeeping(database.db, log, { now: NOW, uploadStorage }),
+          ).resolves.toBe(1);
+          expect(log.info).toHaveBeenCalledWith({ pruned: 1 }, 'expired upload sessions pruned');
+          expect(log.warn).not.toHaveBeenCalled();
+
+          const remaining = await database.db
+            .selectFrom('upload_sessions')
+            .select(['temp_path', 'status'])
+            .orderBy('temp_path')
+            .execute();
+          expect(remaining).toEqual([
+            { temp_path: `${freshId}.osm.pbf`, status: 'received' },
+            { temp_path: `${installingId}.osm.pbf`, status: 'installing' },
+          ]);
+          await expect(uploadStorage.file(expiredId).size()).resolves.toBe(0n);
+          await expect(
+            readFile(join(directory, uploadStorage.file(installingId).relativePath), 'utf8'),
+          ).resolves.toBe('active install bytes');
+          await expect(
+            readFile(join(directory, uploadStorage.file(freshId).relativePath), 'utf8'),
+          ).resolves.toBe('new bytes');
+        },
+        { prefix: 'hk-upload', migrate: true },
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a corrupt temp_path without deleting outside TMP_DIR or its database row', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'mapirror-invalid-upload-path-'));
+    const outside = await mkdtemp(join(tmpdir(), 'mapirror-outside-upload-'));
+    const externalFile = join(outside, 'keep.osm.pbf');
+    const uploadStorage = createUploadStorage(directory);
+    try {
+      await writeFile(externalFile, 'external bytes');
+      await withFreshDatabase(
+        async (database) => {
+          const country = await database.db
+            .insertInto('countries')
+            .values({ source_id: 'europe/finland', slug: 'finland', name: 'Finland' })
+            .returning('id')
+            .executeTakeFirstOrThrow();
+          const session = await database.db
+            .insertInto('upload_sessions')
+            .values({
+              country_id: country.id,
+              version: '261024',
+              original_name: 'finland.osm.pbf',
+              temp_path: '../outside-upload/keep.osm.pbf',
+              created_at: new Date(NOW.getTime() - 25 * 60 * 60 * 1000),
+              expires_at: new Date(NOW.getTime() - 1),
+            })
+            .returning('id')
+            .executeTakeFirstOrThrow();
+          const log = recordingLog();
+
+          await expect(
+            runHousekeeping(database.db, log, { now: NOW, uploadStorage }),
+          ).resolves.toBe(0);
+          expect(log.warn).toHaveBeenCalledTimes(1);
+          expect(
+            await database.db
+              .selectFrom('upload_sessions')
+              .select('id')
+              .where('id', '=', session.id)
+              .execute(),
+          ).toEqual([{ id: session.id }]);
+          await expect(readFile(externalFile, 'utf8')).resolves.toBe('external bytes');
+        },
+        { prefix: 'hk-upload-path', migrate: true },
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 
   it('reports a database that cannot answer, rather than throwing at the boot', async () => {

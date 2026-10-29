@@ -1,6 +1,6 @@
 # 03 — Data model
 
-**TL;DR** — 15 tables; `countries` ← `map_versions` (+ 1:1 `country_cache`); `jobs` is the queue; `intervals`/`interval_runs` hold scheduling; files are addressed by `<slug>/<version>/<file>`; versions are immutable and hard-deleted.
+**TL;DR** — 15 tables; `countries` ← `map_versions` (+ 1:1 `country_cache`) and `upload_sessions`; `jobs` is the queue; `intervals`/`interval_runs` hold scheduling; files are addressed by `<slug>/<version>/<file>`; versions are immutable and hard-deleted.
 
 PostgreSQL 16. SQL migrations (`apps/api/src/db/migrations/0001_init.sql`), typed access via Kysely,
 no ORM. Timestamps are `timestamptz` (UTC); ids are `gen_random_uuid()`.
@@ -31,6 +31,8 @@ erDiagram
   countries ||--o{ interval_run_items : "reports"
   countries ||--o{ download_events : "records"
   map_versions ||--o{ download_events : "records"
+  countries ||--o{ upload_sessions : "stages"
+  admins o|--o{ upload_sessions : "creates"
   jobs }o--|| countries : "targets (payload)"
   settings
   metrics_samples
@@ -342,17 +344,24 @@ CREATE TABLE upload_sessions (
   country_id    uuid NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
   version       text NOT NULL,
   original_name text NOT NULL,
-  temp_path     text NOT NULL,               -- under /data/tmp
+  temp_path     text NOT NULL,               -- root-relative <uuid>.osm.pbf under TMP_DIR
   size_bytes    bigint NOT NULL DEFAULT 0,
   checksum_md5  text,
   status        text NOT NULL DEFAULT 'received'
                   CHECK (status IN ('received','installing','installed','failed','expired')),
   job_id        uuid,
-  created_by    uuid REFERENCES admins(id),
+  created_by    uuid REFERENCES admins(id) ON DELETE SET NULL,
   created_at    timestamptz NOT NULL DEFAULT now(),
-  expires_at    timestamptz NOT NULL DEFAULT now() + interval '24 hours'
+  expires_at    timestamptz NOT NULL DEFAULT now() + interval '24 hours',
+  CONSTRAINT upload_sessions_size_nonnegative CHECK (size_bytes >= 0)
 );
+CREATE UNIQUE INDEX upload_sessions_temp_path_key ON upload_sessions (temp_path);
+CREATE INDEX upload_sessions_expiry_idx ON upload_sessions (expires_at, id)
+  WHERE status <> 'installing';
 ```
+
+`temp_path` is only the generated UUID filename relative to `TMP_DIR`; the client-supplied name is metadata and never a
+path. Housekeeping removes expired staging files and rows after 24 hours, while leaving an active `installing` row alone.
 
 The HTTP multipart request only *stages* the file (validated: extension `.osm.pbf`, magic bytes
 `\x0a\x0d`-style pbf check via first bytes, size limit, slug-safe name). Installation is a job so the
@@ -452,7 +461,7 @@ available after job-history pruning.
   backfills in a follow-up migration, destructive changes last).
 - `schema.ts` (Kysely types) is updated **in the same commit** as the migration; a startup check
   compares the ordered migration list with an expected constant to catch version skew. Migrations currently include
-  `0001_init.sql`, `0002_catalog.sql`, and `0003_download_events.sql`.
+  `0001_init.sql`, `0002_catalog.sql`, `0003_download_events.sql`, and `0004_upload_sessions.sql`.
 - The TypeScript types describe what the **driver returns**, which is not always what the SQL type suggests — the
   measured table lives in `apps/api/src/db/schema.ts` (`bigserial` → `string`, `timestamptz` → `Date`,
   `bytea` → `Buffer`, `jsonb` → parsed value, `inet` → `string`). A column's SQL type here and its JS type there are

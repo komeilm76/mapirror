@@ -1,8 +1,10 @@
 /**
- * Kysely types for the phase-1/2 foundation and cache-download event tables (`P1-DB-02`, `P2-DB-01`, `P2-API-09`).
+ * Kysely types for the phase-1/2 foundation, download events, and import staging (`P1-DB-02`, `P2-DB-01`,
+ * `P2-API-09`, `P4-IMP-01`).
  *
- * The columns here mirror `03-data-model.md` §§2.1–2.6, §2.10 and §2.11, and migrations `0001_init.sql`,
- * `0002_catalog.sql` and `0003_download_events.sql`. Repositories import these types — never `any`, never `unknown` for a row — so queries against
+ * The columns here mirror `03-data-model.md` §§2.1–2.6, §2.8, §2.10 and §2.11, and migrations `0001_init.sql`,
+ * `0002_catalog.sql`, `0003_download_events.sql` and `0004_upload_sessions.sql`. Repositories import these types —
+ * never `any`, never `unknown` for a row — so queries against
  * nonexistent columns fail to compile instead of at 3 a.m. (`10-laws.md` L5).
  *
  * **Every select type below was measured, not assumed.** `pg` does not hand back what the SQL type suggests:
@@ -174,6 +176,23 @@ export interface MapVersions {
   ready_at: NullableTimestamp;
 }
 
+/** Staged administrator upload metadata (`03-data-model.md` §2.8). */
+export interface UploadSessions {
+  id: GeneratedAlways<string>;
+  country_id: string;
+  version: string;
+  original_name: string;
+  /** Strictly validated root-relative UUID filename under `TMP_DIR`, never the client-supplied path. */
+  temp_path: string;
+  size_bytes: GeneratedInt8Column;
+  checksum_md5: string | null;
+  status: Generated<'received' | 'installing' | 'installed' | 'failed' | 'expired'>;
+  job_id: string | null;
+  created_by: string | null;
+  created_at: CreatedTimestamp;
+  expires_at: CreatedTimestamp;
+}
+
 /** Values of PostgreSQL's `job_type` enum. */
 export type JobType = 'download' | 'import' | 'update_check' | 'catalog_sync' | 'prune';
 /** Values of PostgreSQL's `job_status` enum. */
@@ -271,6 +290,8 @@ export type Country = SelectRow<Countries>;
 export type CountryCacheRow = SelectRow<CountryCache>;
 /** A row of `map_versions`, as selected. */
 export type MapVersion = SelectRow<MapVersions>;
+/** A row of `upload_sessions`, as selected. */
+export type UploadSession = SelectRow<UploadSessions>;
 /** A row of `jobs`, as selected. */
 export type Job = SelectRow<Jobs>;
 /** A row of `settings`, as selected. */
@@ -293,9 +314,9 @@ export type SelectRow<T> = {
 /**
  * Every table Kysely knows about.
  *
- * `P2-DB-01` adds the catalog, cache, version and job tables; `P2-API-09` adds download events. Interval, upload and
- * metrics tables remain future tasks. Until a table is listed here, a query against it does not compile — which is the
- * property that makes this file worth having.
+ * `P2-DB-01` adds catalog, cache, version and job tables; `P2-API-09` adds download events; `P4-IMP-01` adds upload
+ * sessions. Interval and metrics tables remain future tasks. Until a table is listed here, a query against it does not
+ * compile — which is the property that makes this file worth having.
  */
 export interface Database {
   admins: Admins;
@@ -303,6 +324,7 @@ export interface Database {
   countries: Countries;
   country_cache: CountryCache;
   map_versions: MapVersions;
+  upload_sessions: UploadSessions;
   jobs: Jobs;
   settings: Settings;
   audit_logs: AuditLogs;

@@ -484,7 +484,11 @@ the API; retention 7 days.
 | `.part` older than 24 h with no job | Delete |
 | Orphan file/dir under `CACHE_DIR` with no `ready` row | Reported in `/_admin/api/system/status` → `storage.orphans`, deleted only by an explicit admin action or the scheduled sweep |
 | `ready` row whose file is missing | Mark the version `failed` with `VERSION_FILE_MISSING`, close publication if it was the only version |
-| Expired `upload_sessions` | Delete temp files + rows |
+| Expired `upload_sessions` | Delete temp files + rows; skip sessions whose import job is `installing` |
 | Old finished `jobs` | Delete beyond `JOB_RETENTION_DAYS` |
 | Old `metrics_samples` | Delete beyond 7 days |
 | Expired `admin_tokens` | Delete beyond 30 days past expiry |
+
+Housekeeping runs once after the API starts listening and every 15 minutes thereafter. Each bounded pass deletes at most
+100 expired upload sessions and skips any session currently installing; shutdown stops the timer and waits for the active
+pass before closing the database pool.

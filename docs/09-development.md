@@ -144,7 +144,7 @@ sibling are mutually exclusive, and the hygiene check counts commented declarati
 | `POSTGRES_PASSWORD` | `mapirror` | ✅ (compose) | Password for the `db` container — the one place it is written — and the value the API completes its password-less DSN from. Any character works: it is percent-encoded, never concatenated into a URL by hand |
 | `POSTGRES_PASSWORD_FILE` | — | — | Docker-secret alternative to `POSTGRES_PASSWORD`, read at boot with trailing newlines stripped. Never set beside it: `parseEnv` refuses the pair, and `.env` reaches a compose container whole, so compose's own `POSTGRES_PASSWORD` would arrive at the same time (`12-deployment.md` §2) |
 | `CACHE_DIR` | `./data/cache` | ✅ | Artifact storage root (compose: `/data/cache` volume) |
-| `TMP_DIR` | `./data/tmp` | ✅ | Upload staging files (compose: `/data/tmp` volume); download `.part` files stay under `CACHE_DIR` for same-filesystem atomic rename |
+| `TMP_DIR` | `./data/tmp` | ✅ | UUID-named upload staging files (compose: `/data/tmp` volume), expired after 24 h; download `.part` files stay under `CACHE_DIR` for same-filesystem atomic rename |
 | `ADMIN_USERNAME` | `admin` | — | Bootstrap username |
 | `ADMIN_PASSWORD` | — | ✅ (first boot) | Bootstrap password (never logged) |
 | `ADMIN_PASSWORD_FILE` | — | — | Alternative to env (Docker secret) |

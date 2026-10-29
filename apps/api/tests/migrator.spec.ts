@@ -42,6 +42,7 @@ describe('listMigrationFiles', () => {
       '0001_init',
       '0002_catalog',
       '0003_download_events',
+      '0004_upload_sessions',
     ]);
     expect(files[0]?.path).toBe(join(MIGRATIONS_DIR, '0001_init.sql'));
     // The file has to exist, because the provider reads it by path.
@@ -116,13 +117,20 @@ describe('SqlMigrationProvider', () => {
   it('exposes each migration as an up-only migration', async () => {
     const migrations = await new SqlMigrationProvider().getMigrations();
 
-    expect(Object.keys(migrations)).toEqual(['0001_init', '0002_catalog', '0003_download_events']);
+    expect(Object.keys(migrations)).toEqual([
+      '0001_init',
+      '0002_catalog',
+      '0003_download_events',
+      '0004_upload_sessions',
+    ]);
     const migration = migrations['0001_init']!;
     const catalogMigration = migrations['0002_catalog']!;
     const downloadEventsMigration = migrations['0003_download_events']!;
+    const uploadSessionsMigration = migrations['0004_upload_sessions']!;
     expect(typeof migration.up).toBe('function');
     expect(typeof catalogMigration.up).toBe('function');
     expect(typeof downloadEventsMigration.up).toBe('function');
+    expect(typeof uploadSessionsMigration.up).toBe('function');
     // Forward-only (`03-data-model.md` §4): rollback is a restore, not a script. Asserted as the *shape* of the
     // object, because a `down` that exists and does nothing is worse than one that is absent.
     expect(Object.keys(migration)).toEqual(['up']);
@@ -280,6 +288,29 @@ describe('the migration agrees with 03-data-model.md', () => {
     expect(
       [...sqlText.matchAll(/CREATE (?:UNIQUE )?INDEX (\w+)/g)].map((match) => match[1]),
     ).toEqual(['download_events_country_idx']);
+  });
+
+  it('creates the documented upload-session table and expiry index in the P4-IMP-01 migration', async () => {
+    const doc = await readFile(DOC, 'utf8');
+    const heading = '### 2.8 ';
+    const start = doc.indexOf(heading);
+    expect(start, '### 2.8 upload_sessions must exist').toBeGreaterThan(-1);
+    const end = doc.indexOf('\n### ', start + heading.length);
+    const section = doc.slice(start, end === -1 ? undefined : end);
+    const sqlText = await readFile(join(MIGRATIONS_DIR, '0004_upload_sessions.sql'), 'utf8');
+
+    expect([...section.matchAll(/CREATE TABLE (\w+)/g)].map((match) => match[1])).toEqual([
+      'upload_sessions',
+    ]);
+    expect([...sqlText.matchAll(/CREATE TABLE (\w+)/g)].map((match) => match[1])).toEqual([
+      'upload_sessions',
+    ]);
+    expect(
+      [...section.matchAll(/CREATE (?:UNIQUE )?INDEX (\w+)/g)].map((match) => match[1]),
+    ).toEqual(['upload_sessions_temp_path_key', 'upload_sessions_expiry_idx']);
+    expect(
+      [...sqlText.matchAll(/CREATE (?:UNIQUE )?INDEX (\w+)/g)].map((match) => match[1]),
+    ).toEqual(['upload_sessions_temp_path_key', 'upload_sessions_expiry_idx']);
   });
 
   it('does not create a table the document never names', async () => {

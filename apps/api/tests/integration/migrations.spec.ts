@@ -31,7 +31,12 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
   it('creates the phase-1 and phase-2 core tables, enums, and indexes', async () => {
     await withFreshDatabase(async (database) => {
       const outcome = await migrateToLatest(database.db);
-      expect(outcome.applied).toEqual(['0001_init', '0002_catalog', '0003_download_events']);
+      expect(outcome.applied).toEqual([
+        '0001_init',
+        '0002_catalog',
+        '0003_download_events',
+        '0004_upload_sessions',
+      ]);
 
       const tables = await sql<{ table_name: string }>`
         select table_name from information_schema.tables
@@ -49,6 +54,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
         'settings',
         'audit_logs',
         'download_events',
+        'upload_sessions',
       ]) {
         expect(names, table).toContain(table);
       }
@@ -77,6 +83,8 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
         'jobs_recent_idx',
         'jobs_one_active_download',
         'download_events_country_idx',
+        'upload_sessions_expiry_idx',
+        'upload_sessions_temp_path_key',
       ]) {
         expect(indexNames, index).toContain(index);
       }
@@ -139,7 +147,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
       // Pinned here because "fails quietly" is only acceptable while a test is asserting that it fails at all.
       expect(error).toBeUndefined();
       expect(results).toEqual([
-        { migrationName: '0003_download_events', direction: 'Down', status: 'NotExecuted' },
+        { migrationName: '0004_upload_sessions', direction: 'Down', status: 'NotExecuted' },
       ]);
       const tables = await sql<{ n: number }>`
         select count(*)::int as n from information_schema.tables
@@ -210,6 +218,11 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
       `.execute(db);
       const countryId = country.rows[0]!.id;
       const absentId = '00000000-0000-0000-0000-000000000001';
+      await expect(
+        sql`insert into upload_sessions (country_id, version, original_name, temp_path, size_bytes)
+            values (${countryId}::uuid, '261024', 'finland.osm.pbf',
+                    '2f99631f-8a5f-43c3-9fcb-c0e03f5fb001.osm.pbf', -1)`.execute(db),
+      ).rejects.toMatchObject({ code: '23514', constraint: 'upload_sessions_size_nonnegative' });
       await expect(
         sql`insert into country_cache (country_id) values (${absentId}::uuid)`.execute(db),
       ).rejects.toMatchObject({ code: '23503', constraint: 'country_cache_country_id_fkey' });
@@ -381,7 +394,12 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
 
         // And the real migrations still apply cleanly afterwards.
         const outcome = await migrateToLatest(database.db);
-        expect(outcome.applied).toEqual(['0001_init', '0002_catalog', '0003_download_events']);
+        expect(outcome.applied).toEqual([
+          '0001_init',
+          '0002_catalog',
+          '0003_download_events',
+          '0004_upload_sessions',
+        ]);
       });
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -410,7 +428,12 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
       // Reset must also clear Kysely's bookkeeping, or the next migration run would believe the schema exists.
       const outcome = await migrateToLatest(database.db);
 
-      expect(outcome.applied).toEqual(['0001_init', '0002_catalog', '0003_download_events']);
+      expect(outcome.applied).toEqual([
+        '0001_init',
+        '0002_catalog',
+        '0003_download_events',
+        '0004_upload_sessions',
+      ]);
       const settings = await sql<{ n: number }>`select count(*)::int as n from settings`.execute(
         database.db,
       );

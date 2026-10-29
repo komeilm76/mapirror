@@ -80,12 +80,14 @@ mapirror/
 │  │  │  │  ├─ reaper.ts          # Stale worker recovery
 │  │  │  │  └─ retry.ts           # Bounded exponential backoff
 │  │  │  │  ├─ system/             # Metrics sampler (CPU/RAM/disk), disk preflight
-│  │  │  │  └─ storage/             # Validated CACHE_DIR paths, parts, no-follow open/install/unlink
+│  │  │  │  └─ storage/             # Validated CACHE_DIR and TMP_DIR paths, no-follow open/install/unlink
+│  │  │  │     ├─ storage.ts        # Cache artifacts and resumable download parts
+│  │  │  │     └─ upload-storage.ts # UUID-only staged imports, exclusive create and safe expiry cleanup
 │  │  │  ├─ db/
-│  │  │  │  ├─ migrations/         # 0001_init.sql, 0002_catalog.sql (forward-only SQL, Kysely)
+│  │  │  │  ├─ migrations/         # 0001–0004 forward-only SQL, Kysely
 │  │  │  │  ├─ migrator.ts         # SQL provider, migrateToLatest/resetDatabase, name rules
 │  │  │  │  ├─ transaction.ts      # withTransaction: idle/statement bounds, read-only, retry 40001/40P01
-│  │  │  │  ├─ schema.ts           # Kysely table types, phases 1–2 (measured JS types, no `any`)
+│  │  │  │  ├─ schema.ts           # Kysely table types, foundation/cache/import tables (measured JS types, no `any`)
 │  │  │  │  ├─ version-check.ts    # Boot gate: disk vs EXPECTED_MIGRATIONS vs kysely_migration (SCHEMA_SKEW)
 │  │  │  │  └─ repositories/       # Typed queries accept the process DB or a caller-owned transaction
 │  │  │  │     ├─ executor.ts      # Shared Kysely/Transaction executor type
@@ -96,7 +98,7 @@ mapirror/
 │  │  │  └─ lib/
 │  │  │     ├─ client-ip.ts        # Untrusted forwarded address → a value `inet` accepts, or null
 │  │  │     ├─ rate-limit.ts       # Sliding-window limiter: bounded, injectable clock, refusal is free
-│  │  │     ├─ housekeeping.ts     # Boot-time token pruning: bounded, off the boot path, never fatal
+│  │  │     ├─ housekeeping.ts     # Bounded token/upload expiry sweeps after listen; drained on shutdown
 │  │  │     ├─ download.ts         # Streamed fetch, resume, progress, checksum via a storage-owned file handle
 │  │  │     ├─ checksum.ts         # MD5/SHA-256 streaming
 │  │  │     ├─ time.ts             # UTC helpers, schedule math (tested)
@@ -106,6 +108,7 @@ mapirror/
 │  │     ├─ integration/catalog-repositories.spec.ts # Real-Postgres search, filters, cache, paging and versions
 │  │     ├─ integration/public-visibility-matrix.spec.ts # Real-Postgres published/private/unknown visibility across public reads
 │  │     ├─ integration/public-country-download-route.spec.ts # Real-Postgres stream, Range/If-Range, ETag, HEAD/304 and event semantics
+│  │     ├─ integration/housekeeping.spec.ts # Real-Postgres token prune and 24 h upload-session/file expiry
 │  │     ├─ integration/catalog-route.spec.ts # Authenticated API projection, contract, filtering and 400-row budget
 │  │     ├─ integration/catalog-region-route.spec.ts # Slug detail, source snapshots, cache fallback and validation
 │  │     ├─ integration/catalog-sync-route.spec.ts # Auth, attributed 202, concurrency and active-job reuse
@@ -114,7 +117,9 @@ mapirror/
 │  │     ├─ geofabrik-file-metadata.spec.ts # Bounded HEAD and MD5 request cases
 │  │     ├─ geofabrik-slug.spec.ts          # Normalization, collisions, stability, path constraints
 │  │     ├─ integration/jobs-enqueue.spec.ts # PostgreSQL duplicate, race, terminal reuse, and 409 mapping
-│  │     └─ storage.spec.ts                 # Path validation, symlink safety, atomic install, safe unlink
+│  │     ├─ housekeeping.spec.ts           # Repeat/no-overlap behavior and graceful scheduler stop
+│  │     ├─ storage.spec.ts                 # Cache paths, symlink safety, atomic install and safe unlink
+│  │     └─ upload-storage.spec.ts          # UUID-only staging paths, exclusive create and safe cleanup
 │  │
 │  └─ web/                         # Vue 3 + Vuetify 3 SPA (served by nginx)
 │     ├─ package.json              # vue, vue-router, vuetify, pinia, @vueuse/core
@@ -243,7 +248,7 @@ mapirror/
 │
 └─ data/                           # Gitignored, Docker volumes in production
    ├─ cache/<country-slug>/<version>/<file>.osm.pbf
-   ├─ tmp/                         # *.part files, upload staging
+   ├─ tmp/                         # download *.part and staged <upload-uuid>.osm.pbf files
    └─ pg/                          # PostgreSQL data (volume only)
 ```
 
@@ -260,7 +265,7 @@ mapirror/
 
 - Path is always derived: `CACHE_DIR/<slug>/<version>/<source-filename>`.
 - Slug and version are validated (`^[a-z0-9][a-z0-9-]*$`, `^[A-Za-z0-9._-]{1,32}$`) before use.
-- Temporary files: `/data/tmp/<job-id>.part`, removed on failure/cancel.
+- Download parts: `/data/tmp/<job-id>.part`, removed on failure/cancel. Upload sessions store a generated `<uuid>.osm.pbf` path relative to `TMP_DIR`; expiry sweeps remove expired files and rows after 24 hours, skipping `installing` sessions.
 
 ## Naming rules
 

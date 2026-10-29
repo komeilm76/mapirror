@@ -34,7 +34,7 @@ describe('EXPECTED_MIGRATIONS', () => {
 });
 
 describe('compareSchema', () => {
-  const expected = ['0001_init', '0002_catalog', '0003_download_events'];
+  const expected = ['0001_init', '0002_catalog', '0003_download_events', '0004_upload_sessions'];
 
   it('reports nothing for a database that matches the build', () => {
     const report = compareSchema({ expected, onDisk: expected, applied: expected });
@@ -48,7 +48,11 @@ describe('compareSchema', () => {
   it('reports the database as behind when a file has not been applied', () => {
     const report = compareSchema({ expected, onDisk: expected, applied: ['0001_init'] });
 
-    expect(report.pending).toEqual(['0002_catalog', '0003_download_events']);
+    expect(report.pending).toEqual([
+      '0002_catalog',
+      '0003_download_events',
+      '0004_upload_sessions',
+    ]);
     expect(report.unknown).toEqual([]);
   });
 
@@ -70,7 +74,11 @@ describe('compareSchema', () => {
     // because the Docker build copied the wrong path, an empty database looks perfectly consistent.
     const report = compareSchema({ expected, onDisk: ['0001_init'], applied: ['0001_init'] });
 
-    expect(report.missingFromDisk).toEqual(['0002_catalog', '0003_download_events']);
+    expect(report.missingFromDisk).toEqual([
+      '0002_catalog',
+      '0003_download_events',
+      '0004_upload_sessions',
+    ]);
   });
 
   it('notices a migration file the constant does not know about', () => {

@@ -17,6 +17,7 @@ import {
   type Job,
   type MapVersion,
   type Setting,
+  type UploadSession,
 } from '../src/index';
 
 /**
@@ -37,6 +38,7 @@ const TABLE_INTERFACES = {
   countries: 'Countries',
   country_cache: 'CountryCache',
   map_versions: 'MapVersions',
+  upload_sessions: 'UploadSessions',
   jobs: 'Jobs',
   settings: 'Settings',
   audit_logs: 'AuditLogs',
@@ -64,10 +66,10 @@ function interfaceProperties(): Map<string, string[]> {
   return found;
 }
 
-/** The `CREATE TABLE` blocks in the sections backed by the first two migrations. */
+/** The `CREATE TABLE` blocks in sections backed by migrations 0001 through 0004. */
 const DOC = resolve(import.meta.dirname, '../../../docs/03-data-model.md');
 
-/** Document sections backed by `0001_init.sql` and `0002_catalog.sql`. */
+/** Document sections backed by `0001_init.sql` through `0004_upload_sessions.sql`. */
 const MIGRATED_HEADINGS = [
   '### 2.1 ',
   '### 2.2 ',
@@ -75,6 +77,7 @@ const MIGRATED_HEADINGS = [
   '### 2.4 ',
   '### 2.5 ',
   '### 2.6 ',
+  '### 2.8 ',
   '### 2.10 ',
   '### 2.11 ',
 ] as const;
@@ -147,6 +150,7 @@ describe('the migrated table interfaces', () => {
       'jobs',
       'map_versions',
       'settings',
+      'upload_sessions',
     ]);
     const source = readFileSync(join(DB_DIR, 'schema.ts'), 'utf8');
     const block = /export interface Database \{([\s\S]*?)\n\}/.exec(source)?.[1] as string;
@@ -171,6 +175,8 @@ describe('the selected row types match what the driver returns', () => {
     expectTypeOf<AuditLog['id']>().toEqualTypeOf<string>();
     expectTypeOf<DownloadEvent['id']>().toEqualTypeOf<string>();
     expectTypeOf<DownloadEvent['bytes_sent']>().toEqualTypeOf<string>();
+    expectTypeOf<UploadSession['id']>().toEqualTypeOf<string>();
+    expectTypeOf<UploadSession['size_bytes']>().toEqualTypeOf<string>();
   });
 
   it('types timestamptz as Date, bytea as Buffer, jsonb as the parsed value, inet as string', () => {

@@ -29,13 +29,14 @@ const TABLE_INTERFACES = {
   countries: 'Countries',
   country_cache: 'CountryCache',
   map_versions: 'MapVersions',
+  upload_sessions: 'UploadSessions',
   jobs: 'Jobs',
   settings: 'Settings',
   audit_logs: 'AuditLogs',
   download_events: 'DownloadEvents',
 } as const;
 
-/** Document sections whose tables are created by the first two migrations. */
+/** Document sections whose tables are created by migrations 0001 through 0004. */
 const MIGRATED_HEADINGS = [
   '### 2.1 ',
   '### 2.2 ',
@@ -43,6 +44,7 @@ const MIGRATED_HEADINGS = [
   '### 2.4 ',
   '### 2.5 ',
   '### 2.6 ',
+  '### 2.8 ',
   '### 2.10 ',
   '### 2.11 ',
 ] as const;
@@ -289,6 +291,25 @@ describe.skipIf(skipReason !== null)('the schema, the document and the database 
         expect(audit.id).toBe('1');
         expect(audit.metadata).toEqual({});
         expect(audit.created_at).toBeInstanceOf(Date);
+
+        const upload = await db
+          .insertInto('upload_sessions')
+          .values({
+            country_id: country.id,
+            version: '261026',
+            original_name: 'finland-latest.osm.pbf',
+            temp_path: '3ac68a32-40a4-4ea4-a40b-d2b2e7a4d227.osm.pbf',
+            size_bytes: '9007199254740993',
+            created_by: admin.id,
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        expect(upload.id).toMatch(/^[0-9a-f-]{36}$/);
+        expect(upload.size_bytes).toBe('9007199254740993');
+        expect(upload.status).toBe('received');
+        expect(upload.created_at).toBeInstanceOf(Date);
+        expect(upload.expires_at).toBeInstanceOf(Date);
+        expect(upload.checksum_md5).toBeNull();
       },
       { prefix: 'schema', migrate: true },
     );

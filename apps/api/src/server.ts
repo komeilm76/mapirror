@@ -20,10 +20,11 @@ import type { FastifyInstance } from 'fastify';
 
 import { buildApp } from './app';
 import { ConfigError, parseEnv, type AppConfig, type EnvSource } from './config/env';
-import { runHousekeeping } from './lib/housekeeping';
+import { startHousekeeping } from './lib/housekeeping';
 import { createGeofabrikMapSource } from './modules/geofabrik/map-source';
 import { createCatalogSyncHandler } from './modules/jobs/catalog-sync-handler';
 import { createDownloadHandler } from './modules/jobs/download-handler';
+import { createUploadStorage } from './modules/storage/upload-storage';
 import { startJobReaper } from './modules/jobs/reaper';
 import { startJobWorker, type JobHandlers } from './modules/jobs/worker';
 
@@ -163,11 +164,16 @@ export async function start(
     throw error;
   }
 
-  // Housekeeping after the socket is open, never before (`03-data-model.md` §2.2: rows expired more than 30 days
-  // are deleted). Not awaited, and bounded inside `runHousekeeping` — measured: with a row lock held on an expired
-  // token, running this *before* `listen` left the process booted, holding its port, and answering nothing until the
-  // lock went away. Housekeeping is optional work, so nothing a client asks for may wait for it.
-  void runHousekeeping(app.db.db, app.log);
+  // Housekeeping begins only after the socket is open, never on the boot path: bounded sweeps prune tokens and expire
+  // upload staging after 24 h. The loop skips overlap and is drained before the database pool closes.
+  const housekeeping = startHousekeeping(app.db.db, app.log, {
+    uploadStorage: createUploadStorage(config.tmpDir),
+  });
+  const stopWorkersBeforeHousekeeping = stopBackgroundWork;
+  stopBackgroundWork = async () => {
+    await stopWorkersBeforeHousekeeping?.();
+    await housekeeping.stop();
+  };
 
   return { app, config };
 }
