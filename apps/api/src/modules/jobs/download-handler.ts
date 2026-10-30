@@ -36,6 +36,7 @@ const DownloadPayloadSchema = z.object({
   version: z.string().trim().min(1).max(64),
   origin: z.string().optional(),
   onlyIfChanged: z.boolean().optional(),
+  keepVersions: z.number().int().min(1).max(10).optional(),
 });
 
 /** Dependencies of the registered download worker handler. */

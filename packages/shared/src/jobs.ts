@@ -29,6 +29,7 @@ export const DownloadJobPayloadSchema = z
     version: z.string().min(1).max(64),
     origin: z.enum(['geofabrik_snapshot', 'geofabrik_latest']).optional(),
     onlyIfChanged: z.boolean().optional(),
+    keepVersions: z.int().min(1).max(10).optional(),
   })
   .strict();
 

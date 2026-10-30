@@ -53,7 +53,7 @@ export async function postIntervalRun(
     result = await withTransaction(request.server.db.db, async (trx) => {
       const interval = await trx
         .selectFrom('intervals')
-        .select(['id', 'only_if_changed'])
+        .select(['id', 'only_if_changed', 'keep_versions'])
         .where('id', '=', params.data.id)
         .forUpdate()
         .executeTakeFirst();
@@ -118,6 +118,7 @@ export async function postIntervalRun(
           version: 'latest',
           origin: 'geofabrik_latest',
           onlyIfChanged: interval.only_if_changed,
+          keepVersions: interval.keep_versions,
           createdBy: admin.id,
         });
         jobIds.push(jobId);

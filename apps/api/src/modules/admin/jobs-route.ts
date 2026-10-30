@@ -226,6 +226,7 @@ function safeJobPayload(type: JobType, payload: JsonValue): JobPayload | null {
         'version',
         'origin',
         'onlyIfChanged',
+        'keepVersions',
       ]);
     case 'catalog_sync':
       return projectPayload(CatalogSyncJobPayloadSchema, payload, ['source']);

@@ -223,7 +223,12 @@ describe.skipIf(skipReason !== null)('PostgreSQL download handler', () => {
               .insertInto('jobs')
               .values({
                 type: 'download',
-                payload: { countryId: country.id, version: 'latest', onlyIfChanged: true },
+                payload: {
+                  countryId: country.id,
+                  version: 'latest',
+                  onlyIfChanged: true,
+                  keepVersions: 1,
+                },
               })
               .returningAll()
               .executeTakeFirstOrThrow();
@@ -310,6 +315,9 @@ describe.skipIf(skipReason !== null)('PostgreSQL download handler', () => {
               countries_skipped: 1,
               bytes_downloaded: '0',
             });
+            expect(
+              await db.selectFrom('jobs').select('id').where('type', '=', 'prune').execute(),
+            ).toEqual([]);
             expect(requests).toEqual([
               'GET /europe/finland.html',
               'HEAD /europe/finland-latest.osm.pbf',

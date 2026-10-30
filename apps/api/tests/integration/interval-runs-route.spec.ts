@@ -78,6 +78,7 @@ describe.skipIf(skipReason !== null)('interval run API and job lifecycle', () =>
         .where('id', 'in', jobIds)
         .where(sql<string>`payload ->> 'countryId'`, '=', countries.sweden.id)
         .executeTakeFirstOrThrow();
+      expect(secondJob.payload).toMatchObject({ keepVersions: 3 });
       await database.db
         .updateTable('jobs')
         .set({ max_attempts: 1 })

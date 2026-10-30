@@ -8,6 +8,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
+
+import { DownloadJobPayloadSchema } from '@mapirror/shared';
 import { sql, type Kysely } from 'kysely';
 
 import { MAX_WORKER_CONCURRENCY } from '../../config/limits';
@@ -396,6 +398,12 @@ async function markSucceeded(
 
     if (job.type === 'download') {
       const skipReason = resultSkipReason(result);
+      const queuedRunItem = await trx
+        .selectFrom('interval_run_items')
+        .select('run_id')
+        .where('job_id', '=', job.id)
+        .where('status', '=', 'queued')
+        .executeTakeFirst();
       await finalizeIntervalRunItem(
         trx,
         job.id,
@@ -412,6 +420,24 @@ async function markSucceeded(
               version: resultVersion(result),
             },
       );
+
+      const payload = DownloadJobPayloadSchema.safeParse(job.payload);
+      if (
+        queuedRunItem !== undefined &&
+        skipReason !== 'unchanged' &&
+        payload.success &&
+        payload.data.keepVersions !== undefined
+      ) {
+        await trx
+          .insertInto('jobs')
+          .values({
+            type: 'prune',
+            payload: { countryId: payload.data.countryId, keep: payload.data.keepVersions },
+            max_attempts: 10,
+            ...(job.created_by === null ? {} : { created_by: job.created_by }),
+          })
+          .execute();
+      }
     }
     return true;
   });

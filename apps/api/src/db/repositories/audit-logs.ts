@@ -40,6 +40,7 @@ export const AUDIT_ACTIONS = {
   cachePublish: 'cache.publish',
   cacheUnpublish: 'cache.unpublish',
   versionDelete: 'version.delete',
+  versionPrune: 'version.prune',
   intervalCreate: 'interval.create',
   intervalUpdate: 'interval.update',
   intervalDelete: 'interval.delete',

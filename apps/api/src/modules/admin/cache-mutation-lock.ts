@@ -4,8 +4,6 @@
  */
 
 import { sql, type Kysely } from 'kysely';
-import type { FastifyBaseLogger } from 'fastify';
-
 import type { Database } from '../../db/schema';
 import { cacheCountryAdvisoryLockKey } from '../../db/repositories/cache';
 import { AppError } from '../../lib/errors';
@@ -13,15 +11,21 @@ import { AppError } from '../../lib/errors';
 const LOCK_WAIT_MS = 5_000;
 const LOCK_POLL_INTERVAL_MS = 50;
 
+/** Minimal logging contract for API routes and background workers sharing the cache mutation lock. */
+export interface CacheMutationLockLogger {
+  readonly warn: (context: object, message: string) => void;
+}
+
 /** Runs a country-cache mutation while excluding admissions and streams until its cleanup callback has finished. */
 export async function withCacheCountryMutationLock<T>(
   connection: Kysely<Database>,
   countryId: string,
-  logger: FastifyBaseLogger,
+  logger: CacheMutationLockLogger,
   mutateAndClean: () => Promise<T>,
+  signal?: AbortSignal,
 ): Promise<T> {
   const lockKey = cacheCountryAdvisoryLockKey(countryId);
-  await acquireExclusiveLock(connection, lockKey);
+  await acquireExclusiveLock(connection, lockKey, signal);
   try {
     return await mutateAndClean();
   } finally {
@@ -30,15 +34,23 @@ export async function withCacheCountryMutationLock<T>(
 }
 
 /** Waits up to five seconds for a stream/admission to release its shared or transaction-scoped lock. */
-async function acquireExclusiveLock(connection: Kysely<Database>, lockKey: string): Promise<void> {
+async function acquireExclusiveLock(
+  connection: Kysely<Database>,
+  lockKey: string,
+  signal?: AbortSignal,
+): Promise<void> {
   const deadline = Date.now() + LOCK_WAIT_MS;
   while (Date.now() < deadline) {
+    if (signal?.aborted)
+      throw signal.reason instanceof Error ? signal.reason : new Error('Cache mutation canceled.');
     const result = await sql<{ locked: boolean }>`
       select pg_try_advisory_lock(hashtextextended(${lockKey}, 0)) as locked
     `.execute(connection);
     if (result.rows[0]?.locked === true) return;
     await delay(LOCK_POLL_INTERVAL_MS);
   }
+  if (signal?.aborted)
+    throw signal.reason instanceof Error ? signal.reason : new Error('Cache mutation canceled.');
   throw new AppError(
     'JOB_ALREADY_RUNNING',
     'Another cache operation is still in progress. Try again shortly.',
@@ -49,7 +61,7 @@ async function acquireExclusiveLock(connection: Kysely<Database>, lockKey: strin
 async function releaseExclusiveLock(
   connection: Kysely<Database>,
   lockKey: string,
-  logger: FastifyBaseLogger,
+  logger: CacheMutationLockLogger,
 ): Promise<void> {
   try {
     const result = await sql<{ unlocked: boolean }>`

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  DownloadJobPayloadSchema,
   JobCancelRequestSchema,
   JobCancelResponseSchema,
   JobDetailResponseSchema,
@@ -43,6 +44,19 @@ describe('admin jobs contracts', () => {
     });
     expect(JobListQuerySchema.safeParse({ status: 'active' }).success).toBe(false);
     expect(JobListQuerySchema.safeParse({ status: 'queued', ignored: 'yes' }).success).toBe(false);
+  });
+
+  it('accepts bounded interval retention snapshots on download job projections', () => {
+    expect(
+      DownloadJobPayloadSchema.parse({ countryId, version: 'latest', keepVersions: 1 }),
+    ).toEqual({ countryId, version: 'latest', keepVersions: 1 });
+    expect(
+      DownloadJobPayloadSchema.safeParse({ countryId, version: 'latest', keepVersions: 0 }).success,
+    ).toBe(false);
+    expect(
+      DownloadJobPayloadSchema.safeParse({ countryId, version: 'latest', keepVersions: 11 })
+        .success,
+    ).toBe(false);
   });
 
   it('validates UUID params and a strict empty cancellation body', () => {

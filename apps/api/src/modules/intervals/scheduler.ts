@@ -238,6 +238,7 @@ async function scheduleOneDueInterval(
           version: 'latest',
           origin: 'geofabrik_latest',
           onlyIfChanged: interval.only_if_changed,
+          keepVersions: interval.keep_versions,
           ...(interval.created_by === null ? {} : { createdBy: interval.created_by }),
         });
         await trx

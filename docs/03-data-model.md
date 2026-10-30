@@ -190,10 +190,10 @@ CREATE INDEX mv_country_ready_idx ON map_versions (country_id, ready_at DESC)
 CREATE INDEX mv_status_idx ON map_versions (status) WHERE status <> 'ready';
 ```
 
-- **Hard delete** (D-7b): deleting a version removes the row and its file. The durable record of what
-  was deleted lives in `audit_logs` (action `version.delete`, with version, size and checksum in
-  `metadata`) — the table keeps no tombstone column, so `mv_unique_version` correctly allows
-  re-importing the same version later.
+- **Hard delete** (D-7b): deleting a version removes the row and its file. Manual deletion is recorded as
+  `version.delete`; automatic retention uses `version.prune` with the removed version labels and sizes in
+  `metadata`. The table keeps no tombstone column, so `mv_unique_version` correctly allows re-importing the
+  same version later.
 - Only `status='ready'` rows are ever served. `pending` means "a job owns this slot"; the fine-grained
   progress (`fetching_index → downloading → verifying → installing`) lives on the job's `phase`, not duplicated here — one
   state machine per concept.
@@ -430,7 +430,7 @@ CREATE TABLE audit_logs (
   id          bigserial PRIMARY KEY,
   actor_id    uuid REFERENCES admins(id) ON DELETE SET NULL,
   actor_name  text NOT NULL,          -- snapshot, survives admin deletion
-  action      text NOT NULL,          -- 'auth.login', 'cache.publish', 'version.delete', ...
+  action      text NOT NULL,          -- 'auth.login', 'cache.publish', 'version.delete', 'version.prune', ...
   target_type text,
   target_id   text,
   metadata    jsonb NOT NULL DEFAULT '{}',

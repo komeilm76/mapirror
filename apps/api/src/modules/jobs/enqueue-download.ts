@@ -25,6 +25,8 @@ export interface EnqueueDownloadJobInput {
   readonly origin?: 'geofabrik_snapshot' | 'geofabrik_latest';
   /** Whether the worker should skip when the source has not changed. */
   readonly onlyIfChanged?: boolean;
+  /** Interval retention snapshot used to enqueue pruning after a successful update. */
+  readonly keepVersions?: number;
   /** Admin UUID that requested the job. */
   readonly createdBy?: string;
 }
@@ -77,11 +79,18 @@ export async function enqueueDownloadJobInTransaction(
   executor: RepositoryExecutor,
   input: EnqueueDownloadJobInput,
 ): Promise<string> {
+  if (
+    input.keepVersions !== undefined &&
+    (!Number.isSafeInteger(input.keepVersions) || input.keepVersions < 1 || input.keepVersions > 10)
+  ) {
+    throw new RangeError('keepVersions must be an integer between 1 and 10.');
+  }
   const payload = {
     countryId: input.countryId,
     version: input.version,
     ...(input.origin === undefined ? {} : { origin: input.origin }),
     ...(input.onlyIfChanged === undefined ? {} : { onlyIfChanged: input.onlyIfChanged }),
+    ...(input.keepVersions === undefined ? {} : { keepVersions: input.keepVersions }),
   };
 
   // Cache deletion holds the matching session advisory lock through post-commit file cleanup. This transaction-scoped

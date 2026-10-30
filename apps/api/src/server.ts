@@ -25,6 +25,7 @@ import { createGeofabrikMapSource } from './modules/geofabrik/map-source';
 import { createCatalogSyncHandler } from './modules/jobs/catalog-sync-handler';
 import { createDownloadHandler } from './modules/jobs/download-handler';
 import { createImportHandler } from './modules/jobs/import-handler';
+import { createPruneHandler } from './modules/jobs/prune-handler';
 import { startIntervalScheduler } from './modules/intervals/scheduler';
 import { createUploadStorage } from './modules/storage/upload-storage';
 import { startJobReaper } from './modules/jobs/reaper';
@@ -147,6 +148,7 @@ export async function start(
       catalog_sync: createCatalogSyncHandler({ source }),
       download: createDownloadHandler({ source, cacheDirectory: config.cacheDir }),
       import: createImportHandler({ config }),
+      prune: createPruneHandler({ cacheDirectory: config.cacheDir }),
     };
     const worker = startJobWorker(app.db.db, handlers, {
       concurrency: config.workerConcurrency,

@@ -48,6 +48,7 @@ describe.skipIf(skipReason !== null)('interval scheduler', () => {
           version: string;
           origin: string;
           only_if_changed: string;
+          keep_versions: string;
           type: string;
           status: string;
         }>`
@@ -56,6 +57,7 @@ describe.skipIf(skipReason !== null)('interval scheduler', () => {
                  payload ->> 'version' as version,
                  payload ->> 'origin' as origin,
                  payload ->> 'onlyIfChanged' as only_if_changed,
+                 payload ->> 'keepVersions' as keep_versions,
                  type::text as type,
                  status::text as status
             from jobs
@@ -72,6 +74,7 @@ describe.skipIf(skipReason !== null)('interval scheduler', () => {
               version: 'latest',
               origin: 'geofabrik_latest',
               only_if_changed: 'true',
+              keep_versions: '3',
               type: 'download',
               status: 'queued',
             }))
