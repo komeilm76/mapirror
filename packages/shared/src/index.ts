@@ -42,6 +42,7 @@ export * from './errors';
 export * from './license';
 export * from './imports';
 export * from './intervals';
+export * from './interval-time';
 export * from './interval-runs';
 export * from './jobs';
 export * from './pagination';

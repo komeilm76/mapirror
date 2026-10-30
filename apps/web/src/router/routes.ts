@@ -13,11 +13,12 @@
  *
  * ## Which screens are real today
  *
- * Ten: the public catalog, country detail and API documentation render `HomePage.vue` (`P3-WEB-01`),
- * `CountryDetailPage.vue` (`P3-WEB-02/03`) and `ApiDocsPage.vue` (`P3-WEB-04`); the admin catalog/cache/import screens
- * render `CatalogPage.vue` (`P2-WEB-01`), `CachePage.vue` (`P2-WEB-03`), `CacheCountryPage.vue` (`P2-WEB-04`),
- * `ImportPage.vue` (`P4-IMP-05`) and `JobsPage.vue` (`P2-WEB-06`); the login page renders `LoginPage.vue`
- * (`P1-WEB-06`), and the not-found catch-all renders `NotFoundPage.vue`. The other five are `PlaceholderPage`, which
+ * Eleven: the public catalog, country detail and API documentation render `HomePage.vue` (`P3-WEB-01`),
+ * `CountryDetailPage.vue` (`P3-WEB-02/03`) and `ApiDocsPage.vue` (`P3-WEB-04`); the admin catalog/cache/import/
+ * intervals/jobs screens render `CatalogPage.vue` (`P2-WEB-01`), `CachePage.vue` (`P2-WEB-03`),
+ * `CacheCountryPage.vue` (`P2-WEB-04`), `ImportPage.vue` (`P4-IMP-05`), `IntervalsPage.vue` (`P4-INT-08`) and
+ * `JobsPage.vue` (`P2-WEB-06`); the login page renders `LoginPage.vue` (`P1-WEB-06`), and the not-found catch-all
+ * renders `NotFoundPage.vue`. The other four are `PlaceholderPage`, which
  * says which screen it stands in for and which task replaces it. A router tree full of invented screens would be worse
  * than one that names its own gaps.
  *
@@ -119,13 +120,12 @@ export const APP_ROUTES: readonly RouteRecordRaw[] = [
     component: () => import('@/pages/admin/CacheCountryPage.vue'),
     meta: { title: 'Cached country', screen: 'S8', owner: 'P2-WEB-04' },
   },
-  pending({
+  {
     path: adminPagePaths.intervals(),
     name: 'admin-intervals',
-    title: 'Intervals',
-    screen: 'S9',
-    owner: 'P4-INT-08',
-  }),
+    component: () => import('@/pages/admin/IntervalsPage.vue'),
+    meta: { title: 'Intervals', screen: 'S9', owner: 'P4-INT-08' },
+  },
   {
     path: adminPagePaths.import(),
     name: 'admin-import',

@@ -29,7 +29,11 @@
  * @module db/schema
  */
 
+import type { IntervalFrequency as SharedIntervalFrequency } from '@mapirror/shared';
 import type { ColumnType, Generated, GeneratedAlways } from 'kysely';
+
+/** Values of PostgreSQL's `interval_frequency` enum, from the shared vocabulary. */
+export type IntervalFrequency = SharedIntervalFrequency;
 
 /**
  * A JSON value, as `jsonb` round-trips it.
@@ -193,8 +197,6 @@ export interface UploadSessions {
   expires_at: CreatedTimestamp;
 }
 
-/** Values of PostgreSQL's `interval_frequency` enum. */
-export type IntervalFrequency = 'daily' | 'weekly' | 'monthly';
 /** Values of an interval run's `triggered_by` column. */
 export type IntervalRunTrigger = 'schedule' | 'manual';
 /** Values of an interval run's `status` column. */

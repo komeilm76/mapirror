@@ -26,6 +26,7 @@ import './styles/catalog.css';
 import './styles/cache.css';
 import './styles/jobs.css';
 import './styles/import.css';
+import './styles/intervals.css';
 import './styles/public.css';
 
 import { createWebApp, MOUNT_SELECTOR } from './bootstrap';

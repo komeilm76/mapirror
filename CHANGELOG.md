@@ -22,6 +22,10 @@ passes. Patch releases (`0.1.1`, …) are corrections to an already-tagged phase
 
 ## [Unreleased] — 0.2.0-dev (Phase 1)
 
+### Added
+- **P4-INT-08 intervals screen:** authenticated interval list and create/edit form with searchable multi-country selection, frequency-specific UTC timing, pause/delete controls, last-run status, and a live next-five preview. The browser preview and API scheduler now use the same shared recurrence helper.
+- **P4-INT-08 verification:** `bun run check` passes (1,327 tests passed; 326 skipped, including PostgreSQL-backed cases without a fresh test database). `bun run build:web` passes and emits the lazy-loaded Intervals screen chunk (16.63 kB; 5.33 kB gzip).
+
 ### Fixed
 - **Pagination could produce a non-integer offset** (review pass 8): `?page=9007199254740991&limit=100`
   gave `900719925474099000`, which is what would have reached SQL as `OFFSET`. The product is now clamped to

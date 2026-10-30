@@ -13,9 +13,12 @@ const IntervalNameSchema = z
   .min(1)
   .max(100)
   .refine((value) => !value.includes('\u0000'), 'NUL characters are not allowed');
+/** Maximum country memberships allowed for one interval. */
+export const MAX_INTERVAL_COUNTRIES = 200;
+
 const CountryIdsSchema = z
   .array(z.uuid())
-  .max(200)
+  .max(MAX_INTERVAL_COUNTRIES)
   .refine((values) => new Set(values).size === values.length, 'Country ids must be unique.');
 const TimeOfDaySchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/u);
 

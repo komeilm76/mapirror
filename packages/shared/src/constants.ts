@@ -34,6 +34,9 @@ export const SORT_ORDERS = ['asc', 'desc'] as const;
 /** How often an interval runs (`interval_frequency` in the database). */
 export const INTERVAL_FREQUENCIES = ['daily', 'weekly', 'monthly'] as const;
 
+/** Frequency of a recurring interval. */
+export type IntervalFrequency = (typeof INTERVAL_FREQUENCIES)[number];
+
 /** Job kinds (`job_type`). */
 export const JOB_TYPES = ['download', 'import', 'update_check', 'catalog_sync', 'prune'] as const;
 
