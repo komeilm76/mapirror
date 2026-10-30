@@ -137,6 +137,21 @@ async function runDownload(
 
   const resolved = await source.resolveDownload(country.source_id, payload.version, context.signal);
   assertNotAborted(context.signal);
+  if (payload.onlyIfChanged === true && payload.version === 'latest') {
+    const unchangedVersion = await findUnchangedReadyVersion(
+      context.database,
+      country.id,
+      resolved,
+      storage,
+    );
+    if (unchangedVersion !== null) {
+      return {
+        versionId: unchangedVersion.id,
+        version: unchangedVersion.version,
+        skipReason: 'unchanged',
+      };
+    }
+  }
   const prepared = await prepareDownload(
     job,
     payload.version,
@@ -266,6 +281,57 @@ async function removeForCleanup(
   }
 }
 
+/** Builds the stable cache label used for one source freshness timestamp. */
+function latestVersionLabel(timestamp: Date): string {
+  return `latest@${timestamp
+    .toISOString()
+    .replace(/:/gu, '-')
+    .replace(/\.\d{3}Z$/u, 'Z')}`;
+}
+
+async function findUnchangedReadyVersion(
+  database: JobHandlerContext['database'],
+  countryId: string,
+  source: ResolvedDownload,
+  storage: CacheStorage,
+): Promise<{ readonly id: string; readonly version: string } | null> {
+  // A missing freshness timestamp cannot prove that a moving `latest` alias is unchanged. Fail open to the normal
+  // download path rather than risk suppressing an upstream update.
+  if (source.dataTimestamp === null) return null;
+  const cached = await database
+    .selectFrom('map_versions')
+    .select(['id', 'version', 'data_timestamp', 'file_size_bytes', 'storage_path'])
+    .where('country_id', '=', countryId)
+    .where('origin', 'in', ['geofabrik_snapshot', 'geofabrik_latest'])
+    .where('status', '=', 'ready')
+    .where('ready_at', 'is not', null)
+    .orderBy('ready_at', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+  if (cached === undefined || cached.data_timestamp === null) return null;
+  if (cached.data_timestamp.getTime() !== source.dataTimestamp.getTime()) return null;
+
+  // The physical latest label is derived from the freshness timestamp, while an explicitly cached dated snapshot
+  // uses the provider's version. Accept either representation only after the timestamp match above.
+  if (
+    source.version !== null &&
+    cached.version !== source.version &&
+    cached.version !== latestVersionLabel(source.dataTimestamp)
+  ) {
+    return null;
+  }
+  const expectedSize = source.sizeBytes === null ? null : BigInt(validateSize(source.sizeBytes));
+  if (expectedSize !== null && BigInt(cached.file_size_bytes) !== expectedSize) return null;
+
+  // A ready database row is not enough if its artifact has disappeared. Use the guarded storage API and require the
+  // on-disk length to agree with both the ready row and any current upstream size metadata.
+  const cachedFile = storage.versionFileAt(cached.storage_path);
+  const installedSize = await cachedFile.size();
+  if (installedSize === 0n || installedSize !== BigInt(cached.file_size_bytes)) return null;
+  if (expectedSize !== null && installedSize !== expectedSize) return null;
+  return { id: cached.id, version: cached.version };
+}
+
 async function prepareDownload(
   job: Job,
   requestedVersion: string,
@@ -282,11 +348,7 @@ async function prepareDownload(
   const filename = fromUrl;
   const latest = requestedVersion === 'latest';
   const timestamp = source.dataTimestamp ?? now();
-  const latestVersion = `latest@${timestamp
-    .toISOString()
-    .replace(/:/gu, '-')
-    .replace(/\.\d{3}Z$/u, 'Z')}`;
-  const version = latest ? latestVersion : (source.version ?? requestedVersion);
+  const version = latest ? latestVersionLabel(timestamp) : (source.version ?? requestedVersion);
   if (!VERSION_PATTERN.test(version)) {
     throw new DownloadHandlerError(
       'DOWNLOAD_INVALID_RESPONSE',

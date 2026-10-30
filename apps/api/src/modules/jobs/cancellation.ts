@@ -84,6 +84,7 @@ export async function requestJobCancellation(
       if (existing.type === 'download') {
         await finalizeIntervalRunItem(trx, jobId, {
           status: 'skipped',
+          version: null,
           errorCode: null,
           errorMessage: 'The download was canceled.',
         });

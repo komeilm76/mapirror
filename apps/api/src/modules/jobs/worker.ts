@@ -395,11 +395,23 @@ async function markSucceeded(
     if (row === undefined) return false;
 
     if (job.type === 'download') {
-      await finalizeIntervalRunItem(trx, job.id, {
-        status: 'downloaded',
-        bytes: String(row.progress_bytes),
-        version: resultVersion(result),
-      });
+      const skipReason = resultSkipReason(result);
+      await finalizeIntervalRunItem(
+        trx,
+        job.id,
+        skipReason === 'unchanged'
+          ? {
+              status: 'skipped',
+              version: resultVersion(result),
+              errorCode: null,
+              errorMessage: 'The source is unchanged; no download was needed.',
+            }
+          : {
+              status: 'downloaded',
+              bytes: String(row.progress_bytes),
+              version: resultVersion(result),
+            },
+      );
     }
     return true;
   });
@@ -468,6 +480,7 @@ async function markCanceled(session: Kysely<Database>, job: Job, workerId: strin
     if (row !== undefined && job.type === 'download') {
       await finalizeIntervalRunItem(trx, job.id, {
         status: 'skipped',
+        version: null,
         errorCode: null,
         errorMessage: 'The download was canceled.',
       });
@@ -479,6 +492,12 @@ async function markCanceled(session: Kysely<Database>, job: Job, workerId: strin
 function resultVersion(result: JsonValue | null): string | null {
   if (typeof result !== 'object' || result === null || Array.isArray(result)) return null;
   return typeof result.version === 'string' ? result.version : null;
+}
+
+/** Reads the supported successful skip marker returned by download handlers. */
+function resultSkipReason(result: JsonValue | null): 'unchanged' | null {
+  if (typeof result !== 'object' || result === null || Array.isArray(result)) return null;
+  return result.skipReason === 'unchanged' ? 'unchanged' : null;
 }
 
 async function finishConcurrentCancellation(

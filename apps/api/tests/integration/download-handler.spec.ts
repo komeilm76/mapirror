@@ -158,6 +158,169 @@ describe.skipIf(skipReason !== null)('PostgreSQL download handler', () => {
     });
   });
 
+  it('skips an unchanged latest source without fetching its MD5 sidecar or PBF', async () => {
+    await withGeofabrikFixtureServer({}, async ({ baseUrl, requests }) => {
+      await withFreshDatabase(
+        async ({ db }) => {
+          await withWorkspace(async (cacheDirectory) => {
+            const country = await db
+              .insertInto('countries')
+              .values({
+                source: 'geofabrik',
+                source_id: 'europe/finland',
+                slug: 'finland',
+                name: 'Finland',
+              })
+              .returning('id')
+              .executeTakeFirstOrThrow();
+            const timestamp = new Date('2026-10-23T20:20:51.000Z');
+            const version = 'latest@2026-10-23T20-20-51Z';
+            const storagePath = `finland/${version}/finland-latest.osm.pbf`;
+            const cachedFile = join(cacheDirectory, storagePath);
+            await mkdir(join(cacheDirectory, 'finland', version), { recursive: true });
+            await writeFile(cachedFile, payloadBytes);
+            await db
+              .insertInto('map_versions')
+              .values({
+                country_id: country.id,
+                version,
+                origin: 'geofabrik_latest',
+                source_url: `${baseUrl}/europe/finland-latest.osm.pbf`,
+                source_filename: 'finland-latest.osm.pbf',
+                data_timestamp: timestamp,
+                file_size_bytes: BigInt(payloadBytes.byteLength),
+                checksum_md5: md5,
+                checksum_sha256: null,
+                storage_path: storagePath,
+                status: 'ready',
+                failure_reason: null,
+                job_id: null,
+                uploaded_by: null,
+                ready_at: timestamp,
+              })
+              .execute();
+            const interval = await db
+              .insertInto('intervals')
+              .values({
+                name: 'Finland updates',
+                frequency: 'daily',
+                next_run_at: timestamp,
+                only_if_changed: true,
+              })
+              .returning('id')
+              .executeTakeFirstOrThrow();
+            const run = await db
+              .insertInto('interval_runs')
+              .values({
+                interval_id: interval.id,
+                triggered_by: 'schedule',
+                status: 'running',
+                countries_total: 1,
+              })
+              .returning('id')
+              .executeTakeFirstOrThrow();
+            const job = await db
+              .insertInto('jobs')
+              .values({
+                type: 'download',
+                payload: { countryId: country.id, version: 'latest', onlyIfChanged: true },
+              })
+              .returningAll()
+              .executeTakeFirstOrThrow();
+            await db
+              .insertInto('interval_run_items')
+              .values({
+                run_id: run.id,
+                country_id: country.id,
+                country_slug: 'finland',
+                country_name: 'Finland',
+                job_id: job.id,
+              })
+              .execute();
+            const handler = createDownloadHandler({
+              source: createGeofabrikMapSource(baseUrl, {
+                metadataMaxAttempts: 1,
+                metadataRetryDelayMs: 0,
+              }),
+              cacheDirectory,
+            });
+            const worker = startJobWorker(
+              db,
+              { download: handler },
+              {
+                concurrency: 1,
+                pollIntervalMs: 5,
+                heartbeatIntervalMs: 1_000,
+                cancellationPollIntervalMs: 5,
+                log,
+              },
+            );
+
+            try {
+              await waitForStatus(db, job.id, 'succeeded');
+            } finally {
+              await worker.stop();
+            }
+
+            const completedJob = await db
+              .selectFrom('jobs')
+              .select(['result', 'progress_bytes'])
+              .where('id', '=', job.id)
+              .executeTakeFirstOrThrow();
+            expect(completedJob.progress_bytes).toBe('0');
+            const storedResult = completedJob.result;
+            if (
+              typeof storedResult !== 'object' ||
+              storedResult === null ||
+              Array.isArray(storedResult)
+            ) {
+              throw new Error('The completed download did not store an object result.');
+            }
+            expect(storedResult.versionId).toBeTypeOf('string');
+            expect(storedResult.version).toBe(version);
+            expect(storedResult.skipReason).toBe('unchanged');
+            expect(
+              await db
+                .selectFrom('interval_run_items')
+                .select(['status', 'version', 'bytes', 'error_message'])
+                .where('job_id', '=', job.id)
+                .executeTakeFirstOrThrow(),
+            ).toEqual({
+              status: 'skipped',
+              version,
+              bytes: '0',
+              error_message: 'The source is unchanged; no download was needed.',
+            });
+            expect(
+              await db
+                .selectFrom('interval_runs')
+                .select([
+                  'status',
+                  'countries_ok',
+                  'countries_failed',
+                  'countries_skipped',
+                  'bytes_downloaded',
+                ])
+                .where('id', '=', run.id)
+                .executeTakeFirstOrThrow(),
+            ).toEqual({
+              status: 'succeeded',
+              countries_ok: 0,
+              countries_failed: 0,
+              countries_skipped: 1,
+              bytes_downloaded: '0',
+            });
+            expect(requests).toEqual([
+              'GET /europe/finland.html',
+              'HEAD /europe/finland-latest.osm.pbf',
+            ]);
+          });
+        },
+        { migrate: true, prefix: 'jobunchanged' },
+      );
+    });
+  });
+
   it('resumes a valid partial file with Range and preserves byte identity', async () => {
     await withGeofabrikFixtureServer({}, async ({ baseUrl, requests, requestDetails }) => {
       await withFreshDatabase(

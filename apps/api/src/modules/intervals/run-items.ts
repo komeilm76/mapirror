@@ -17,6 +17,7 @@ export type IntervalRunItemOutcome =
     }
   | {
       readonly status: 'skipped';
+      readonly version: string | null;
       readonly errorCode: string | null;
       readonly errorMessage: string | null;
     };
@@ -50,7 +51,7 @@ export async function finalizeIntervalRunItem(
         : {
             status: outcome.status,
             bytes: 0n,
-            version: null,
+            version: outcome.status === 'skipped' ? outcome.version : null,
             error_code: outcome.errorCode,
             error_message: outcome.errorMessage,
           },

@@ -403,9 +403,10 @@ when at least one country downloaded and at least one failed; all-failure runs a
 previous scheduled occurrence makes the next due occurrence skip (`SKIPPED_OVERLAP`, never stacked); missed schedule
 occurrences fire once on recovery.
 
-`only_if_changed` skip handling and version pruning are later interval tasks, not part of the run-now/history task.
+When `only_if_changed=true`, a `latest` job resolves the source page and PBF headers, then compares its freshness timestamp (and available version/size identity) with the newest ready Geofabrik version. If the identity matches and the cached artifact still exists at the expected size, the handler marks the country item `skipped` before fetching the MD5 sidecar or PBF body; the successful job result records `skipReason: unchanged` and the cached version. Missing timestamps, mismatched identity, or a missing/inconsistent artifact fall through to normal version and integrity handling rather than being reported as skipped. `only_if_changed=false` bypasses this early skip; normal checksum and ready-version handling remains idempotent and does not create duplicate immutable cache entries. Version pruning remains a later interval task.
 **Tests:** next-run math (daily/weekly/monthly, month-end, Feb 28), no double-fire under concurrent ticks, manual-run
-concurrency and disabled-schedule behavior, per-country terminal outcomes, and visible partial aggregate reporting.
+concurrency and disabled-schedule behavior, per-country terminal outcomes, unchanged-source skip without sidecar/PBF
+GET, and visible partial aggregate reporting.
 
 ---
 
