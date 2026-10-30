@@ -180,7 +180,9 @@ stateDiagram-v2
   `interval_runs_one_active` index. Runs are never stacked.
 - `next_run_at` is always computed in **UTC** from `frequency` + `time_of_day` (+ `weekday` for weekly,
   + `day_of_month` for monthly). `day_of_month` is restricted to **1…28 at the API and in the DB**, so
-  every month has the day and no clamping is ever needed.
+  every month has the day and no clamping is ever needed. `nextRunAt(schedule, after)` returns the first occurrence
+  strictly later than `after`; an occurrence exactly at the boundary has passed. After downtime, the caller advances
+  from claim time so one overdue run does not become a catch-up loop.
 - Missed runs (server down at 03:00): the loop fires the run **once** when it comes back, then
   schedules the next occurrence — documented, no silent multi-run catch-up (INT-4).
 - Schedule math lives in `lib/time.ts` and is unit-tested across DST-free UTC, month-ends, leap years.

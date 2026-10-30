@@ -217,7 +217,7 @@ prove L1–L3.
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
 | P4-INT-01 | Schema: intervals, interval_countries, runs, run_items | INT-1 | P2-DB-01 | 🟦 | Migration 0005, four typed Kysely tables, enum, indexes and CHECK constraints; frequency shape is exclusive (no irrelevant weekday/day-of-month values); P2-API-06 cache deletion removes memberships despite retaining the catalog country. Static parity/type tests pass; fresh-PostgreSQL migration, constraint and route tests are collected but skipped pending the Docker test run |
-| P4-INT-02 | Schedule math (`nextRunAt`, UTC, month-end) + unit tests | INT-4 | P4-INT-01 | ⬜ | Table-driven cases incl. Feb 28, leap year |
+| P4-INT-02 | Schedule math (`nextRunAt`, UTC, month-end) + unit tests | INT-4 | P4-INT-01 | ✅ | Pure UTC helper returns the first occurrence strictly after the supplied instant, validates the frequency shape, uses ISO weekdays, and handles month/year boundaries without clamping; 26 table-driven unit tests cover exact boundaries, UTC offsets, Feb 28 in common/leap years, leap-day rollover, and invalid inputs |
 | P4-INT-03 | Scheduler loop: claim + run row + enqueue + `next_run_at` in one tx | INT-4 | P4-INT-02, P2-JOB-01 | ⬜ | Concurrent ticks never double-fire; a failed enqueue rolls back; an active previous run skips the occurrence |
 | P4-INT-04 | Interval CRUD API + validation | INT-1 | P4-INT-01 | ⬜ | 422 on wrong shape (weekday for daily, etc.) |
 | P4-INT-05 | Run-now + run history + per-country items | INT-3 | P4-INT-03 | ⬜ | `partial` state visible |
