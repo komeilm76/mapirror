@@ -477,7 +477,7 @@ opened and held until the response closes, so cache deletion cannot unlink an ac
 202 { "uploadId": "…", "jobId": "…", "version": "2026-09-01" }
 ```
 
-A validated upload session and `import` job row are committed together. Until P4-IMP-03 registers the import worker handler, the job remains durably `queued`; it is not claimed or failed by the other job handlers.
+A validated upload session and `import` job row are committed together. The production worker streams the staged file into a cache `.part` while computing MD5, atomically installs it, and commits the version as `ready` only after successful installation; session status and cache totals are finalized in the same transaction. Failed/canceled work cleans artifacts before the worker's terminal job state and does not leave a ready version. Retryable handler failures keep the session in `installing` and expose the safe retry error.
 
 Errors: `400 VALIDATION_ERROR` (missing/invalid fields), `409 VERSION_DUPLICATE`,
 `413 FILE_TOO_LARGE`, `415 UNSUPPORTED_FORMAT` (wrong extension/media type or PBF header), and `503 DISK_FULL`.
@@ -496,9 +496,18 @@ curl -X POST http://localhost:8080/_admin/api/imports \
   -F countryId=6f1c… -F version=261001
 ```
 
-#### `GET /_admin/api/imports/:uploadId` — planned with P4-IMP-03
+#### `GET /_admin/api/imports/:uploadId`
 
-The upload-session status read is not implemented in P4-IMP-02. Until P4-IMP-03 adds it, clients can follow the accepted `jobId` through `GET /_admin/api/jobs/:jobId`; the import job remains queued until its handler is registered. The upload itself can report browser transfer progress with XHR `upload.onprogress`.
+Bearer-authenticated. Returns the durable upload-session state and a safe projection of its associated job error. It does not expose staging paths, raw exception text, or worker ownership.
+
+```json
+200 {
+  "status": "installing", "sizeBytes": 48392104, "checksumMd5": null,
+  "jobId": "…", "error": null
+}
+```
+
+`status` is `received | installing | installed | failed | expired`; `sizeBytes` is an exact JSON-safe integer or decimal string; `checksumMd5` remains `null` until the worker has verified and finalized the install. `error` is `null` or the same generic `JOB_HANDLER_FAILED` / `WORKER_LOST` projection used by job detail (including on a queued retry). Unknown upload IDs return `404 NOT_FOUND`. The upload itself can report browser transfer progress with XHR `upload.onprogress`.
 
 ---
 
@@ -522,7 +531,8 @@ is a type-specific allow-list (unknown fields are omitted), `error` contains onl
 
 Cancellation accepts an empty JSON body (or no body). `202 {jobId,status,accepted:true,cancelRequested:true}` means
 the request was accepted, not that running cleanup has finished. For queued work the row becomes `canceled` immediately;
-for running work it stays `running` with the durable request flag and its owner lock until the handler has cleaned up and
+for a queued import, its staged upload is removed before that terminal transition and its session is marked failed.
+For running work it stays `running` with the durable request flag and its owner lock until the handler has cleaned up and
 returned, after which the worker marks it canceled. Repeating cancellation on a canceled job is idempotently `202`. A
 succeeded or failed job cannot be canceled: the route returns `200 {jobId,status,accepted:false,cancelRequested:false}`
 without changing it. An unknown job returns `404 NOT_FOUND`.

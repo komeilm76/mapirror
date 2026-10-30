@@ -443,16 +443,25 @@ sequenceDiagram
   API->>TMP: stream to generated UUID .osm.pbf path
   API->>Q: transactionally insert upload session + import job
   API-->>A: 202 {uploadId, jobId}
-  Note over Q: Job stays queued until P4-IMP-03 registers its handler
-  Q->>Q: checksum → move into cache dir → mark ready
+  Q->>Q: stream + compute MD5 into cache .partial/<job>.part
+  Q->>Q: reserve pending map version; atomically install part
+  Q->>DB: transactionally mark version ready + session installed + refresh cache totals
+  A->>API: GET /_admin/api/imports/:uploadId
+  API-->>A: status + size + checksum + safe job error
   A->>A: row appears under the country with origin=upload
 ```
 
 **Rules:** exactly three required fields (file/country/version); uploads never overwrite silently;
-temp file removed on rejection/expiry (24 h). P4-IMP-02 rejects every duplicate; explicit replace is
-added by P4-IMP-04. Until P4-IMP-03 registers the import handler, accepted jobs remain queued.
-**Tests:** success, duplicate rejected, replace accepted after confirmation, wrong extension/header `415`,
-oversized `413`, invalid fields `400`, temp cleanup on failure.
+temp file removed on rejection/expiry (24 h) and after install. The worker verifies staged size while computing MD5,
+installs only through the cache storage boundary, and commits `map_versions=ready`, `upload_sessions=installed`, and
+`country_cache` aggregates in one transaction. On failure, staging/partial/installed artifacts are cleaned before the
+worker writes a terminal state; a failed import never leaves a ready row. Retryable failures remain eligible for the
+worker retry. Queued import cancellation removes the staged upload before the job becomes terminal and marks its session failed;
+running cancellation remains cooperative through handler cleanup. `GET /_admin/api/imports/:uploadId` exposes
+a strict status projection and only safe job error messages. P4-IMP-02 rejects every duplicate; explicit replace is
+added by P4-IMP-04.
+**Tests:** PostgreSQL success and install-failure worker cases, status read, duplicate rejected, wrong extension/header
+`415`, oversized `413`, invalid fields `400`, temp cleanup on failure.
 
 ---
 

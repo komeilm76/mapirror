@@ -156,6 +156,44 @@ describe('POST /_admin/api/imports', () => {
             replace: false,
           },
         });
+        const status = await context.app.inject({
+          method: 'GET',
+          url: `/_admin/api/imports/${body.uploadId}`,
+          headers: { authorization: `Bearer ${context.token}` },
+        });
+        expect(status.statusCode).toBe(200);
+        expect(status.json()).toEqual({
+          status: 'received',
+          sizeBytes: String(VALID_PBF_HEADER.byteLength),
+          checksumMd5: null,
+          jobId: body.jobId,
+          error: null,
+        });
+
+        const canceled = await context.app.inject({
+          method: 'POST',
+          url: `/_admin/api/jobs/${body.jobId}/cancel`,
+          headers: { authorization: `Bearer ${context.token}` },
+          payload: {},
+        });
+        expect(canceled.statusCode).toBe(202);
+        expect(canceled.json()).toEqual({
+          jobId: body.jobId,
+          status: 'canceled',
+          accepted: true,
+          cancelRequested: true,
+        });
+        await expect(
+          readFile(join(context.temporaryDirectory, session.temp_path)),
+        ).rejects.toMatchObject({
+          code: 'ENOENT',
+        });
+        const canceledSession = await context.app.db.db
+          .selectFrom('upload_sessions')
+          .select('status')
+          .where('id', '=', body.uploadId)
+          .executeTakeFirstOrThrow();
+        expect(canceledSession.status).toBe('failed');
       });
     },
   );

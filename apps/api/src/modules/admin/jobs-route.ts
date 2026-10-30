@@ -27,8 +27,10 @@ import { sql, type SelectQueryBuilder } from 'kysely';
 import type { ZodType } from 'zod';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
+import type { AppConfig } from '../../config/env';
 import type { Database, Job, JobType, JsonValue } from '../../db/schema';
 import { AppError } from '../../lib/errors';
+import { createUploadStorage, type UploadStorage } from '../storage/upload-storage';
 import { estimateJobEtaSeconds } from '../jobs/progress';
 import { requestJobCancellation } from '../jobs/cancellation';
 
@@ -113,19 +115,62 @@ export async function getJob(
   return JobDetailResponseSchema.parse(toJobView(row));
 }
 
-/** Handles `POST /_admin/api/jobs/:jobId/cancel` using the durable worker cancellation protocol. */
+/** Builds the cancellation route with the safe staging boundary for queued import cleanup. */
+export function createCancelJobHandler(
+  config: Pick<AppConfig, 'tmpDir'>,
+): (request: FastifyRequest<{ Params: { jobId: string } }>, reply: FastifyReply) => Promise<void> {
+  const uploads = createUploadStorage(config.tmpDir);
+  return (request, reply) => cancelJob(request, reply, uploads);
+}
+
+/** Handles cancellation, cleaning a queued import's staged file before its immediate terminal transition. */
 export async function cancelJob(
   request: FastifyRequest<{ Params: { jobId: string } }>,
   reply: FastifyReply,
+  uploads?: UploadStorage,
 ): Promise<void> {
   const params = JobParamsSchema.safeParse(request.params);
   if (!params.success) throw params.error;
   const body = JobCancelRequestSchema.safeParse(request.body === undefined ? {} : request.body);
   if (!body.success) throw body.error;
 
-  const result = await requestJobCancellation(request.server.db.db, params.data.jobId);
+  const database = request.server.db.db;
+  let queuedImportSessionId: string | undefined;
+  if (uploads !== undefined) {
+    const existing = await database
+      .selectFrom('jobs')
+      .select(['type', 'status'])
+      .where('id', '=', params.data.jobId)
+      .executeTakeFirst();
+    if (existing?.type === 'import' && existing.status === 'queued') {
+      const session = await database
+        .selectFrom('upload_sessions')
+        .select(['id', 'temp_path'])
+        .where('job_id', '=', params.data.jobId)
+        .where('status', 'in', ['received', 'installing'])
+        .executeTakeFirst();
+      if (session !== undefined) {
+        // Do filesystem work before the queued job becomes terminal. If a worker claims the row concurrently, the
+        // durable request below becomes cooperative cancellation of that running handler instead.
+        await uploads.fileAt(session.temp_path).remove();
+        queuedImportSessionId = session.id;
+      }
+    }
+  }
+
+  const result = await requestJobCancellation(database, params.data.jobId);
   if (!result.found || result.status === null) {
     throw new AppError('NOT_FOUND', 'The requested job does not exist.');
+  }
+
+  if (result.status === 'canceled' && queuedImportSessionId !== undefined) {
+    await database
+      .updateTable('upload_sessions')
+      .set({ status: 'failed' })
+      .where('id', '=', queuedImportSessionId)
+      .where('job_id', '=', params.data.jobId)
+      .where('status', 'in', ['received', 'installing'])
+      .execute();
   }
 
   const response = JobCancelResponseSchema.parse({

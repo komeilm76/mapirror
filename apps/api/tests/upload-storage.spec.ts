@@ -58,6 +58,9 @@ describe('upload staging storage', () => {
       await handle.close();
 
       await expect(file.size()).resolves.toBe(16n);
+      const readHandle = await file.openForRead();
+      await expect(readHandle.readFile('utf8')).resolves.toBe('staged map bytes');
+      await readHandle.close();
       await expect(readFile(join(root, file.relativePath), 'utf8')).resolves.toBe(
         'staged map bytes',
       );
@@ -93,6 +96,7 @@ describe('upload staging storage', () => {
 
       const file = createUploadStorage(root).file(UPLOAD_ID);
       await expect(file.openForWrite()).rejects.toMatchObject({ code: 'EEXIST' });
+      await expect(file.openForRead()).rejects.toBeInstanceOf(UploadStorageError);
       await expect(file.size()).rejects.toBeInstanceOf(UploadStorageError);
       await expect(file.remove()).resolves.toBe(true);
       await expect(lstat(filePath)).rejects.toMatchObject({ code: 'ENOENT' });

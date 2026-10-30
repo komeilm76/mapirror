@@ -20,7 +20,7 @@ import {
 import { createCacheDeleteHandler } from './cache-delete-route';
 import { createCacheVersionDeleteHandler } from './cache-version-delete-route';
 import { createCacheVersionDownloadHandler } from './cache-version-download-route';
-import { cancelJob, getJob, getJobs } from './jobs-route';
+import { createCancelJobHandler, getJob, getJobs } from './jobs-route';
 import { getCacheDetail, getCacheList } from './cache-route';
 import { postCachePublic } from './cache-public-route';
 import { getCacheVersions } from './cache-versions-route';
@@ -28,6 +28,7 @@ import { createCatalogRegionHandlers } from './catalog-region-route';
 import { getCatalog } from './catalog-route';
 import { postCatalogSync } from './catalog-sync-route';
 import { createImportHandler } from './import-route';
+import { getImportStatus } from './import-status-route';
 
 /** The validated settings required to configure admin source reads. */
 export interface AdminRouteOptions {
@@ -47,6 +48,7 @@ export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, op
     },
   });
   const importHandler = createImportHandler({ config: options.config });
+  const cancelJob = createCancelJobHandler(options.config);
   const source = createGeofabrikMapSource(options.config.geofabrikBaseUrl);
   const regionHandlers = createCatalogRegionHandlers(source);
   const cacheDownload = createCacheDownloadHandler({ config: options.config, source });
@@ -71,6 +73,7 @@ export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, op
   app.delete('/cache/:countryId', cacheDelete);
   app.post('/cache/downloads', cacheDownload);
   app.post('/imports', importHandler);
+  app.get('/imports/:uploadId', getImportStatus);
   app.get('/jobs', getJobs);
   app.get('/jobs/:jobId', getJob);
   app.post('/jobs/:jobId/cancel', cancelJob);

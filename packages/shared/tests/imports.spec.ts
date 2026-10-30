@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { ImportMultipartFieldsSchema, ImportResponseSchema } from '../src/imports';
+import {
+  ImportMultipartFieldsSchema,
+  ImportResponseSchema,
+  ImportStatusResponseSchema,
+} from '../src/imports';
 
 describe('import multipart contracts', () => {
   const countryId = 'df313a9d-0f4c-45df-922e-939531ad4487';
@@ -32,5 +36,25 @@ describe('import multipart contracts', () => {
     };
     expect(ImportResponseSchema.parse(response)).toEqual(response);
     expect(ImportResponseSchema.safeParse({ ...response, extra: true }).success).toBe(false);
+  });
+
+  it('validates the safe import status projection and safe job errors', () => {
+    const response = {
+      status: 'installing',
+      sizeBytes: 512,
+      checksumMd5: null,
+      jobId: 'e303204b-e113-42a0-a867-825886010115',
+      error: { code: 'WORKER_LOST', message: 'The worker stopped before this job completed.' },
+    };
+    expect(ImportStatusResponseSchema.parse(response)).toEqual(response);
+    expect(ImportStatusResponseSchema.safeParse({ ...response, rawError: 'secret' }).success).toBe(
+      false,
+    );
+    expect(
+      ImportStatusResponseSchema.safeParse({
+        ...response,
+        error: { code: 'INTERNAL', message: 'secret' },
+      }).success,
+    ).toBe(false);
   });
 });

@@ -18,6 +18,8 @@ export interface UploadFile {
   readonly relativePath: string;
   /** Opens an empty new regular file, refusing an existing file or symlink instead of overwriting it. */
   openForWrite(): Promise<FileHandle>;
+  /** Opens an existing regular file for reading without following a leaf symlink. */
+  openForRead(): Promise<FileHandle>;
   /** Returns the current size, or zero when the file does not exist. */
   size(): Promise<bigint>;
   /** Removes only this regular file or a leaf symlink; returns false when it was absent. */
@@ -81,6 +83,14 @@ export function createUploadStorage(temporaryDirectory: string): UploadStorage {
           constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
           0o600,
         );
+      },
+      openForRead: async () => {
+        const path = join(await getRoot(), relativePath);
+        const details = await lstat(path);
+        if (!details.isFile() || details.isSymbolicLink()) {
+          throw new UploadStorageError('Upload staging path is not a regular file.');
+        }
+        return open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
       },
       size: async () => {
         const path = join(await getRoot(), relativePath);

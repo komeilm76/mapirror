@@ -46,6 +46,7 @@ passes. Patch releases (`0.1.1`, …) are corrections to an already-tagged phase
 - Three temporary `503 NOT_READY` stubs at their real contract paths (`POST /_auth/api/login`,
   `GET /_admin/api/catalog`, `GET /_public/api/countries`), each naming the task that replaces it and
   asserted as a set by test, so a forgotten stub fails the gate rather than shipping.
+- **P4-IMP-03 import worker + status API:** accepted `import` jobs now stream staged PBF bytes into a cache part while computing MD5, atomically install before marking the version ready, and finalize the upload session/cache totals transactionally. Cancellation and terminal failure clean artifacts first and do not leave a ready version; queued import cancellation removes staging before the job becomes terminal. Added authenticated `GET /_admin/api/imports/:uploadId` with strict safe status/error projection and no-follow staging reads.
 
 ### Fixed
 - `readPort` accepted `0x10` and `30e3` as ports (16 and 30000) because it used `Number()`; it now reads
