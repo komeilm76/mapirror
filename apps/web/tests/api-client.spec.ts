@@ -246,6 +246,86 @@ describe('how a request is built', () => {
   });
 });
 
+describe('how multipart uploads are sent', () => {
+  it('streams multipart bytes with bearer, cookie and progress policy in the shared client', async () => {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, 'mm_upload_token');
+    const file = new File(['PBF payload'], 'finland.osm.pbf', { type: 'application/octet-stream' });
+    Object.defineProperty(file, 'stream', {
+      value: () =>
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('PBF payload'));
+            controller.close();
+          },
+        }),
+    });
+    const form = new FormData();
+    form.append('file', file);
+    form.append('countryId', 'country-1');
+    form.append('version', '261030');
+    const progress: Array<{ loadedBytes: number; totalBytes: number | null }> = [];
+    let sentBody = '';
+    const fetchImpl = vi.fn<typeof fetch>(async (_input, init) => {
+      if (!(init?.body instanceof ReadableStream)) throw new Error('upload body was not streamed');
+      sentBody = await new Response(init.body).text();
+      return new Response('{"uploadId":"00000000-0000-4000-8000-000000000101"}', { status: 202 });
+    });
+
+    const response = await createApiClient({ fetchImpl }).postForm<{ uploadId: string }>(
+      '/_admin/api/imports',
+      form,
+      { onProgress: (event) => progress.push(event) },
+    );
+
+    const [input, init] = fetchImpl.mock.calls[0] ?? [];
+    const headers = new Headers(init?.headers);
+    expect(response.uploadId).toBe('00000000-0000-4000-8000-000000000101');
+    expect(requestUrl(input)).toBe('/_admin/api/imports');
+    expect(init?.method).toBe('POST');
+    expect(init?.credentials).toBe('omit');
+    expect(init).toMatchObject({ duplex: 'half' });
+    expect(headers.get('authorization')).toBe('Bearer mm_upload_token');
+    expect(headers.get('accept')).toBe('application/json');
+    expect(headers.get('content-type')).toMatch(/^multipart\/form-data; boundary=mapirror-/u);
+    expect(sentBody).toContain('name="file"; filename="finland.osm.pbf"');
+    expect(sentBody).toContain('name="countryId"');
+    expect(sentBody).toContain('country-1');
+    expect(sentBody).toContain('name="version"');
+    expect(sentBody).toContain('261030');
+    expect(sentBody).toContain('PBF payload');
+    expect(progress.length).toBeGreaterThan(1);
+    expect(progress.at(-1)).toEqual({
+      loadedBytes: progress.at(-1)?.totalBytes,
+      totalBytes: progress.at(-1)?.totalBytes,
+    });
+  });
+
+  it('preserves structured duplicate details and request ids from multipart errors', async () => {
+    const fetchImpl = rawFetch(
+      JSON.stringify({
+        error: {
+          code: 'VERSION_DUPLICATE',
+          message: 'Confirm replacement before retrying.',
+          details: { replaceAllowed: true },
+          requestId: 'req-duplicate-001',
+        },
+      }),
+      409,
+    );
+    const form = new FormData();
+
+    const rejected = createApiClient({ fetchImpl }).postForm('/_admin/api/imports', form);
+
+    await expect(rejected).rejects.toMatchObject({
+      code: 'VERSION_DUPLICATE',
+      details: { replaceAllowed: true },
+      requestId: 'req-duplicate-001',
+    });
+    const [, init] = fetchImpl.mock.calls[0] ?? [];
+    expect(init?.credentials).toBe('omit');
+  });
+});
+
 describe('how an answer is read', () => {
   it('parses a JSON body', async () => {
     const fetchImpl = jsonFetch({ data: [{ slug: 'finland' }] });

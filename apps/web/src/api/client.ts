@@ -56,6 +56,19 @@ export interface ApiRequestOptions {
 /** Options for a streaming download; map extracts have no fixed timeout because they can be several GiB. */
 export type ApiStreamOptions = Pick<ApiRequestOptions, 'query' | 'headers' | 'signal'>;
 
+/** Upload transfer progress; total is null when the browser cannot compute the multipart request length. */
+export interface ApiUploadProgress {
+  readonly loadedBytes: number;
+  readonly totalBytes: number | null;
+}
+
+/** Options for a multipart upload. No default timeout is applied to potentially multi-gigabyte files. */
+export interface ApiUploadOptions {
+  readonly signal?: AbortSignal;
+  readonly timeoutMs?: number;
+  readonly onProgress?: (progress: ApiUploadProgress) => void;
+}
+
 /** Options for {@link createApiClient}. Everything is injectable so a test needs no network and no globals. */
 export interface ApiClientOptions {
   /** The `fetch` to use; defaults to the global one. */
@@ -79,6 +92,8 @@ export interface ApiClient {
     destination: WritableStream<Uint8Array>,
     options?: ApiStreamOptions,
   ) => Promise<void>;
+  /** Sends multipart form data with upload progress, preserving the shared auth/error/session policy. */
+  postForm: <T>(path: string, body: FormData, options?: ApiUploadOptions) => Promise<T>;
   get: <T>(path: string, options?: ApiRequestOptions) => Promise<T>;
   post: <T>(path: string, body?: unknown, options?: ApiRequestOptions) => Promise<T>;
   patch: <T>(path: string, body?: unknown, options?: ApiRequestOptions) => Promise<T>;
@@ -178,6 +193,108 @@ async function readSuccess<T>(response: Response): Promise<T> {
       requestId: response.headers.get('x-request-id'),
     });
   }
+}
+
+/** Creates a random multipart boundary, avoiding likely collisions with arbitrary map bytes. */
+function multipartBoundary(): string {
+  const random =
+    globalThis.crypto?.randomUUID?.() ??
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `mapirror-${random}`;
+}
+
+/** Escapes a field value for a quoted multipart Content-Disposition parameter. */
+function quoteMultipartValue(value: string): string {
+  return value.replace(/[\\"\r\n]/gu, '_');
+}
+
+/**
+ * Encodes FormData as a streaming multipart body and reports bytes as the Fetch consumer pulls them.
+ *
+ * The import form contains only small string fields and one large File. Keeping the file as a stream avoids an
+ * additional full-file allocation and makes the upload work with Fetch's credential-omission policy.
+ *
+ * @param formData - Fields to send.
+ * @param boundary - Unique multipart boundary.
+ * @param onProgress - Optional consumed-byte callback.
+ * @returns A stream and exact encoded body length.
+ */
+function createMultipartBody(
+  formData: FormData,
+  boundary: string,
+  onProgress?: (progress: ApiUploadProgress) => void,
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const pieces: Array<Uint8Array | ReadableStream<Uint8Array>> = [];
+  let totalBytes = 0;
+  for (const [name, value] of formData.entries()) {
+    const fieldName = quoteMultipartValue(name);
+    if (typeof value === 'string') {
+      const content = encoder.encode(value);
+      pieces.push(
+        encoder.encode(
+          `--${boundary}\r\nContent-Disposition: form-data; name="${fieldName}"\r\n\r\n`,
+        ),
+        content,
+        encoder.encode('\r\n'),
+      );
+      totalBytes += pieces
+        .slice(-3)
+        .reduce((sum, piece) => sum + (ArrayBuffer.isView(piece) ? piece.byteLength : 0), 0);
+      continue;
+    }
+
+    const filename = quoteMultipartValue(value.name.replace(/[^A-Za-z0-9._-]/gu, '_'));
+    const contentType = /^[\w!#$&^_.+-]+\/[\w!#$&^_.+-]+$/u.test(value.type)
+      ? value.type
+      : 'application/octet-stream';
+    const header = encoder.encode(
+      `--${boundary}\r\nContent-Disposition: form-data; name="${fieldName}"; filename="${filename}"\r\nContent-Type: ${contentType}\r\n\r\n`,
+    );
+    const trailer = encoder.encode('\r\n');
+    pieces.push(header, value.stream(), trailer);
+    totalBytes += header.byteLength + value.size + trailer.byteLength;
+  }
+  const closing = encoder.encode(`--${boundary}--\r\n`);
+  pieces.push(closing);
+  totalBytes += closing.byteLength;
+
+  let pieceIndex = 0;
+  let activeReader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let loadedBytes = 0;
+  return new ReadableStream<Uint8Array>({
+    async pull(streamController) {
+      while (pieceIndex < pieces.length) {
+        const piece = pieces[pieceIndex];
+        if (piece === undefined) break;
+        if (ArrayBuffer.isView(piece)) {
+          const chunk = piece;
+          pieceIndex += 1;
+          loadedBytes += chunk.byteLength;
+          streamController.enqueue(chunk);
+          onProgress?.({ loadedBytes, totalBytes });
+          return;
+        }
+
+        activeReader ??= piece.getReader();
+        const next = await activeReader.read();
+        if (next.done) {
+          activeReader.releaseLock();
+          activeReader = undefined;
+          pieceIndex += 1;
+          continue;
+        }
+        loadedBytes += next.value.byteLength;
+        streamController.enqueue(next.value);
+        onProgress?.({ loadedBytes, totalBytes });
+        return;
+      }
+      streamController.close();
+    },
+    async cancel(reason) {
+      await activeReader?.cancel(reason);
+    },
+  });
 }
 
 /**
@@ -370,9 +487,91 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     }
   }
 
+  /**
+   * Sends multipart data as a streaming Fetch request so file bytes are never JSON encoded or buffered in memory.
+   *
+   * Fetch does not expose upload progress directly, so the multipart stream reports bytes as the browser consumes it. A
+   * streaming Fetch body is used instead of same-origin XHR because `credentials: 'omit'` enforces the shared client's
+   * no-cookie rule for this upload as well as JSON requests and downloads.
+   *
+   * @param path - A documented API path.
+   * @param formData - Multipart fields and the file.
+   * @param uploadOptions - Optional cancellation, progress and explicit timeout.
+   * @returns The parsed success JSON.
+   */
+  async function postForm<T>(
+    path: string,
+    formData: FormData,
+    uploadOptions: ApiUploadOptions = {},
+  ): Promise<T> {
+    if (!isApiPath(path)) {
+      throw new Error(
+        `POST ${path} is not an API path: useApi() talks to /_auth/api, /_admin/api and /_public/api.`,
+      );
+    }
+
+    const presented = needsBearer(path) ? readToken() : null;
+    const boundary = multipartBoundary();
+    const headers = new Headers({
+      accept: 'application/json',
+      'content-type': `multipart/form-data; boundary=${boundary}`,
+    });
+    if (presented !== null) headers.set('authorization', `Bearer ${presented}`);
+
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeoutMs = uploadOptions.timeoutMs ?? 0;
+    const timer =
+      timeoutMs > 0
+        ? setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+          }, timeoutMs)
+        : undefined;
+    const forwardAbort = (): void => controller.abort();
+    if (uploadOptions.signal?.aborted === true) {
+      if (timer !== undefined) clearTimeout(timer);
+      throw errorFromFailure(undefined, 'ABORTED');
+    }
+    uploadOptions.signal?.addEventListener('abort', forwardAbort, { once: true });
+
+    try {
+      const body = createMultipartBody(formData, boundary, uploadOptions.onProgress);
+      // Streaming request bodies let us report bytes consumed by the browser without buffering a potentially huge PBF
+      // in memory. `duplex: 'half'` is required by browsers that implement the Fetch request-streaming contract. Using
+      // fetch here is deliberate: unlike same-origin XHR, `credentials: 'omit'` also prevents cookies on this upload.
+      const requestInit = {
+        method: 'POST',
+        headers,
+        body,
+        signal: controller.signal,
+        credentials: 'omit',
+        duplex: 'half',
+      } as RequestInit & { duplex: 'half' };
+      const response = await fetchImpl(buildUrl(baseUrl, path), requestInit);
+
+      if (!response.ok) {
+        const error = await errorFromResponse(response);
+        if (presented !== null && error.sessionEnded) notifySessionExpired(error);
+        throw error;
+      }
+      return await readSuccess<T>(response);
+    } catch (cause) {
+      if (cause instanceof ApiError) throw cause;
+      throw errorFromFailure(
+        cause,
+        timedOut ? 'TIMEOUT' : controller.signal.aborted ? 'ABORTED' : 'NETWORK',
+      );
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      uploadOptions.signal?.removeEventListener('abort', forwardAbort);
+    }
+  }
+
   return {
     request,
     stream,
+    postForm,
     get: <T>(path: string, requestOptions?: ApiRequestOptions): Promise<T> =>
       request<T>('GET', path, requestOptions),
     post: <T>(

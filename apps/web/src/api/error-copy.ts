@@ -71,8 +71,9 @@ export const ERROR_COPY = {
     action: 'Refresh the page or return to the list and try again.',
   },
   VERSION_DUPLICATE: {
-    message: 'That version already exists.',
-    action: 'Choose a different version or remove the existing one before retrying.',
+    message: 'That version already exists or is being processed.',
+    action:
+      'Use the explicit replace confirmation for an eligible version, or wait for active work to finish.',
   },
   VERSION_ALREADY_CACHED: {
     message: 'That version is already cached.',

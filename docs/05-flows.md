@@ -468,8 +468,8 @@ with `replaceAllowed`; only a ready/failed version without active work may be re
 `replace=true`. The old row/artifact remains unchanged until the new artifact is installed and the version row is
 atomically recreated; a previously ready artifact stays served throughout, and failed replacement preserves the old version. Retryable failures remain eligible for worker
 retry. Queued import cancellation removes staging before terminal state; running cancellation waits for handler cleanup.
-`GET /_admin/api/imports/:uploadId` exposes a strict status projection and safe job errors.
-**Tests:** PostgreSQL initial success/install-failure, confirmed replacement success and preservation on replacement failure,
+`GET /_admin/api/imports/:uploadId` exposes a strict status projection and safe job errors. The S10 form searches the synced country catalog, accepts an `.osm.pbf` by drop or file picker, and keeps the form to exactly file/country/version; after client validation it preflights existing versions, asks for a separate explicit confirmation before any replacement upload, reports multipart byte progress, then follows the accepted job in the persistent progress drawer.
+**Tests:** Web validation, duplicate preflight/confirmation, multipart progress and job-follow flow; PostgreSQL initial success/install-failure, confirmed replacement success and preservation on replacement failure,
 status read, duplicate confirmation semantics, download-enqueue conflicts, and `latest` import/download conflicts; wrong
 extension/header `415`, oversized `413`, invalid fields `400`, and temp cleanup.
 

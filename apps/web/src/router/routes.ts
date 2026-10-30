@@ -13,12 +13,13 @@
  *
  * ## Which screens are real today
  *
- * Nine: the public catalog, country detail and API documentation render `HomePage.vue` (`P3-WEB-01`),
- * `CountryDetailPage.vue` (`P3-WEB-02/03`) and `ApiDocsPage.vue` (`P3-WEB-04`); the admin catalog/cache screens render
- * `CatalogPage.vue` (`P2-WEB-01`), `CachePage.vue` (`P2-WEB-03`), `CacheCountryPage.vue` (`P2-WEB-04`) and
- * `JobsPage.vue` (`P2-WEB-06`); the login page renders `LoginPage.vue` (`P1-WEB-06`), and the not-found catch-all
- * renders `NotFoundPage.vue`. The other six are `PlaceholderPage`, which says which screen it stands in for and which
- * task replaces it. A router tree full of invented screens would be worse than one that names its own gaps.
+ * Ten: the public catalog, country detail and API documentation render `HomePage.vue` (`P3-WEB-01`),
+ * `CountryDetailPage.vue` (`P3-WEB-02/03`) and `ApiDocsPage.vue` (`P3-WEB-04`); the admin catalog/cache/import screens
+ * render `CatalogPage.vue` (`P2-WEB-01`), `CachePage.vue` (`P2-WEB-03`), `CacheCountryPage.vue` (`P2-WEB-04`),
+ * `ImportPage.vue` (`P4-IMP-05`) and `JobsPage.vue` (`P2-WEB-06`); the login page renders `LoginPage.vue`
+ * (`P1-WEB-06`), and the not-found catch-all renders `NotFoundPage.vue`. The other five are `PlaceholderPage`, which
+ * says which screen it stands in for and which task replaces it. A router tree full of invented screens would be worse
+ * than one that names its own gaps.
  *
  * ## The two records that are not pages
  *
@@ -34,6 +35,7 @@ import type { RouteRecordRaw } from 'vue-router';
 
 import CachePage from '@/pages/admin/CachePage.vue';
 import CatalogPage from '@/pages/admin/CatalogPage.vue';
+import ImportPage from '@/pages/admin/ImportPage.vue';
 import LoginPage from '@/pages/auth/LoginPage.vue';
 import HomePage from '@/pages/public/HomePage.vue';
 import NotFoundPage from '@/pages/public/NotFoundPage.vue';
@@ -124,13 +126,12 @@ export const APP_ROUTES: readonly RouteRecordRaw[] = [
     screen: 'S9',
     owner: 'P4-INT-08',
   }),
-  pending({
+  {
     path: adminPagePaths.import(),
     name: 'admin-import',
-    title: 'Import',
-    screen: 'S10',
-    owner: 'P4-IMP-05',
-  }),
+    component: ImportPage,
+    meta: { title: 'Import', screen: 'S10', owner: 'P4-IMP-05' },
+  },
   {
     path: adminPagePaths.jobs(),
     name: 'admin-jobs',
