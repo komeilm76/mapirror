@@ -34,7 +34,13 @@ describe('EXPECTED_MIGRATIONS', () => {
 });
 
 describe('compareSchema', () => {
-  const expected = ['0001_init', '0002_catalog', '0003_download_events', '0004_upload_sessions'];
+  const expected = [
+    '0001_init',
+    '0002_catalog',
+    '0003_download_events',
+    '0004_upload_sessions',
+    '0005_intervals',
+  ];
 
   it('reports nothing for a database that matches the build', () => {
     const report = compareSchema({ expected, onDisk: expected, applied: expected });
@@ -52,6 +58,7 @@ describe('compareSchema', () => {
       '0002_catalog',
       '0003_download_events',
       '0004_upload_sessions',
+      '0005_intervals',
     ]);
     expect(report.unknown).toEqual([]);
   });
@@ -78,6 +85,7 @@ describe('compareSchema', () => {
       '0002_catalog',
       '0003_download_events',
       '0004_upload_sessions',
+      '0005_intervals',
     ]);
   });
 

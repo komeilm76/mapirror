@@ -1,9 +1,9 @@
 /**
- * Kysely types for the phase-1/2 foundation, download events, and import staging (`P1-DB-02`, `P2-DB-01`,
- * `P2-API-09`, `P4-IMP-01`).
+ * Kysely types for the phase-1/2 foundation, interval schedules, download events, and import staging (`P1-DB-02`,
+ * `P2-DB-01`, `P2-API-09`, `P4-IMP-01`, `P4-INT-01`).
  *
- * The columns here mirror `03-data-model.md` §§2.1–2.6, §2.8, §2.10 and §2.11, and migrations `0001_init.sql`,
- * `0002_catalog.sql`, `0003_download_events.sql` and `0004_upload_sessions.sql`. Repositories import these types —
+ * The columns here mirror `03-data-model.md` §§2.1–2.8, §2.10 and §2.11, and migrations `0001_init.sql`,
+ * `0002_catalog.sql`, `0003_download_events.sql`, `0004_upload_sessions.sql` and `0005_intervals.sql`. Repositories import these types —
  * never `any`, never `unknown` for a row — so queries against
  * nonexistent columns fail to compile instead of at 3 a.m. (`10-laws.md` L5).
  *
@@ -193,6 +193,71 @@ export interface UploadSessions {
   expires_at: CreatedTimestamp;
 }
 
+/** Values of PostgreSQL's `interval_frequency` enum. */
+export type IntervalFrequency = 'daily' | 'weekly' | 'monthly';
+/** Values of an interval run's `triggered_by` column. */
+export type IntervalRunTrigger = 'schedule' | 'manual';
+/** Values of an interval run's `status` column. */
+export type IntervalRunStatus = 'running' | 'succeeded' | 'partial' | 'failed';
+/** Values of an interval run item's `status` column. */
+export type IntervalRunItemStatus = 'queued' | 'skipped' | 'downloaded' | 'failed';
+
+/** An interval schedule (`03-data-model.md` §2.7). */
+export interface Intervals {
+  id: GeneratedAlways<string>;
+  name: string;
+  frequency: IntervalFrequency;
+  time_of_day: Generated<string>;
+  weekday: number | null;
+  day_of_month: number | null;
+  keep_versions: Generated<number>;
+  only_if_changed: Generated<boolean>;
+  enabled: Generated<boolean>;
+  next_run_at: RequiredTimestamp;
+  last_run_at: NullableTimestamp;
+  last_status: string | null;
+  created_by: string | null;
+  created_at: CreatedTimestamp;
+  updated_at: CreatedTimestamp;
+}
+
+/** Country membership for an interval schedule (`03-data-model.md` §2.7). */
+export interface IntervalCountries {
+  interval_id: string;
+  country_id: string;
+}
+
+/** One durable interval execution (`03-data-model.md` §2.7). */
+export interface IntervalRuns {
+  id: GeneratedAlways<string>;
+  interval_id: string;
+  triggered_by: IntervalRunTrigger;
+  status: Generated<IntervalRunStatus>;
+  countries_total: Generated<number>;
+  countries_ok: Generated<number>;
+  countries_failed: Generated<number>;
+  countries_skipped: Generated<number>;
+  bytes_downloaded: GeneratedInt8Column;
+  started_at: CreatedTimestamp;
+  finished_at: NullableTimestamp;
+  error_message: string | null;
+}
+
+/** Country-level snapshot in an interval execution (`03-data-model.md` §2.7). */
+export interface IntervalRunItems {
+  id: GeneratedAlways<string>;
+  run_id: string;
+  country_id: string | null;
+  country_slug: string;
+  country_name: string;
+  job_id: string | null;
+  status: Generated<IntervalRunItemStatus>;
+  version: string | null;
+  bytes: GeneratedInt8Column;
+  error_code: string | null;
+  error_message: string | null;
+}
+
 /** Values of PostgreSQL's `job_type` enum. */
 export type JobType = 'download' | 'import' | 'update_check' | 'catalog_sync' | 'prune';
 /** Values of PostgreSQL's `job_status` enum. */
@@ -292,6 +357,12 @@ export type CountryCacheRow = SelectRow<CountryCache>;
 export type MapVersion = SelectRow<MapVersions>;
 /** A row of `upload_sessions`, as selected. */
 export type UploadSession = SelectRow<UploadSessions>;
+/** A row of `intervals`, as selected. */
+export type Interval = SelectRow<Intervals>;
+/** A row of `interval_runs`, as selected. */
+export type IntervalRun = SelectRow<IntervalRuns>;
+/** A row of `interval_run_items`, as selected. */
+export type IntervalRunItem = SelectRow<IntervalRunItems>;
 /** A row of `jobs`, as selected. */
 export type Job = SelectRow<Jobs>;
 /** A row of `settings`, as selected. */
@@ -315,7 +386,7 @@ export type SelectRow<T> = {
  * Every table Kysely knows about.
  *
  * `P2-DB-01` adds catalog, cache, version and job tables; `P2-API-09` adds download events; `P4-IMP-01` adds upload
- * sessions. Interval and metrics tables remain future tasks. Until a table is listed here, a query against it does not
+ * sessions; `P4-INT-01` adds interval schedules and run history. Metrics tables remain a future task. Until a table is listed here, a query against it does not
  * compile — which is the property that makes this file worth having.
  */
 export interface Database {
@@ -325,6 +396,10 @@ export interface Database {
   country_cache: CountryCache;
   map_versions: MapVersions;
   upload_sessions: UploadSessions;
+  intervals: Intervals;
+  interval_countries: IntervalCountries;
+  interval_runs: IntervalRuns;
+  interval_run_items: IntervalRunItems;
   jobs: Jobs;
   settings: Settings;
   audit_logs: AuditLogs;

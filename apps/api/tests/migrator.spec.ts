@@ -43,6 +43,7 @@ describe('listMigrationFiles', () => {
       '0002_catalog',
       '0003_download_events',
       '0004_upload_sessions',
+      '0005_intervals',
     ]);
     expect(files[0]?.path).toBe(join(MIGRATIONS_DIR, '0001_init.sql'));
     // The file has to exist, because the provider reads it by path.
@@ -122,15 +123,18 @@ describe('SqlMigrationProvider', () => {
       '0002_catalog',
       '0003_download_events',
       '0004_upload_sessions',
+      '0005_intervals',
     ]);
     const migration = migrations['0001_init']!;
     const catalogMigration = migrations['0002_catalog']!;
     const downloadEventsMigration = migrations['0003_download_events']!;
     const uploadSessionsMigration = migrations['0004_upload_sessions']!;
+    const intervalsMigration = migrations['0005_intervals']!;
     expect(typeof migration.up).toBe('function');
     expect(typeof catalogMigration.up).toBe('function');
     expect(typeof downloadEventsMigration.up).toBe('function');
     expect(typeof uploadSessionsMigration.up).toBe('function');
+    expect(typeof intervalsMigration.up).toBe('function');
     // Forward-only (`03-data-model.md` §4): rollback is a restore, not a script. Asserted as the *shape* of the
     // object, because a `down` that exists and does nothing is worse than one that is absent.
     expect(Object.keys(migration)).toEqual(['up']);
@@ -311,6 +315,76 @@ describe('the migration agrees with 03-data-model.md', () => {
     expect(
       [...sqlText.matchAll(/CREATE (?:UNIQUE )?INDEX (\w+)/g)].map((match) => match[1]),
     ).toEqual(['upload_sessions_temp_path_key', 'upload_sessions_expiry_idx']);
+  });
+
+  it('creates the documented interval tables and indexes, with mutually exclusive frequency fields', async () => {
+    const doc = await readFile(DOC, 'utf8');
+    const heading = '### 2.7 ';
+    const start = doc.indexOf(heading);
+    expect(start, '### 2.7 interval schedules must exist').toBeGreaterThan(-1);
+    const end = doc.indexOf('\n### ', start + heading.length);
+    const section = doc.slice(start, end === -1 ? undefined : end);
+    const sqlText = await readFile(join(MIGRATIONS_DIR, '0005_intervals.sql'), 'utf8');
+
+    const tablesIn = (text: string) =>
+      [...text.matchAll(/CREATE TABLE (\w+)/g)].map((match) => match[1]);
+    expect(tablesIn(section)).toEqual([
+      'intervals',
+      'interval_countries',
+      'interval_runs',
+      'interval_run_items',
+    ]);
+    expect(tablesIn(sqlText)).toEqual(tablesIn(section));
+
+    const columnsIn = (text: string) =>
+      [...text.matchAll(/CREATE TABLE (\w+) \(([\s\S]*?)\n\);/g)].map((table) => ({
+        name: table[1],
+        columns: (table[2] as string)
+          .split('\n')
+          .map((line) => /^ {2}(\w+)\s+(.+)$/.exec(line))
+          .filter(
+            (match): match is RegExpExecArray =>
+              match !== null &&
+              !['CONSTRAINT', 'PRIMARY', 'UNIQUE', 'CHECK', 'FOREIGN'].includes(
+                match[1]!.toUpperCase(),
+              ),
+          )
+          .map((match) => ({ name: match[1], nullable: !/NOT NULL|PRIMARY KEY/i.test(match[2]!) })),
+      }));
+    expect(columnsIn(sqlText)).toEqual(columnsIn(section));
+
+    const indexNames = (text: string) =>
+      [...text.matchAll(/CREATE (?:UNIQUE )?INDEX (\w+)/g)].map((match) => match[1]);
+    expect(indexNames(section)).toEqual([
+      'intervals_due_idx',
+      'interval_countries_country_idx',
+      'interval_runs_interval_idx',
+      'interval_runs_one_active',
+      'interval_run_items_unique',
+    ]);
+    expect(indexNames(sqlText)).toEqual(indexNames(section));
+
+    const indexDefinitions = (text: string) =>
+      [...text.matchAll(/CREATE (?:UNIQUE )?INDEX\b[\s\S]*?;/g)].map((match) =>
+        match[0].replace(/\s+/g, ' ').trim(),
+      );
+    expect(indexDefinitions(sqlText)).toEqual(indexDefinitions(section));
+    expect(sqlText).toContain(
+      "CREATE TYPE interval_frequency AS ENUM ('daily', 'weekly', 'monthly')",
+    );
+    expect(sqlText).toContain("(frequency = 'daily' AND weekday IS NULL AND day_of_month IS NULL)");
+    expect(sqlText).toContain(
+      "(frequency = 'weekly' AND weekday IS NOT NULL AND day_of_month IS NULL)",
+    );
+    expect(sqlText).toContain(
+      "(frequency = 'monthly' AND weekday IS NULL AND day_of_month IS NOT NULL)",
+    );
+    const shapeRule = (text: string) =>
+      /CONSTRAINT intervals_shape CHECK \([\s\S]*?\n {2}\)/
+        .exec(text)?.[0]
+        .replace(/\s+/g, ' ')
+        .trim();
+    expect(shapeRule(sqlText)).toBe(shapeRule(section));
   });
 
   it('does not create a table the document never names', async () => {

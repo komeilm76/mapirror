@@ -282,9 +282,9 @@ CREATE TABLE intervals (
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT intervals_shape CHECK (
-    (frequency = 'daily')
-    OR (frequency = 'weekly'  AND weekday IS NOT NULL)
-    OR (frequency = 'monthly' AND day_of_month IS NOT NULL)
+    (frequency = 'daily' AND weekday IS NULL AND day_of_month IS NULL)
+    OR (frequency = 'weekly' AND weekday IS NOT NULL AND day_of_month IS NULL)
+    OR (frequency = 'monthly' AND weekday IS NULL AND day_of_month IS NOT NULL)
   )
 );
 CREATE INDEX intervals_due_idx ON intervals (next_run_at) WHERE enabled;
@@ -294,6 +294,7 @@ CREATE TABLE interval_countries (
   country_id  uuid NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
   PRIMARY KEY (interval_id, country_id)
 );
+CREATE INDEX interval_countries_country_idx ON interval_countries (country_id, interval_id);
 
 CREATE TABLE interval_runs (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -332,7 +333,8 @@ CREATE TABLE interval_run_items (
 CREATE UNIQUE INDEX interval_run_items_unique ON interval_run_items (run_id, country_slug);
 ```
 
-- `day_of_month` capped at **28** so monthly schedules exist in every month (no clamping surprises).
+- `day_of_month` capped at **28** so monthly schedules exist in every month (no clamping surprises). `intervals_shape` also forbids weekday/day-of-month values on the wrong frequency, not merely missing required values.
+- A whole-country cache deletion explicitly removes that country's interval memberships in the same DB transaction. It cannot rely on `ON DELETE CASCADE` from `countries`, because this operation deliberately preserves the catalog row; physical country deletion still cascades the membership rows.
 - Run status becomes `partial` when some countries succeed and others fail — surfaced in the UI as a
   warning, not a silent success.
 
@@ -461,7 +463,7 @@ available after job-history pruning.
   backfills in a follow-up migration, destructive changes last).
 - `schema.ts` (Kysely types) is updated **in the same commit** as the migration; a startup check
   compares the ordered migration list with an expected constant to catch version skew. Migrations currently include
-  `0001_init.sql`, `0002_catalog.sql`, `0003_download_events.sql`, and `0004_upload_sessions.sql`.
+  `0001_init.sql`, `0002_catalog.sql`, `0003_download_events.sql`, `0004_upload_sessions.sql`, and `0005_intervals.sql`.
 - The TypeScript types describe what the **driver returns**, which is not always what the SQL type suggests — the
   measured table lives in `apps/api/src/db/schema.ts` (`bigserial` → `string`, `timestamptz` → `Date`,
   `bytea` → `Buffer`, `jsonb` → parsed value, `inet` → `string`). A column's SQL type here and its JS type there are

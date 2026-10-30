@@ -36,6 +36,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
         '0002_catalog',
         '0003_download_events',
         '0004_upload_sessions',
+        '0005_intervals',
       ]);
 
       const tables = await sql<{ table_name: string }>`
@@ -50,6 +51,10 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
         'countries',
         'country_cache',
         'map_versions',
+        'intervals',
+        'interval_countries',
+        'interval_runs',
+        'interval_run_items',
         'jobs',
         'settings',
         'audit_logs',
@@ -85,6 +90,11 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
         'download_events_country_idx',
         'upload_sessions_expiry_idx',
         'upload_sessions_temp_path_key',
+        'intervals_due_idx',
+        'interval_countries_country_idx',
+        'interval_runs_interval_idx',
+        'interval_runs_one_active',
+        'interval_run_items_unique',
       ]) {
         expect(indexNames, index).toContain(index);
       }
@@ -92,10 +102,13 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
       const enumValues = await sql<{ type_name: string; label: string }>`
         select typname as type_name, enumlabel as label
           from pg_type join pg_enum on pg_enum.enumtypid = pg_type.oid
-         where typname in ('job_type', 'job_status')
+         where typname in ('job_type', 'job_status', 'interval_frequency')
          order by typname, enumsortorder
       `.execute(database.db);
       expect(enumValues.rows).toEqual([
+        { type_name: 'interval_frequency', label: 'daily' },
+        { type_name: 'interval_frequency', label: 'weekly' },
+        { type_name: 'interval_frequency', label: 'monthly' },
         { type_name: 'job_status', label: 'queued' },
         { type_name: 'job_status', label: 'running' },
         { type_name: 'job_status', label: 'succeeded' },
@@ -147,13 +160,109 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
       // Pinned here because "fails quietly" is only acceptable while a test is asserting that it fails at all.
       expect(error).toBeUndefined();
       expect(results).toEqual([
-        { migrationName: '0004_upload_sessions', direction: 'Down', status: 'NotExecuted' },
+        { migrationName: '0005_intervals', direction: 'Down', status: 'NotExecuted' },
       ]);
       const tables = await sql<{ n: number }>`
         select count(*)::int as n from information_schema.tables
          where table_schema = 'public' and table_name = 'admins'
       `.execute(database.db);
       expect(tables.rows[0]?.n).toBe(1);
+    });
+  });
+
+  it('enforces interval shapes, active-run uniqueness, and durable item snapshots', async () => {
+    await withFreshDatabase(async (database) => {
+      await migrateToLatest(database.db);
+      const db = database.db;
+      const country = await sql<{ id: string }>`
+        insert into countries (source_id, slug, name)
+        values ('europe/finland', 'finland', 'Finland') returning id
+      `.execute(db);
+      const countryId = country.rows[0]!.id;
+      const daily = await sql<{ id: string }>`
+        insert into intervals (name, frequency, next_run_at)
+        values ('Daily', 'daily', now()) returning id
+      `.execute(db);
+      const intervalId = daily.rows[0]!.id;
+      const weekly = await sql<{ id: string }>`
+        insert into intervals (name, frequency, weekday, next_run_at)
+        values ('Weekly', 'weekly', 1, now()) returning id
+      `.execute(db);
+      const monthly = await sql<{ id: string }>`
+        insert into intervals (name, frequency, day_of_month, next_run_at)
+        values ('Monthly', 'monthly', 28, now()) returning id
+      `.execute(db);
+
+      for (const invalidSchedule of [
+        sql`insert into intervals (name, frequency, weekday, next_run_at) values ('bad daily', 'daily', 1, now())`,
+        sql`insert into intervals (name, frequency, weekday, day_of_month, next_run_at) values ('bad weekly', 'weekly', 1, 2, now())`,
+        sql`insert into intervals (name, frequency, day_of_month, next_run_at) values ('missing weekly day', 'weekly', null, now())`,
+        sql`insert into intervals (name, frequency, weekday, next_run_at) values ('bad monthly', 'monthly', 1, now())`,
+        sql`insert into intervals (name, frequency, day_of_month, next_run_at) values ('bad monthly day', 'monthly', 29, now())`,
+        sql`insert into intervals (name, frequency, weekday, next_run_at) values ('bad weekday', 'weekly', 8, now())`,
+        sql`insert into intervals (name, frequency, keep_versions, next_run_at) values ('bad retention', 'daily', 0, now())`,
+      ]) {
+        await expect(invalidSchedule.execute(db)).rejects.toMatchObject({ code: '23514' });
+      }
+
+      await sql`insert into interval_countries (interval_id, country_id)
+                values (${intervalId}::uuid, ${countryId}::uuid)`.execute(db);
+      const firstRun = await sql<{ id: string }>`
+        insert into interval_runs (interval_id, triggered_by)
+        values (${intervalId}::uuid, 'manual') returning id
+      `.execute(db);
+      const runId = firstRun.rows[0]!.id;
+      await expect(
+        sql`insert into interval_runs (interval_id, triggered_by)
+            values (${intervalId}::uuid, 'unknown')`.execute(db),
+      ).rejects.toMatchObject({ code: '23514' });
+      await expect(
+        sql`insert into interval_runs (interval_id, triggered_by, status)
+            values (${intervalId}::uuid, 'schedule', 'queued')`.execute(db),
+      ).rejects.toMatchObject({ code: '23514' });
+      await expect(
+        sql`insert into interval_runs (interval_id, triggered_by)
+            values (${intervalId}::uuid, 'schedule')`.execute(db),
+      ).rejects.toMatchObject({ code: '23505' });
+
+      await expect(
+        sql`insert into interval_run_items (run_id, country_slug, country_name, status)
+            values (${runId}::uuid, 'invalid', 'Invalid', 'running')`.execute(db),
+      ).rejects.toMatchObject({ code: '23514' });
+      await sql`insert into interval_run_items (run_id, country_id, country_slug, country_name)
+                values (${runId}::uuid, ${countryId}::uuid, 'finland', 'Finland')`.execute(db);
+      await expect(
+        sql`insert into interval_run_items (run_id, country_slug, country_name)
+            values (${runId}::uuid, 'finland', 'Finland')`.execute(db),
+      ).rejects.toMatchObject({ code: '23505' });
+
+      // Catalog identity is normally retained during cache deletion. If it is physically removed, membership
+      // cascades while the run item keeps its slug/name snapshot and simply loses the optional FK.
+      await sql`delete from countries where id = ${countryId}::uuid`.execute(db);
+      const memberships = await sql<{ n: number }>`
+        select count(*)::int as n from interval_countries where country_id = ${countryId}::uuid
+      `.execute(db);
+      expect(memberships.rows[0]?.n).toBe(0);
+      const item = await sql<{
+        country_id: string | null;
+        country_slug: string;
+        country_name: string;
+      }>`
+        select country_id, country_slug, country_name from interval_run_items where run_id = ${runId}::uuid
+      `.execute(db);
+      expect(item.rows[0]).toEqual({
+        country_id: null,
+        country_slug: 'finland',
+        country_name: 'Finland',
+      });
+
+      await sql`delete from intervals where id in (${intervalId}::uuid, ${weekly.rows[0]!.id}::uuid, ${monthly.rows[0]!.id}::uuid)`.execute(
+        db,
+      );
+      const history = await sql<{ n: number }>`
+        select count(*)::int as n from interval_runs where interval_id = ${intervalId}::uuid
+      `.execute(db);
+      expect(history.rows[0]?.n).toBe(0);
     });
   });
 
@@ -399,6 +508,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
           '0002_catalog',
           '0003_download_events',
           '0004_upload_sessions',
+          '0005_intervals',
         ]);
       });
     } finally {
@@ -433,6 +543,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
         '0002_catalog',
         '0003_download_events',
         '0004_upload_sessions',
+        '0005_intervals',
       ]);
       const settings = await sql<{ n: number }>`select count(*)::int as n from settings`.execute(
         database.db,

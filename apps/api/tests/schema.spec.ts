@@ -15,6 +15,9 @@ import {
   type CountryCacheRow,
   type Database,
   type Job,
+  type Interval,
+  type IntervalRun,
+  type IntervalRunItem,
   type MapVersion,
   type Setting,
   type UploadSession,
@@ -39,6 +42,10 @@ const TABLE_INTERFACES = {
   country_cache: 'CountryCache',
   map_versions: 'MapVersions',
   upload_sessions: 'UploadSessions',
+  intervals: 'Intervals',
+  interval_countries: 'IntervalCountries',
+  interval_runs: 'IntervalRuns',
+  interval_run_items: 'IntervalRunItems',
   jobs: 'Jobs',
   settings: 'Settings',
   audit_logs: 'AuditLogs',
@@ -66,10 +73,10 @@ function interfaceProperties(): Map<string, string[]> {
   return found;
 }
 
-/** The `CREATE TABLE` blocks in sections backed by migrations 0001 through 0004. */
+/** The `CREATE TABLE` blocks in sections backed by migrations 0001 through 0005. */
 const DOC = resolve(import.meta.dirname, '../../../docs/03-data-model.md');
 
-/** Document sections backed by `0001_init.sql` through `0004_upload_sessions.sql`. */
+/** Document sections backed by `0001_init.sql` through `0005_intervals.sql`. */
 const MIGRATED_HEADINGS = [
   '### 2.1 ',
   '### 2.2 ',
@@ -77,6 +84,7 @@ const MIGRATED_HEADINGS = [
   '### 2.4 ',
   '### 2.5 ',
   '### 2.6 ',
+  '### 2.7 ',
   '### 2.8 ',
   '### 2.10 ',
   '### 2.11 ',
@@ -147,6 +155,10 @@ describe('the migrated table interfaces', () => {
       'countries',
       'country_cache',
       'download_events',
+      'interval_countries',
+      'interval_run_items',
+      'interval_runs',
+      'intervals',
       'jobs',
       'map_versions',
       'settings',
@@ -177,6 +189,9 @@ describe('the selected row types match what the driver returns', () => {
     expectTypeOf<DownloadEvent['bytes_sent']>().toEqualTypeOf<string>();
     expectTypeOf<UploadSession['id']>().toEqualTypeOf<string>();
     expectTypeOf<UploadSession['size_bytes']>().toEqualTypeOf<string>();
+    expectTypeOf<Interval['id']>().toEqualTypeOf<string>();
+    expectTypeOf<IntervalRun['bytes_downloaded']>().toEqualTypeOf<string>();
+    expectTypeOf<IntervalRunItem['bytes']>().toEqualTypeOf<string>();
   });
 
   it('types timestamptz as Date, bytea as Buffer, jsonb as the parsed value, inet as string', () => {
@@ -197,6 +212,10 @@ describe('the selected row types match what the driver returns', () => {
     expectTypeOf<Job['progress_bytes']>().toEqualTypeOf<string>();
     expectTypeOf<Job['attempts']>().toEqualTypeOf<number>();
     expectTypeOf<Job['payload']>().not.toBeAny();
+    expectTypeOf<Interval['frequency']>().toEqualTypeOf<'daily' | 'weekly' | 'monthly'>();
+    expectTypeOf<Interval['time_of_day']>().toEqualTypeOf<string>();
+    expectTypeOf<IntervalRun['started_at']>().toEqualTypeOf<Date>();
+    expectTypeOf<IntervalRunItem['country_id']>().toEqualTypeOf<string | null>();
   });
 
   it('lets the database generate ids and timestamps, so an insert does not have to invent them', () => {
@@ -215,9 +234,14 @@ describe('the selected row types match what the driver returns', () => {
         .insertInto('jobs')
         .values({ type: 'catalog_sync', payload: { source: 'geofabrik' } })
         .returning(['id', 'status']);
+      const intervalInsert = database.db
+        .insertInto('intervals')
+        .values({ name: 'Daily', frequency: 'daily', next_run_at: new Date() })
+        .returning(['id', 'frequency']);
       expect(insert).toBeDefined();
       expect(countryInsert).toBeDefined();
       expect(jobInsert).toBeDefined();
+      expect(intervalInsert).toBeDefined();
     } finally {
       void database.close();
     }
@@ -235,8 +259,8 @@ describe('the selected row types match what the driver returns', () => {
     // The guarantee `P1-DB-02` exists for ("no `any` in repositories"). `@ts-expect-error` is checked by `tsc`:
     // if these expressions ever start compiling, the typecheck fails instead of the mistake shipping.
     const unknownTable = (db: Kysely<Database>): unknown =>
-      // @ts-expect-error - `intervals` is a later phase-4 table and is not in the map yet
-      db.selectFrom('intervals').selectAll();
+      // @ts-expect-error - `metrics_samples` is not in the table map yet
+      db.selectFrom('metrics_samples').selectAll();
 
     const unknownColumn = (db: Kysely<Database>): unknown =>
       // @ts-expect-error - `password` does not exist; the column is `password_hash`

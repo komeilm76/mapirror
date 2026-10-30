@@ -30,13 +30,17 @@ const TABLE_INTERFACES = {
   country_cache: 'CountryCache',
   map_versions: 'MapVersions',
   upload_sessions: 'UploadSessions',
+  intervals: 'Intervals',
+  interval_countries: 'IntervalCountries',
+  interval_runs: 'IntervalRuns',
+  interval_run_items: 'IntervalRunItems',
   jobs: 'Jobs',
   settings: 'Settings',
   audit_logs: 'AuditLogs',
   download_events: 'DownloadEvents',
 } as const;
 
-/** Document sections whose tables are created by migrations 0001 through 0004. */
+/** Document sections whose tables are created by migrations 0001 through 0005. */
 const MIGRATED_HEADINGS = [
   '### 2.1 ',
   '### 2.2 ',
@@ -44,6 +48,7 @@ const MIGRATED_HEADINGS = [
   '### 2.4 ',
   '### 2.5 ',
   '### 2.6 ',
+  '### 2.7 ',
   '### 2.8 ',
   '### 2.10 ',
   '### 2.11 ',
@@ -77,7 +82,12 @@ function documentedColumns(): Record<string, ColumnShape[]> {
         // Columns and table constraints start at two spaces; indented CHECK continuation lines are not columns.
         .map((line) => /^ {2}(\w+)\s+([\s\S]*)$/.exec(line))
         .filter((line): line is RegExpExecArray => line !== null)
-        .filter((line) => line[1]?.toUpperCase() !== 'CONSTRAINT')
+        .filter(
+          (line) =>
+            !['CONSTRAINT', 'PRIMARY', 'UNIQUE', 'CHECK', 'FOREIGN'].includes(
+              line[1]!.toUpperCase(),
+            ),
+        )
         .map((line) => ({
           name: line[1] as string,
           nullable: !/NOT NULL|PRIMARY KEY/i.test(line[2] as string),
@@ -310,6 +320,40 @@ describe.skipIf(skipReason !== null)('the schema, the document and the database 
         expect(upload.created_at).toBeInstanceOf(Date);
         expect(upload.expires_at).toBeInstanceOf(Date);
         expect(upload.checksum_md5).toBeNull();
+
+        const interval = await db
+          .insertInto('intervals')
+          .values({ name: 'Daily coverage', frequency: 'daily', next_run_at: new Date() })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        expect(interval.frequency).toBe('daily');
+        expect(interval.time_of_day).toBe('03:00:00');
+        expect(interval.keep_versions).toBe(3);
+        expect(interval.next_run_at).toBeInstanceOf(Date);
+        await db
+          .insertInto('interval_countries')
+          .values({ interval_id: interval.id, country_id: country.id })
+          .execute();
+        const intervalRun = await db
+          .insertInto('interval_runs')
+          .values({ interval_id: interval.id, triggered_by: 'manual' })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        expect(intervalRun.status).toBe('running');
+        expect(intervalRun.started_at).toBeInstanceOf(Date);
+        expect(intervalRun.bytes_downloaded).toBe('0');
+        const intervalItem = await db
+          .insertInto('interval_run_items')
+          .values({
+            run_id: intervalRun.id,
+            country_id: country.id,
+            country_slug: country.slug,
+            country_name: country.name,
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow();
+        expect(intervalItem.status).toBe('queued');
+        expect(intervalItem.bytes).toBe('0');
       },
       { prefix: 'schema', migrate: true },
     );

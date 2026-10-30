@@ -94,6 +94,12 @@ export function createCacheDeleteHandler(options: CacheDeleteRouteOptions) {
                 .execute();
 
               await trx.deleteFrom('map_versions').where('country_id', '=', countryId).execute();
+              // The catalog row is deliberately preserved, so ON DELETE CASCADE on countries does not clear this
+              // scheduling relationship. An explicit cache-country deletion opts the country out of every interval.
+              await trx
+                .deleteFrom('interval_countries')
+                .where('country_id', '=', countryId)
+                .execute();
               await trx.deleteFrom('country_cache').where('country_id', '=', countryId).execute();
               await insertAuditLog(trx, {
                 actorId: admin.id,

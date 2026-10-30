@@ -53,6 +53,15 @@ async function withDeleteApp(
         })
         .returning('id')
         .executeTakeFirstOrThrow();
+      const interval = await database.db
+        .insertInto('intervals')
+        .values({ name: 'Daily coverage', frequency: 'daily', next_run_at: new Date() })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await database.db
+        .insertInto('interval_countries')
+        .values({ interval_id: interval.id, country_id: country.id })
+        .execute();
       await database.db
         .insertInto('country_cache')
         .values({
@@ -186,6 +195,13 @@ describe.skipIf(skipReason !== null)('DELETE /_admin/api/cache/:countryId', () =
         await app.db.db
           .selectFrom('map_versions')
           .select('id')
+          .where('country_id', '=', countryId)
+          .execute(),
+      ).toEqual([]);
+      expect(
+        await app.db.db
+          .selectFrom('interval_countries')
+          .select('country_id')
           .where('country_id', '=', countryId)
           .execute(),
       ).toEqual([]);
