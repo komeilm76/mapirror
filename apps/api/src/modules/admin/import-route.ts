@@ -88,7 +88,8 @@ export function createImportHandler(options: ImportRouteOptions) {
             pendingError === undefined &&
             !metadataPreflighted &&
             rawFields.countryId !== undefined &&
-            rawFields.version !== undefined
+            rawFields.version !== undefined &&
+            rawFields.replace !== undefined
           ) {
             try {
               const earlyFields = parseFields(rawFields);
@@ -185,7 +186,7 @@ export function createImportHandler(options: ImportRouteOptions) {
           throw new AppError('NOT_FOUND', 'The requested catalog region does not exist.');
         }
 
-        await assertVersionAvailable(trx, fields.countryId, fields.version);
+        await assertVersionAvailable(trx, fields.countryId, fields.version, fields.replace);
 
         const session = await trx
           .insertInto('upload_sessions')
@@ -260,17 +261,23 @@ async function assertCountryAndVersion(
   if (country === undefined) {
     throw new AppError('NOT_FOUND', 'The requested catalog region does not exist.');
   }
-  await assertVersionAvailable(request.server.db.db, fields.countryId, fields.version);
+  await assertVersionAvailable(
+    request.server.db.db,
+    fields.countryId,
+    fields.version,
+    fields.replace,
+  );
 }
 
 async function assertVersionAvailable(
   database: FastifyRequest['server']['db']['db'],
   countryId: string,
   version: string,
+  replace: boolean,
 ): Promise<void> {
   const existingVersion = await database
     .selectFrom('map_versions')
-    .select('id')
+    .select(['id', 'status'])
     .where('country_id', '=', countryId)
     .where('version', '=', version)
     .executeTakeFirst();
@@ -287,17 +294,25 @@ async function assertVersionAvailable(
     .where('type', '=', 'download')
     .where('status', 'in', ['queued', 'running'])
     .where(sql<string>`payload ->> 'countryId'`, '=', countryId)
-    .where(sql<string>`payload ->> 'version'`, '=', version)
+    .where(sql<string>`payload ->> 'version'`, 'in', [version, 'latest'])
     .executeTakeFirst();
+  const replaceable =
+    existingVersion !== undefined &&
+    (existingVersion.status === 'ready' || existingVersion.status === 'failed') &&
+    existingUpload === undefined &&
+    activeDownload === undefined;
+  const existingVersionBlocksRequest = existingVersion !== undefined && !(replace && replaceable);
   if (
-    existingVersion !== undefined ||
+    existingVersionBlocksRequest ||
     existingUpload !== undefined ||
     activeDownload !== undefined
   ) {
     throw new AppError(
       'VERSION_DUPLICATE',
-      'A version with this label already exists for the selected country.',
-      { countryId, version },
+      replaceable
+        ? 'A version with this label already exists. Confirm replacement and resubmit with replace=true.'
+        : 'A version with this label already exists for the selected country.',
+      { countryId, version, replaceAllowed: replaceable },
     );
   }
 }

@@ -300,7 +300,8 @@ still enforced; the worker validates actual streamed length and checksum. `resol
 label for `latest`, the requested date for an explicit snapshot, or `null` only when upstream metadata cannot identify
 the latest dated label. The partial unique index on active `download` jobs is authoritative for `(countryId, version)`:
 concurrent requests cannot both enqueue, and its named constraint maps to `JOB_ALREADY_RUNNING` rather than a generic
-database error.
+database error. The enqueue transaction also rechecks that the requested dated version is not already ready and that
+no active import targets the same region/version (including an import labeled `latest`).
 
 ---
 
@@ -471,7 +472,7 @@ opened and held until the response closes, so cache deletion cannot unlink an ac
 | `file` | file | ✅ | `.osm.pbf`; MIME must be `application/octet-stream`, `application/x-protobuf`, `application/protobuf`, or `application/x-osm-pbf`; streamed to UUID-only staging; PBF BlobHeader must declare `OSMHeader`; ≤ `MAX_UPLOAD_BYTES` (default 8 GiB) |
 | `countryId` | uuid | ✅ | must exist in the catalog |
 | `version` | string | ✅ | `^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$`, unique per country |
-| `replace` | `"true"` / `"false"` | ❌ | Multipart fields are strings; Zod accepts only these literals. Existing versions still return `409` in P4-IMP-02; explicit replacement is added by P4-IMP-04 (D-10). |
+| `replace` | `"true"` / `"false"` | ❌ | Multipart fields are strings; Zod accepts only these literals and defaults omission to `false`. `true` is the explicit user confirmation to replace an existing ready/failed version; active imports, downloads, and pending versions remain conflicts. |
 
 ```json
 202 { "uploadId": "…", "jobId": "…", "version": "2026-09-01" }
@@ -483,17 +484,26 @@ Errors: `400 VALIDATION_ERROR` (missing/invalid fields), `409 VERSION_DUPLICATE`
 `413 FILE_TOO_LARGE`, `415 UNSUPPORTED_FORMAT` (wrong extension/media type or PBF header), and `503 DISK_FULL`.
 
 **Avoid needless transfer:** the UI calls `GET /_admin/api/cache/:countryId/versions` first and, when
-the version already exists, asks "replace?" *before* sending any bytes. The server also checks as soon as
-`countryId` + `version` are available and avoids creating a staging file when a conflict is already known.
-Multipart field order is not guaranteed, and the parser drains rejected requests to finish the response safely,
-so the server cannot promise that a conflicting file will not be transferred. The final transactional duplicate
-check remains authoritative. Explicit replacement is not available until P4-IMP-04.
+the version already exists, asks "replace?" *before* sending any bytes. `409 VERSION_DUPLICATE` includes
+`details.replaceAllowed`: when true, a second request with `replace="true"` confirms replacement; false means the
+conflict is active or pending and cannot be replaced. Active `latest` downloads are also treated as conflicts for that
+country. A confirmed replacement stages and installs a new artifact first, then atomically deletes/recreates the
+`map_versions` row and refreshes cache totals; the old ready version
+remains available until that transaction commits, and a failed replacement preserves it. The old file is unlinked
+after commit. Multipart field order is not guaranteed, so a conflict may be found only after the body was drained;
+the final transactional duplicate check is authoritative.
 
 ```bash
 curl -X POST http://localhost:8080/_admin/api/imports \
   -H "Authorization: Bearer $TOKEN" \
   -F file=@finland-261001.osm.pbf \
   -F countryId=6f1c… -F version=261001
+
+# Only after the admin explicitly confirms replacing an existing version:
+curl -X POST http://localhost:8080/_admin/api/imports \
+  -H "Authorization: Bearer $TOKEN" \
+  -F file=@replacement-finland-261001.osm.pbf \
+  -F countryId=6f1c… -F version=261001 -F replace=true
 ```
 
 #### `GET /_admin/api/imports/:uploadId`

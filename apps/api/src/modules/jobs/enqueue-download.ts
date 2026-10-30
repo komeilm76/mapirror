@@ -7,7 +7,7 @@
  * @module modules/jobs/enqueue-download
  */
 
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 
 import { lockCountryCacheForEnqueue } from '../../db/repositories/cache';
 import type { Database } from '../../db/schema';
@@ -67,6 +67,37 @@ export async function enqueueDownloadJob(
         .executeTakeFirst();
       if (country === undefined) {
         throw new AppError('NOT_FOUND', 'The requested catalog region does not exist.');
+      }
+      if (input.version !== 'latest') {
+        const readyVersion = await trx
+          .selectFrom('map_versions')
+          .select('id')
+          .where('country_id', '=', input.countryId)
+          .where('version', '=', input.version)
+          .where('status', '=', 'ready')
+          .executeTakeFirst();
+        if (readyVersion !== undefined) {
+          throw new AppError(
+            'VERSION_ALREADY_CACHED',
+            'This source version is already cached for the requested region.',
+            { countryId: input.countryId, version: input.version },
+          );
+        }
+      }
+      const activeImport = await trx
+        .selectFrom('jobs')
+        .select('id')
+        .where('type', '=', 'import')
+        .where('status', 'in', ['queued', 'running'])
+        .where(sql<string>`payload ->> 'countryId'`, '=', input.countryId)
+        .where(sql<string>`payload ->> 'version'`, 'in', [input.version, 'latest'])
+        .executeTakeFirst();
+      if (activeImport !== undefined) {
+        throw new AppError(
+          'JOB_ALREADY_RUNNING',
+          'An import for this country and version is already queued or running.',
+          { countryId: input.countryId, version: input.version, jobId: activeImport.id },
+        );
       }
 
       const job = await trx

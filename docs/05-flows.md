@@ -435,17 +435,25 @@ sequenceDiagram
   participant API as /_admin/api/imports
   participant TMP as /data/tmp
   participant Q as jobs
-  A->>API: POST multipart {file, countryId, version}
+  participant DB as PostgreSQL
+  A->>API: POST multipart {file, countryId, version, replace?}
   API->>API: extension + allowed MIME + OSMHeader BlobHeader + size + version format
-  alt duplicate country/version
-    API-->>A: 409 VERSION_DUPLICATE
+  alt duplicate without allowed confirmed replacement
+    API-->>A: 409 VERSION_DUPLICATE + replaceAllowed
+  else existing ready/failed version and replace=true
+    API->>API: accept replacement; keep old row/artifact until install succeeds
   end
   API->>TMP: stream to generated UUID .osm.pbf path
   API->>Q: transactionally insert upload session + import job
   API-->>A: 202 {uploadId, jobId}
   Q->>Q: stream + compute MD5 into cache .partial/<job>.part
-  Q->>Q: reserve pending map version; atomically install part
-  Q->>DB: transactionally mark version ready + session installed + refresh cache totals
+  alt initial import
+    Q->>Q: reserve pending map version
+  else confirmed replacement
+    Q->>Q: keep existing version row and artifact unchanged
+  end
+  Q->>Q: atomically install part
+  Q->>DB: transactionally finalize version row + session installed + refresh cache totals
   A->>API: GET /_admin/api/imports/:uploadId
   API-->>A: status + size + checksum + safe job error
   A->>A: row appears under the country with origin=upload
@@ -454,14 +462,16 @@ sequenceDiagram
 **Rules:** exactly three required fields (file/country/version); uploads never overwrite silently;
 temp file removed on rejection/expiry (24 h) and after install. The worker verifies staged size while computing MD5,
 installs only through the cache storage boundary, and commits `map_versions=ready`, `upload_sessions=installed`, and
-`country_cache` aggregates in one transaction. On failure, staging/partial/installed artifacts are cleaned before the
-worker writes a terminal state; a failed import never leaves a ready row. Retryable failures remain eligible for the
-worker retry. Queued import cancellation removes the staged upload before the job becomes terminal and marks its session failed;
-running cancellation remains cooperative through handler cleanup. `GET /_admin/api/imports/:uploadId` exposes
-a strict status projection and only safe job error messages. P4-IMP-02 rejects every duplicate; explicit replace is
-added by P4-IMP-04.
-**Tests:** PostgreSQL success and install-failure worker cases, status read, duplicate rejected, wrong extension/header
-`415`, oversized `413`, invalid fields `400`, temp cleanup on failure.
+`country_cache` aggregates in one transaction. On initial import failure, staging/partial/installed artifacts are
+cleaned before the worker writes a terminal state and no ready row is left. A duplicate returns `409 VERSION_DUPLICATE`
+with `replaceAllowed`; only a ready/failed version without active work may be replaced by resubmitting with explicit
+`replace=true`. The old row/artifact remains unchanged until the new artifact is installed and the version row is
+atomically recreated; a previously ready artifact stays served throughout, and failed replacement preserves the old version. Retryable failures remain eligible for worker
+retry. Queued import cancellation removes staging before terminal state; running cancellation waits for handler cleanup.
+`GET /_admin/api/imports/:uploadId` exposes a strict status projection and safe job errors.
+**Tests:** PostgreSQL initial success/install-failure, confirmed replacement success and preservation on replacement failure,
+status read, duplicate confirmation semantics, download-enqueue conflicts, and `latest` import/download conflicts; wrong
+extension/header `415`, oversized `413`, invalid fields `400`, and temp cleanup.
 
 ---
 

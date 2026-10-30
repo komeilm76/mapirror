@@ -48,6 +48,12 @@ interface ImportSession {
 interface ReservedVersion {
   readonly id: string;
   readonly storagePath: string;
+  readonly replaceExisting: boolean;
+}
+
+interface FinalizedVersion {
+  readonly id: string;
+  readonly replacedStoragePath: string | null;
 }
 
 /**
@@ -81,6 +87,8 @@ async function runImport(
   let target: StorageFile | undefined;
   let versionId: string | undefined;
   let versionReserved = false;
+  let replaceExisting = false;
+  let replacedFile: StorageFile | undefined;
   let targetInstalled = false;
   let finalized = false;
   let checksumMd5: string | undefined;
@@ -146,7 +154,8 @@ async function runImport(
       fileSize,
     );
     versionId = reserved.id;
-    versionReserved = true;
+    replaceExisting = reserved.replaceExisting;
+    versionReserved = !reserved.replaceExisting;
     if (reserved.storagePath !== target.relativePath) {
       throw new Error('Reserved import path does not match the validated cache path.');
     }
@@ -161,12 +170,29 @@ async function runImport(
     targetInstalled = true;
     throwIfAborted(context.signal);
 
-    await finalizeVersion(context.database, session, job, versionId, fileSize, checksumMd5);
+    const finalVersion = await finalizeVersion(
+      context.database,
+      session,
+      job,
+      versionId,
+      fileSize,
+      checksumMd5,
+      target.relativePath,
+      replaceExisting,
+    );
+    versionId = finalVersion.id;
+    versionReserved = true;
+    if (finalVersion.replacedStoragePath !== null) {
+      replacedFile = cache.versionFileAt(finalVersion.replacedStoragePath);
+    }
     finalized = true;
 
     // A cancellation racing the final transaction is resolved as a cleanup-and-fail, not a succeeded worker job with
     // a live ready row. The cleanup below runs before the worker writes its terminal state.
     throwIfAborted(context.signal);
+    if (replacedFile !== undefined) {
+      await removeCacheForCleanup(replacedFile, context, job.id, 'replaced import artifact');
+    }
     await removeUploadForCleanup(staged, context, job.id, 'completed import staging');
     throwIfAborted(context.signal);
     return {
@@ -184,6 +210,9 @@ async function runImport(
       (canceled || unrecoverableInstalledState || job.attempts >= job.max_attempts);
 
     await removeCacheForCleanup(part, context, job.id, 'partial import');
+    if (replacedFile !== undefined) {
+      await removeCacheForCleanup(replacedFile, context, job.id, 'replaced import artifact');
+    }
     if (
       target !== undefined &&
       (targetInstalled || (unrecoverableInstalledState && !ownershipLost))
@@ -397,6 +426,17 @@ async function reserveVersion(
       .executeTakeFirst();
     if (existing !== undefined) {
       if (
+        payload.replace &&
+        existing.job_id !== job.id &&
+        (existing.status === 'ready' || existing.status === 'failed')
+      ) {
+        return {
+          id: existing.id,
+          storagePath: target.relativePath,
+          replaceExisting: true,
+        };
+      }
+      if (
         existing.job_id !== job.id ||
         (existing.status !== 'pending' && existing.status !== 'failed')
       ) {
@@ -420,7 +460,11 @@ async function reserveVersion(
         })
         .where('id', '=', existing.id)
         .execute();
-      return { id: existing.id, storagePath: target.relativePath };
+      return {
+        id: existing.id,
+        storagePath: target.relativePath,
+        replaceExisting: false,
+      };
     }
 
     const inserted = await transaction
@@ -444,7 +488,11 @@ async function reserveVersion(
       })
       .returning(['id', 'storage_path'])
       .executeTakeFirstOrThrow();
-    return { id: inserted.id, storagePath: inserted.storage_path };
+    return {
+      id: inserted.id,
+      storagePath: inserted.storage_path,
+      replaceExisting: false,
+    };
   });
 }
 
@@ -455,8 +503,10 @@ async function finalizeVersion(
   versionId: string,
   fileSize: bigint,
   checksumMd5: string,
-): Promise<void> {
-  await withTransaction(database, async (transaction) => {
+  storagePath: string,
+  replaceExisting: boolean,
+): Promise<FinalizedVersion> {
+  return withTransaction(database, async (transaction) => {
     await transaction
       .selectFrom('countries')
       .select('id')
@@ -477,22 +527,65 @@ async function finalizeVersion(
       throw new Error('Import upload session changed before installation completed.');
     }
 
-    const updated = await transaction
-      .updateTable('map_versions')
-      .set({
-        status: 'ready',
-        failure_reason: null,
-        file_size_bytes: fileSize,
-        checksum_md5: checksumMd5,
-        ready_at: sql<Date>`now()`,
-      })
-      .where('id', '=', versionId)
-      .where('job_id', '=', job.id)
-      .where('status', '=', 'pending')
-      .returning('id')
-      .executeTakeFirst();
-    if (updated === undefined)
-      throw new Error('Import version reservation was lost before finalization.');
+    let finalizedVersionId = versionId;
+    let replacedStoragePath: string | null = null;
+    if (replaceExisting) {
+      const existing = await transaction
+        .selectFrom('map_versions')
+        .select(['id', 'status', 'storage_path'])
+        .where('country_id', '=', session.country_id)
+        .where('version', '=', session.version)
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        existing === undefined ||
+        existing.id !== versionId ||
+        (existing.status !== 'ready' && existing.status !== 'failed')
+      ) {
+        throw new Error('Import replacement reservation was lost before finalization.');
+      }
+      await transaction.deleteFrom('map_versions').where('id', '=', existing.id).execute();
+      const inserted = await transaction
+        .insertInto('map_versions')
+        .values({
+          country_id: session.country_id,
+          version: session.version,
+          origin: 'upload',
+          source_url: null,
+          source_filename: session.original_name,
+          data_timestamp: null,
+          file_size_bytes: fileSize,
+          checksum_md5: checksumMd5,
+          checksum_sha256: null,
+          storage_path: storagePath,
+          status: 'ready',
+          failure_reason: null,
+          job_id: job.id,
+          uploaded_by: session.created_by,
+          ready_at: sql<Date>`now()`,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      finalizedVersionId = inserted.id;
+      replacedStoragePath = existing.storage_path;
+    } else {
+      const updated = await transaction
+        .updateTable('map_versions')
+        .set({
+          status: 'ready',
+          failure_reason: null,
+          file_size_bytes: fileSize,
+          checksum_md5: checksumMd5,
+          ready_at: sql<Date>`now()`,
+        })
+        .where('id', '=', versionId)
+        .where('job_id', '=', job.id)
+        .where('status', '=', 'pending')
+        .returning('id')
+        .executeTakeFirst();
+      if (updated === undefined)
+        throw new Error('Import version reservation was lost before finalization.');
+    }
 
     await refreshCountryCache(transaction, session.country_id);
     await transaction
@@ -501,6 +594,7 @@ async function finalizeVersion(
       .where('id', '=', session.id)
       .where('job_id', '=', job.id)
       .execute();
+    return { id: finalizedVersionId, replacedStoragePath };
   });
 }
 

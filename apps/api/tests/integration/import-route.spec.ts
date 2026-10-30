@@ -252,6 +252,72 @@ describe('POST /_admin/api/imports', () => {
   );
 
   it.skipIf(skipReason !== null)(
+    'requires explicit replace confirmation for an existing map version',
+    async () => {
+      await withImportApp(1024, async (context) => {
+        await context.app.db.db
+          .insertInto('map_versions')
+          .values({
+            country_id: context.countryId,
+            version: '261030',
+            origin: 'upload',
+            source_url: null,
+            source_filename: 'finland.osm.pbf',
+            data_timestamp: null,
+            file_size_bytes: 1,
+            checksum_md5: 'd41d8cd98f00b204e9800998ecf8427e',
+            checksum_sha256: null,
+            storage_path: 'finland/261030/old-upload.osm.pbf',
+            status: 'ready',
+          })
+          .execute();
+
+        const duplicate = await multipartRequest(context, validFields(context.countryId));
+        expect(duplicate.statusCode).toBe(409);
+        expect(code(duplicate)).toBe('VERSION_DUPLICATE');
+        expect(
+          duplicate.json<{ error: { details: { replaceAllowed: boolean } } }>().error.details,
+        ).toMatchObject({ replaceAllowed: true });
+        const activeLatestDownload = await context.app.db.db
+          .insertInto('jobs')
+          .values({
+            type: 'download',
+            payload: { countryId: context.countryId, version: 'latest' },
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        const blocked = await multipartRequest(context, {
+          ...validFields(context.countryId),
+          replace: 'true',
+        });
+        expect(blocked.statusCode).toBe(409);
+        expect(code(blocked)).toBe('VERSION_DUPLICATE');
+        expect(
+          blocked.json<{ error: { details: { replaceAllowed: boolean } } }>().error.details,
+        ).toMatchObject({ replaceAllowed: false });
+        await context.app.db.db
+          .updateTable('jobs')
+          .set({ status: 'succeeded' })
+          .where('id', '=', activeLatestDownload.id)
+          .execute();
+
+        const accepted = await multipartRequest(context, {
+          ...validFields(context.countryId),
+          replace: 'true',
+        });
+        expect(accepted.statusCode).toBe(202);
+        const body = accepted.json<{ uploadId: string; jobId: string }>();
+        const job = await context.app.db.db
+          .selectFrom('jobs')
+          .select('payload')
+          .where('id', '=', body.jobId)
+          .executeTakeFirstOrThrow();
+        expect(job.payload).toMatchObject({ uploadId: body.uploadId, replace: true });
+      });
+    },
+  );
+
+  it.skipIf(skipReason !== null)(
     'rejects a duplicate country/version before accepting a second job',
     async () => {
       await withImportApp(1024, async (context) => {
@@ -260,6 +326,12 @@ describe('POST /_admin/api/imports', () => {
         const duplicate = await multipartRequest(context, validFields(context.countryId));
         expect(duplicate.statusCode).toBe(409);
         expect(code(duplicate)).toBe('VERSION_DUPLICATE');
+        const inFlightReplace = await multipartRequest(context, {
+          ...validFields(context.countryId),
+          replace: 'true',
+        });
+        expect(inFlightReplace.statusCode).toBe(409);
+        expect(code(inFlightReplace)).toBe('VERSION_DUPLICATE');
         expect(
           await context.app.db.db.selectFrom('upload_sessions').select('id').execute(),
         ).toHaveLength(1);

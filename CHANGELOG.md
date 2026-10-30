@@ -47,6 +47,7 @@ passes. Patch releases (`0.1.1`, …) are corrections to an already-tagged phase
   `GET /_admin/api/catalog`, `GET /_public/api/countries`), each naming the task that replaces it and
   asserted as a set by test, so a forgotten stub fails the gate rather than shipping.
 - **P4-IMP-03 import worker + status API:** accepted `import` jobs now stream staged PBF bytes into a cache part while computing MD5, atomically install before marking the version ready, and finalize the upload session/cache totals transactionally. Cancellation and terminal failure clean artifacts first and do not leave a ready version; queued import cancellation removes staging before the job becomes terminal. Added authenticated `GET /_admin/api/imports/:uploadId` with strict safe status/error projection and no-follow staging reads.
+- **P4-IMP-04 explicit version replacement:** a duplicate now reports whether replacement is allowed; `replace=true` confirms an atomic row replacement after the new artifact installs. Failed replacements preserve the previous version/file, and download enqueue serializes against active imports and rechecks ready versions.
 
 ### Fixed
 - `readPort` accepted `0x10` and `30e3` as ports (16 and 30000) because it used `Number()`; it now reads

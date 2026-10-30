@@ -1,7 +1,7 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import type { Kysely } from 'kysely';
 import { describe, expect, it, vi } from 'vitest';
@@ -39,7 +39,13 @@ async function withStorageRoots<T>(
 async function seedImport(
   database: Kysely<Database>,
   temporaryDirectory: string,
-  options: { readonly maxAttempts?: number; readonly bytes?: Buffer } = {},
+  options: {
+    readonly maxAttempts?: number;
+    readonly bytes?: Buffer;
+    readonly replace?: boolean;
+    readonly existingVersion?: boolean;
+    readonly cacheDirectory?: string;
+  } = {},
 ): Promise<{
   readonly countryId: string;
   readonly jobId: string;
@@ -52,6 +58,39 @@ async function seedImport(
     .values({ source_id: 'europe/finland', slug: 'finland', name: 'Finland' })
     .returning('id')
     .executeTakeFirstOrThrow();
+  const existingVersionPath = 'finland/261030/old-upload.osm.pbf';
+  if (options.existingVersion === true) {
+    if (options.cacheDirectory === undefined) {
+      throw new Error('cacheDirectory is required to seed an existing import version.');
+    }
+    const oldBytes = Buffer.from('old map bytes');
+    await mkdir(join(options.cacheDirectory, 'finland', '261030'), { recursive: true });
+    await writeFile(join(options.cacheDirectory, existingVersionPath), oldBytes);
+    await database
+      .insertInto('map_versions')
+      .values({
+        country_id: country.id,
+        version: '261030',
+        origin: 'upload',
+        source_url: null,
+        source_filename: 'old-finland.osm.pbf',
+        data_timestamp: null,
+        file_size_bytes: oldBytes.byteLength,
+        checksum_md5: createHash('md5').update(oldBytes).digest('hex'),
+        checksum_sha256: null,
+        storage_path: existingVersionPath,
+        status: 'ready',
+      })
+      .execute();
+    await database
+      .insertInto('country_cache')
+      .values({
+        country_id: country.id,
+        versions_ready_count: 1,
+        total_size_bytes: oldBytes.byteLength,
+      })
+      .execute();
+  }
   const storage = createUploadStorage(temporaryDirectory);
   const staged = storage.file(randomUUID());
   const file = await staged.openForWrite();
@@ -78,7 +117,7 @@ async function seedImport(
         uploadId: session.id,
         countryId: country.id,
         version: '261030',
-        replace: false,
+        replace: options.replace ?? false,
       },
       max_attempts: options.maxAttempts ?? 3,
     })
@@ -191,6 +230,74 @@ describe.skipIf(skipReason !== null)('PostgreSQL import handler', () => {
     );
   });
 
+  it('replaces an existing ready version only after the new artifact is installed', async () => {
+    await withFreshDatabase(
+      async ({ db }) => {
+        await withStorageRoots(async (temporaryDirectory, cacheDirectory) => {
+          const seeded = await seedImport(db, temporaryDirectory, {
+            replace: true,
+            existingVersion: true,
+            cacheDirectory,
+          });
+          const worker = startJobWorker(
+            db,
+            {
+              import: createImportHandler({
+                config: { tmpDir: temporaryDirectory, cacheDir: cacheDirectory },
+              }),
+            },
+            {
+              concurrency: 1,
+              pollIntervalMs: 5,
+              heartbeatIntervalMs: 1_000,
+              cancellationPollIntervalMs: 5,
+              retryBaseDelayMs: 5,
+              retryMaxDelayMs: 5,
+              log,
+            },
+          );
+          try {
+            await waitForStatus(db, seeded.jobId, 'succeeded');
+          } finally {
+            await worker.stop();
+          }
+
+          const versions = await db
+            .selectFrom('map_versions')
+            .selectAll()
+            .where('country_id', '=', seeded.countryId)
+            .execute();
+          expect(versions).toHaveLength(1);
+          expect(versions[0]).toMatchObject({
+            version: '261030',
+            origin: 'upload',
+            source_filename: 'finland.osm.pbf',
+            checksum_md5: GEOFABRIK_PBF_FIXTURE_MD5,
+            status: 'ready',
+            job_id: seeded.jobId,
+            storage_path: `finland/261030/upload-${seeded.uploadId}.osm.pbf`,
+          });
+          await expect(readFile(join(cacheDirectory, versions[0]!.storage_path))).resolves.toEqual(
+            payloadBytes,
+          );
+          await expect(
+            readFile(join(cacheDirectory, 'finland/261030/old-upload.osm.pbf')),
+          ).rejects.toMatchObject({ code: 'ENOENT' });
+          const summary = await db
+            .selectFrom('country_cache')
+            .select(['versions_ready_count', 'total_size_bytes'])
+            .where('country_id', '=', seeded.countryId)
+            .executeTakeFirstOrThrow();
+          expect(summary).toEqual({
+            versions_ready_count: 1,
+            total_size_bytes: String(payloadBytes.byteLength),
+          });
+        });
+      },
+      { migrate: true, prefix: 'jobimportreplace' },
+    );
+  });
+
   it('leaves no ready version when cache installation fails and cleans before terminal failure', async () => {
     await withFreshDatabase(
       async ({ db }) => {
@@ -255,6 +362,71 @@ describe.skipIf(skipReason !== null)('PostgreSQL import handler', () => {
         });
       },
       { migrate: true, prefix: 'jobimportfail' },
+    );
+  });
+
+  it('preserves the previous ready version when a confirmed replacement fails', async () => {
+    await withFreshDatabase(
+      async ({ db }) => {
+        await withStorageRoots(async (temporaryDirectory, cacheDirectory) => {
+          const seeded = await seedImport(db, temporaryDirectory, {
+            maxAttempts: 1,
+            replace: true,
+            existingVersion: true,
+            cacheDirectory,
+          });
+          const realCache = createCacheStorage(cacheDirectory);
+          const failingCache: CacheStorage = {
+            ...realCache,
+            installPart: () => Promise.reject(new Error('simulated replacement install failure')),
+          };
+          const worker = startJobWorker(
+            db,
+            {
+              import: createImportHandler({
+                config: { tmpDir: temporaryDirectory, cacheDir: cacheDirectory },
+                cacheStorage: failingCache,
+              }),
+            },
+            {
+              concurrency: 1,
+              pollIntervalMs: 5,
+              heartbeatIntervalMs: 1_000,
+              cancellationPollIntervalMs: 5,
+              retryBaseDelayMs: 5,
+              retryMaxDelayMs: 5,
+              log,
+            },
+          );
+          try {
+            await waitForStatus(db, seeded.jobId, 'failed');
+          } finally {
+            await worker.stop();
+          }
+
+          const version = await db
+            .selectFrom('map_versions')
+            .select(['status', 'storage_path', 'checksum_md5'])
+            .where('country_id', '=', seeded.countryId)
+            .where('version', '=', '261030')
+            .executeTakeFirstOrThrow();
+          expect(version).toMatchObject({
+            status: 'ready',
+            storage_path: 'finland/261030/old-upload.osm.pbf',
+            checksum_md5: createHash('md5').update('old map bytes').digest('hex'),
+          });
+          await expect(readFile(join(cacheDirectory, version.storage_path))).resolves.toEqual(
+            Buffer.from('old map bytes'),
+          );
+          const session = await db
+            .selectFrom('upload_sessions')
+            .select('status')
+            .where('id', '=', seeded.uploadId)
+            .executeTakeFirstOrThrow();
+          expect(session.status).toBe('failed');
+        });
+      },
+      { migrate: true, prefix: 'jobimportreplacefail' },
     );
   });
 });

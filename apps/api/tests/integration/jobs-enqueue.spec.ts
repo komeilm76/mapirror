@@ -123,6 +123,81 @@ describe.skipIf(skipReason !== null)('PostgreSQL download enqueue guard', () => 
     );
   });
 
+  it('serializes explicit imports against downloads and rechecks a ready version at enqueue', async () => {
+    await withFreshDatabase(
+      async ({ db }) => {
+        const country = await db
+          .insertInto('countries')
+          .values({ source_id: 'europe/finland', slug: 'finland', name: 'Finland' })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        const importJob = await db
+          .insertInto('jobs')
+          .values({
+            type: 'import',
+            payload: {
+              uploadId: 'a64e1a89-d2e7-43ea-9036-22d37e185479',
+              countryId: country.id,
+              version: '261023',
+              replace: true,
+            },
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        await expect(
+          enqueueDownloadJob(db, { countryId: country.id, version: '261023' }),
+        ).rejects.toMatchObject({ code: 'JOB_ALREADY_RUNNING' });
+        await db
+          .updateTable('jobs')
+          .set({ status: 'succeeded' })
+          .where('id', '=', importJob.id)
+          .execute();
+        const latestImport = await db
+          .insertInto('jobs')
+          .values({
+            type: 'import',
+            payload: {
+              uploadId: 'c5158ea7-4688-4ce9-8f3d-1ab9a5f91c3f',
+              countryId: country.id,
+              version: 'latest',
+              replace: false,
+            },
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        await expect(
+          enqueueDownloadJob(db, { countryId: country.id, version: '261023' }),
+        ).rejects.toMatchObject({ code: 'JOB_ALREADY_RUNNING' });
+        await db
+          .updateTable('jobs')
+          .set({ status: 'succeeded' })
+          .where('id', '=', latestImport.id)
+          .execute();
+        await db
+          .insertInto('map_versions')
+          .values({
+            country_id: country.id,
+            version: '261023',
+            origin: 'upload',
+            source_url: null,
+            source_filename: 'finland.osm.pbf',
+            data_timestamp: null,
+            file_size_bytes: 1,
+            checksum_md5: 'd41d8cd98f00b204e9800998ecf8427e',
+            checksum_sha256: null,
+            storage_path: 'finland/261023/upload-a64e1a89-d2e7-43ea-9036-22d37e185479.osm.pbf',
+            status: 'ready',
+          })
+          .execute();
+        await expect(
+          enqueueDownloadJob(db, { countryId: country.id, version: '261023' }),
+        ).rejects.toMatchObject({ code: 'VERSION_ALREADY_CACHED' });
+      },
+      { migrate: true, prefix: 'enqueueimportrace' },
+    );
+  });
+
   it('does not misreport unrelated PostgreSQL errors as duplicate downloads', async () => {
     await withFreshDatabase(
       async ({ db }) => {
