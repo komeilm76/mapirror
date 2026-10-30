@@ -37,6 +37,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
         '0003_download_events',
         '0004_upload_sessions',
         '0005_intervals',
+        '0006_interval_run_item_job_index',
       ]);
 
       const tables = await sql<{ table_name: string }>`
@@ -95,6 +96,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
         'interval_runs_interval_idx',
         'interval_runs_one_active',
         'interval_run_items_unique',
+        'interval_run_items_job_idx',
       ]) {
         expect(indexNames, index).toContain(index);
       }
@@ -160,7 +162,11 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
       // Pinned here because "fails quietly" is only acceptable while a test is asserting that it fails at all.
       expect(error).toBeUndefined();
       expect(results).toEqual([
-        { migrationName: '0005_intervals', direction: 'Down', status: 'NotExecuted' },
+        {
+          migrationName: '0006_interval_run_item_job_index',
+          direction: 'Down',
+          status: 'NotExecuted',
+        },
       ]);
       const tables = await sql<{ n: number }>`
         select count(*)::int as n from information_schema.tables
@@ -229,11 +235,21 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
         sql`insert into interval_run_items (run_id, country_slug, country_name, status)
             values (${runId}::uuid, 'invalid', 'Invalid', 'running')`.execute(db),
       ).rejects.toMatchObject({ code: '23514' });
-      await sql`insert into interval_run_items (run_id, country_id, country_slug, country_name)
-                values (${runId}::uuid, ${countryId}::uuid, 'finland', 'Finland')`.execute(db);
+      const linkedJob = await sql<{ id: string }>`
+        insert into jobs (type, payload) values ('download', '{}'::jsonb) returning id
+      `.execute(db);
+      const linkedJobId = linkedJob.rows[0]!.id;
+      await sql`insert into interval_run_items (run_id, country_id, country_slug, country_name, job_id)
+                values (${runId}::uuid, ${countryId}::uuid, 'finland', 'Finland', ${linkedJobId}::uuid)`.execute(
+        db,
+      );
       await expect(
         sql`insert into interval_run_items (run_id, country_slug, country_name)
             values (${runId}::uuid, 'finland', 'Finland')`.execute(db),
+      ).rejects.toMatchObject({ code: '23505' });
+      await expect(
+        sql`insert into interval_run_items (run_id, country_slug, country_name, job_id)
+            values (${runId}::uuid, 'sweden', 'Sweden', ${linkedJobId}::uuid)`.execute(db),
       ).rejects.toMatchObject({ code: '23505' });
 
       // Catalog identity is normally retained during cache deletion. If it is physically removed, membership
@@ -509,6 +525,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
           '0003_download_events',
           '0004_upload_sessions',
           '0005_intervals',
+          '0006_interval_run_item_job_index',
         ]);
       });
     } finally {
@@ -544,6 +561,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
         '0003_download_events',
         '0004_upload_sessions',
         '0005_intervals',
+        '0006_interval_run_item_job_index',
       ]);
       const settings = await sql<{ n: number }>`select count(*)::int as n from settings`.execute(
         database.db,

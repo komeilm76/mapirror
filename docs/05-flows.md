@@ -382,23 +382,30 @@ file was removed manually, rate limit `429`, `HEAD` returns no body and neither 
 
 ```mermaid
 sequenceDiagram
+  participant A as Admin API
   participant S as Scheduler loop
   participant DB as PostgreSQL
   participant Q as jobs
-  participant W as Worker
-  S->>DB: BEGIN; SELECT intervals WHERE enabled AND next_run_at<=now() FOR UPDATE SKIP LOCKED
-  S->>DB: INSERT interval_runs + enqueue jobs + UPDATE next_run_at = computeNext(...)
-  S->>DB: COMMIT   (all-or-nothing; a failed enqueue rolls back and retries next tick)
-  W->>W: run jobs, update interval_run_items
-  W->>DB: recompute run status (succeeded/partial/failed)
-  W->>DB: prune old versions (keep = interval.keep_versions, keep newest)
+  participant W as Worker / reaper
+  A->>DB: POST /intervals/:id/run; lock interval; create manual run/items/jobs + audit
+  S->>DB: BEGIN; SELECT due enabled interval FOR UPDATE SKIP LOCKED
+  S->>DB: INSERT scheduled run/items/jobs + UPDATE next_run_at = computeNext(...)
+  DB-->>S: COMMIT (all-or-nothing; failed enqueue rolls back and retries next tick)
+  W->>DB: change job terminal state + country item + aggregate counts in one transaction
+  W->>DB: set run succeeded / partial / failed when all items are terminal
 ```
 
-**Rules:** one claim per interval per tick; a still-running previous occurrence makes this one skip
-(`SKIPPED_OVERLAP`, never stacked); missed runs fire once on recovery; run status `partial` when some
-countries fail; pruning never removes the newest valid version.
-**Tests:** next-run math (daily/weekly/monthly, month-end, Feb 28), no double-fire under concurrent
-ticks, `only_if_changed` skips unchanged, partial failure reporting, prune keeps newest 3 and never 0.
+**Rules:** manual run is allowed when the recurring schedule is disabled, but cannot overlap another run for that
+interval. Country job conflicts roll back the complete manual run. A retry leaves its country item queued; a terminal
+cancellation is `skipped`; a terminal worker loss is recorded like any other failure. Run status is `partial` only
+when at least one country downloaded and at least one failed; all-failure runs are `failed`, while no-failure runs
+(including all-skipped runs) are `succeeded`. Raw handler errors are never copied into run history. A still-running
+previous scheduled occurrence makes the next due occurrence skip (`SKIPPED_OVERLAP`, never stacked); missed schedule
+occurrences fire once on recovery.
+
+`only_if_changed` skip handling and version pruning are later interval tasks, not part of the run-now/history task.
+**Tests:** next-run math (daily/weekly/monthly, month-end, Feb 28), no double-fire under concurrent ticks, manual-run
+concurrency and disabled-schedule behavior, per-country terminal outcomes, and visible partial aggregate reporting.
 
 ---
 

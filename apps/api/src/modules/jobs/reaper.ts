@@ -10,6 +10,8 @@
 import { sql, type Kysely } from 'kysely';
 
 import type { Database } from '../../db/schema';
+import { withTransaction } from '../../db/transaction';
+import { finalizeIntervalRunItem } from '../intervals/run-items';
 import type { WorkerLog } from './worker';
 import { releaseJobLock, tryAcquireJobLock } from './lock';
 import { jobRetryDelayMs } from './retry';
@@ -105,23 +107,33 @@ export async function reapStaleJobs(
               options.retryMaxDelayMs,
             )
           : 0;
-        const recovered = await session
-          .updateTable('jobs')
-          .set({
-            status: retry ? 'queued' : 'failed',
-            run_after: sql`case when ${retry} then now() + ${delayMs} * interval '1 millisecond' else run_after end`,
-            error_code: WORKER_LOST_ERROR_CODE,
-            error_message: WORKER_LOST_ERROR_MESSAGE,
-            finished_at: retry ? null : sql`${now}`,
-            locked_by: null,
-            locked_at: null,
-          })
-          .where('id', '=', job.id)
-          .where('status', '=', 'running')
-          // A heartbeat may have advanced the row after the candidate query. Never overwrite a fresh timestamp.
-          .where('locked_at', '<', cutoff)
-          .returning('id')
-          .executeTakeFirst();
+        const recovered = await withTransaction(session, async (trx) => {
+          const row = await trx
+            .updateTable('jobs')
+            .set({
+              status: retry ? 'queued' : 'failed',
+              run_after: sql`case when ${retry} then now() + ${delayMs} * interval '1 millisecond' else run_after end`,
+              error_code: WORKER_LOST_ERROR_CODE,
+              error_message: WORKER_LOST_ERROR_MESSAGE,
+              finished_at: retry ? null : sql`${now}`,
+              locked_by: null,
+              locked_at: null,
+            })
+            .where('id', '=', job.id)
+            .where('status', '=', 'running')
+            // A heartbeat may have advanced the row after the candidate query. Never overwrite a fresh timestamp.
+            .where('locked_at', '<', cutoff)
+            .returning('id')
+            .executeTakeFirst();
+          if (row !== undefined && !retry) {
+            await finalizeIntervalRunItem(trx, job.id, {
+              status: 'failed',
+              errorCode: WORKER_LOST_ERROR_CODE,
+              errorMessage: WORKER_LOST_ERROR_MESSAGE,
+            });
+          }
+          return row;
+        });
 
         if (recovered !== undefined) {
           if (retry) requeued += 1;

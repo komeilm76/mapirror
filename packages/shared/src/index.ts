@@ -23,6 +23,7 @@
  * | `jobs` | admin job list/detail/cancel contracts (`P2-API-10`) |
  * | `imports` | multipart import fields and accepted-upload response (`P4-IMP-02`) |
  * | `intervals` | interval CRUD request, response and frequency vocabulary (`P4-INT-04`) |
+ * | `interval-runs` | manual run, paginated history and country outcome contracts (`P4-INT-05`) |
  *
  * Request/response schemas are added alongside their owning API contract tasks, so each implemented endpoint exports
  * one strict, reusable Zod shape instead of a prose-only or server-private contract.
@@ -41,6 +42,7 @@ export * from './errors';
 export * from './license';
 export * from './imports';
 export * from './intervals';
+export * from './interval-runs';
 export * from './jobs';
 export * from './pagination';
 export * from './public-catalog';

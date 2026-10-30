@@ -43,6 +43,7 @@ export const AUDIT_ACTIONS = {
   intervalCreate: 'interval.create',
   intervalUpdate: 'interval.update',
   intervalDelete: 'interval.delete',
+  intervalRun: 'interval.run',
 } as const;
 
 /** One documented audit action. */

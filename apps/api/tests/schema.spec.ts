@@ -73,10 +73,10 @@ function interfaceProperties(): Map<string, string[]> {
   return found;
 }
 
-/** The `CREATE TABLE` blocks in sections backed by migrations 0001 through 0005. */
+/** The `CREATE TABLE` blocks in sections backed by migrations 0001 through 0006. */
 const DOC = resolve(import.meta.dirname, '../../../docs/03-data-model.md');
 
-/** Document sections backed by `0001_init.sql` through `0005_intervals.sql`. */
+/** Document sections backed by `0001_init.sql` through `0005_intervals.sql` and `0006_interval_run_item_job_index.sql`. */
 const MIGRATED_HEADINGS = [
   '### 2.1 ',
   '### 2.2 ',

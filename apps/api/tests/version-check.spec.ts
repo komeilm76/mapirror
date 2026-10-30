@@ -40,6 +40,7 @@ describe('compareSchema', () => {
     '0003_download_events',
     '0004_upload_sessions',
     '0005_intervals',
+    '0006_interval_run_item_job_index',
   ];
 
   it('reports nothing for a database that matches the build', () => {
@@ -59,6 +60,7 @@ describe('compareSchema', () => {
       '0003_download_events',
       '0004_upload_sessions',
       '0005_intervals',
+      '0006_interval_run_item_job_index',
     ]);
     expect(report.unknown).toEqual([]);
   });
@@ -86,6 +88,7 @@ describe('compareSchema', () => {
       '0003_download_events',
       '0004_upload_sessions',
       '0005_intervals',
+      '0006_interval_run_item_job_index',
     ]);
   });
 

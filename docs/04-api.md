@@ -597,18 +597,24 @@ Disabling an interval while a run is active requires `{ "enabled": false, "confi
 Hard-deletes the interval and its memberships/run history. `409 JOB_ALREADY_RUNNING` if a run is in progress unless `?force=true`; force closes the active run as failed before the schema's cascade removes the interval's run history. Already-enqueued download jobs are independent durable jobs and are not canceled by deleting the schedule. `204` on success.
 
 #### `POST /_admin/api/intervals/:id/run`
-`202 { "runId": "…", "jobIds": ["…"] }` — manual trigger, `triggered_by='manual'`.
 
-#### `POST /_admin/api/intervals/preview`
+Body: omitted or `{}`; any fields are rejected. Starts a manual run even when the recurring schedule is disabled. The interval row lock plus the one-active-run constraint serialize this request with scheduled runs and other manual triggers; an active run returns `409 JOB_ALREADY_RUNNING`. If any country already has a conflicting active download/import, the whole run and all newly enqueued jobs roll back and the response is also `409 JOB_ALREADY_RUNNING`.
 
-Body: the schedule fields → `{ "nextRuns": ["2026-10-25T03:00:00Z", …5 items] }`.
-Used by the create/edit form so the admin sees exactly when it will fire.
+```json
+202 { "runId": "…", "jobIds": ["…", "…"] }
+```
 
-#### `GET /_admin/api/intervals/:id/runs?page=` → run history.
-#### `GET /_admin/api/interval-runs/:runId` → run + per-country items.
+The run, country snapshots, download jobs, audit row (`interval.run`), and per-country items are committed atomically with `triggered_by='manual'`. Each country downloads the latest source version using the interval's `onlyIfChanged` setting. Empty membership (possible after catalog-country removal) produces a completed run and an empty `jobIds` array. The manual trigger does not change `nextRunAt`.
 
-A sibling route (`/intervals/runs/:runId`) would be ambiguous with `/intervals/:id/runs`, so run
-history lives at its own top-level path.
+#### `GET /_admin/api/intervals/:id/runs?page=&limit=` → paginated history
+
+The response is `{ data: [run, …], meta }`, newest first, with the shared 1-based pagination contract (default limit 25, maximum 100; invalid/out-of-range values are normalized/clamped). A run summary includes `triggeredBy`, `status`, country counts, `bytesDownloaded`, start/finish timestamps, elapsed `durationMs`, and a safe aggregate error message. An unknown interval returns `404 NOT_FOUND`.
+
+#### `GET /_admin/api/interval-runs/:runId` → `{ run, items }`
+
+`run` is the same summary as history. `items` are the immutable country identity snapshots plus `jobId`, `status`, resolved `version`, transferred `bytes`, and safe error fields, ordered by country slug. Item statuses are `queued`, `downloaded`, `failed`, or `skipped`; canceled jobs are recorded as `skipped`. Job retries leave an item queued until the job becomes terminal. When all items are terminal, the aggregate is `succeeded` if no country failed, `failed` if all outcomes failed, and **`partial` when at least one country downloaded successfully and at least one failed**. Counts and bytes are updated in the same transaction as the linked job's terminal state, including terminal worker-loss recovery. Raw handler exception text is never exposed.
+
+A sibling route (`/intervals/runs/:runId`) would be ambiguous with `/intervals/:id/runs`, so run detail lives at its own top-level path.
 
 ---
 
@@ -650,7 +656,7 @@ credentials, token settings) come from env or are write-only: they are **never**
 response — the settings serializer projects an explicit allow-list of keys.
 
 #### `GET /_admin/api/audit?action=&page=`
-Paginated audit log (`auth.*`, `cache.*`, `catalog.*`, `version.*`, `interval.*`, `settings.*`), including `catalog.sync` after each successful catalog transaction and `interval.create`, `interval.update`, and `interval.delete` in the same transaction as each schedule mutation.
+Paginated audit log (`auth.*`, `cache.*`, `catalog.*`, `version.*`, `interval.*`, `settings.*`), including `catalog.sync` after each successful catalog transaction and `interval.create`, `interval.update`, `interval.delete`, and manual `interval.run` in the same transaction as the corresponding action.
 
 ---
 

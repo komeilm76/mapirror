@@ -331,6 +331,8 @@ CREATE TABLE interval_run_items (
   error_message text
 );
 CREATE UNIQUE INDEX interval_run_items_unique ON interval_run_items (run_id, country_slug);
+-- P4-INT-05: job completion uses this stable one-to-one link to find and finalize its country item.
+CREATE UNIQUE INDEX interval_run_items_job_idx ON interval_run_items (job_id) WHERE job_id IS NOT NULL;
 ```
 
 - `day_of_month` capped at **28** so monthly schedules exist in every month (no clamping surprises). `intervals_shape` also forbids weekday/day-of-month values on the wrong frequency, not merely missing required values.
@@ -463,7 +465,7 @@ available after job-history pruning.
   backfills in a follow-up migration, destructive changes last).
 - `schema.ts` (Kysely types) is updated **in the same commit** as the migration; a startup check
   compares the ordered migration list with an expected constant to catch version skew. Migrations currently include
-  `0001_init.sql`, `0002_catalog.sql`, `0003_download_events.sql`, `0004_upload_sessions.sql`, and `0005_intervals.sql`.
+  `0001_init.sql`, `0002_catalog.sql`, `0003_download_events.sql`, `0004_upload_sessions.sql`, `0005_intervals.sql`, and `0006_interval_run_item_job_index.sql`.
 - The TypeScript types describe what the **driver returns**, which is not always what the SQL type suggests — the
   measured table lives in `apps/api/src/db/schema.ts` (`bigserial` → `string`, `timestamptz` → `Date`,
   `bytea` → `Buffer`, `jsonb` → parsed value, `inet` → `string`). A column's SQL type here and its JS type there are

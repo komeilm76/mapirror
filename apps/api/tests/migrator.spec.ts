@@ -44,6 +44,7 @@ describe('listMigrationFiles', () => {
       '0003_download_events',
       '0004_upload_sessions',
       '0005_intervals',
+      '0006_interval_run_item_job_index',
     ]);
     expect(files[0]?.path).toBe(join(MIGRATIONS_DIR, '0001_init.sql'));
     // The file has to exist, because the provider reads it by path.
@@ -124,17 +125,20 @@ describe('SqlMigrationProvider', () => {
       '0003_download_events',
       '0004_upload_sessions',
       '0005_intervals',
+      '0006_interval_run_item_job_index',
     ]);
     const migration = migrations['0001_init']!;
     const catalogMigration = migrations['0002_catalog']!;
     const downloadEventsMigration = migrations['0003_download_events']!;
     const uploadSessionsMigration = migrations['0004_upload_sessions']!;
     const intervalsMigration = migrations['0005_intervals']!;
+    const intervalItemJobIndexMigration = migrations['0006_interval_run_item_job_index']!;
     expect(typeof migration.up).toBe('function');
     expect(typeof catalogMigration.up).toBe('function');
     expect(typeof downloadEventsMigration.up).toBe('function');
     expect(typeof uploadSessionsMigration.up).toBe('function');
     expect(typeof intervalsMigration.up).toBe('function');
+    expect(typeof intervalItemJobIndexMigration.up).toBe('function');
     // Forward-only (`03-data-model.md` §4): rollback is a restore, not a script. Asserted as the *shape* of the
     // object, because a `down` that exists and does nothing is worse than one that is absent.
     expect(Object.keys(migration)).toEqual(['up']);
@@ -324,7 +328,9 @@ describe('the migration agrees with 03-data-model.md', () => {
     expect(start, '### 2.7 interval schedules must exist').toBeGreaterThan(-1);
     const end = doc.indexOf('\n### ', start + heading.length);
     const section = doc.slice(start, end === -1 ? undefined : end);
-    const sqlText = await readFile(join(MIGRATIONS_DIR, '0005_intervals.sql'), 'utf8');
+    const sqlText =
+      (await readFile(join(MIGRATIONS_DIR, '0005_intervals.sql'), 'utf8')) +
+      (await readFile(join(MIGRATIONS_DIR, '0006_interval_run_item_job_index.sql'), 'utf8'));
 
     const tablesIn = (text: string) =>
       [...text.matchAll(/CREATE TABLE (\w+)/g)].map((match) => match[1]);
@@ -361,6 +367,7 @@ describe('the migration agrees with 03-data-model.md', () => {
       'interval_runs_interval_idx',
       'interval_runs_one_active',
       'interval_run_items_unique',
+      'interval_run_items_job_idx',
     ]);
     expect(indexNames(sqlText)).toEqual(indexNames(section));
 

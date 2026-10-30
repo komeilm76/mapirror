@@ -11,6 +11,8 @@ import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 
 import type { Database, Job, JobStatus } from '../../db/schema';
+import { withTransaction } from '../../db/transaction';
+import { finalizeIntervalRunItem } from '../intervals/run-items';
 import type { WorkerLog } from './worker';
 
 /** Result of asking for cancellation. */
@@ -57,33 +59,54 @@ export async function requestJobCancellation(
 ): Promise<JobCancellationResult> {
   if (jobId.trim().length === 0) throw new TypeError('jobId must not be empty');
 
-  const updated = await database
-    .updateTable('jobs')
-    .set({
-      cancel_requested: true,
-      status: sql<JobStatus>`case when status = 'queued' then 'canceled'::job_status else status end`,
-      finished_at: sql`case when status = 'queued' then now() else finished_at end`,
-      locked_by: sql`case when status = 'queued' then null else locked_by end`,
-      locked_at: sql`case when status = 'queued' then null else locked_at end`,
-    })
-    .where('id', '=', jobId)
-    .where('status', 'in', ['queued', 'running'])
-    .returning('status')
-    .executeTakeFirst();
+  return withTransaction(database, async (trx) => {
+    const existing = await trx
+      .selectFrom('jobs')
+      .select(['status', 'type'])
+      .where('id', '=', jobId)
+      .forUpdate()
+      .executeTakeFirst();
+    if (existing === undefined) return { found: false, status: null, accepted: false };
 
-  if (updated !== undefined) return { found: true, status: updated.status, accepted: true };
+    if (existing.status === 'queued') {
+      await trx
+        .updateTable('jobs')
+        .set({
+          cancel_requested: true,
+          status: 'canceled',
+          finished_at: sql`now()`,
+          locked_by: null,
+          locked_at: null,
+        })
+        .where('id', '=', jobId)
+        .where('status', '=', 'queued')
+        .execute();
+      if (existing.type === 'download') {
+        await finalizeIntervalRunItem(trx, jobId, {
+          status: 'skipped',
+          errorCode: null,
+          errorMessage: 'The download was canceled.',
+        });
+      }
+      return { found: true, status: 'canceled', accepted: true };
+    }
 
-  const existing = await database
-    .selectFrom('jobs')
-    .select('status')
-    .where('id', '=', jobId)
-    .executeTakeFirst();
-  if (existing === undefined) return { found: false, status: null, accepted: false };
-  return {
-    found: true,
-    status: existing.status,
-    accepted: existing.status === 'canceled',
-  };
+    if (existing.status === 'running') {
+      await trx
+        .updateTable('jobs')
+        .set({ cancel_requested: true })
+        .where('id', '=', jobId)
+        .where('status', '=', 'running')
+        .execute();
+      return { found: true, status: 'running', accepted: true };
+    }
+
+    return {
+      found: true,
+      status: existing.status,
+      accepted: existing.status === 'canceled',
+    };
+  });
 }
 
 /** Options for the worker-side durable cancellation poll. */

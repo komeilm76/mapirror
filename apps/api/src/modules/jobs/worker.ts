@@ -12,6 +12,8 @@ import { sql, type Kysely } from 'kysely';
 
 import { MAX_WORKER_CONCURRENCY } from '../../config/limits';
 import type { Database, Job, JobType, JsonValue } from '../../db/schema';
+import { withTransaction } from '../../db/transaction';
+import { finalizeIntervalRunItem } from '../intervals/run-items';
 import { JobOwnershipLostError, monitorJobCancellation } from './cancellation';
 import { releaseJobLock, tryAcquireJobLock } from './lock';
 import { createJobProgressReporter, type JobProgressUpdate } from './progress';
@@ -372,24 +374,35 @@ async function markSucceeded(
   workerId: string,
   result: JsonValue | null,
 ): Promise<boolean> {
-  const row = await session
-    .updateTable('jobs')
-    .set({
-      status: 'succeeded',
-      result,
-      error_code: null,
-      error_message: null,
-      finished_at: sql`now()`,
-      locked_by: null,
-      locked_at: null,
-    })
-    .where('id', '=', job.id)
-    .where('status', '=', 'running')
-    .where('locked_by', '=', workerId)
-    .where('cancel_requested', '=', false)
-    .returning('id')
-    .executeTakeFirst();
-  return row !== undefined;
+  return withTransaction(session, async (trx) => {
+    const row = await trx
+      .updateTable('jobs')
+      .set({
+        status: 'succeeded',
+        result,
+        error_code: null,
+        error_message: null,
+        finished_at: sql`now()`,
+        locked_by: null,
+        locked_at: null,
+      })
+      .where('id', '=', job.id)
+      .where('status', '=', 'running')
+      .where('locked_by', '=', workerId)
+      .where('cancel_requested', '=', false)
+      .returning(['id', 'progress_bytes'])
+      .executeTakeFirst();
+    if (row === undefined) return false;
+
+    if (job.type === 'download') {
+      await finalizeIntervalRunItem(trx, job.id, {
+        status: 'downloaded',
+        bytes: String(row.progress_bytes),
+        version: resultVersion(result),
+      });
+    }
+    return true;
+  });
 }
 
 /** Retries a failed attempt after bounded exponential backoff, or marks it terminal after max_attempts. */
@@ -402,47 +415,72 @@ async function markFailed(
 ): Promise<boolean> {
   const retry = job.attempts < job.max_attempts;
   const delayMs = retry ? jobRetryDelayMs(job.attempts, retryBaseDelayMs, retryMaxDelayMs) : 0;
-  const row = await session
-    .updateTable('jobs')
-    .set({
-      status: retry ? 'queued' : 'failed',
-      run_after: retry ? sql`now() + ${delayMs} * interval '1 millisecond'` : job.run_after,
-      error_code: FAILED_ERROR_CODE,
-      error_message: FAILED_ERROR_MESSAGE,
-      finished_at: retry ? null : sql`now()`,
-      locked_by: null,
-      locked_at: null,
-    })
-    .where('id', '=', job.id)
-    .where('status', '=', 'running')
-    .where('locked_by', '=', workerId)
-    .where('cancel_requested', '=', false)
-    .returning('id')
-    .executeTakeFirst();
-  return row !== undefined;
+  return withTransaction(session, async (trx) => {
+    const row = await trx
+      .updateTable('jobs')
+      .set({
+        status: retry ? 'queued' : 'failed',
+        run_after: retry ? sql`now() + ${delayMs} * interval '1 millisecond'` : job.run_after,
+        error_code: FAILED_ERROR_CODE,
+        error_message: FAILED_ERROR_MESSAGE,
+        finished_at: retry ? null : sql`now()`,
+        locked_by: null,
+        locked_at: null,
+      })
+      .where('id', '=', job.id)
+      .where('status', '=', 'running')
+      .where('locked_by', '=', workerId)
+      .where('cancel_requested', '=', false)
+      .returning('id')
+      .executeTakeFirst();
+    if (row === undefined) return false;
+    if (!retry && job.type === 'download') {
+      await finalizeIntervalRunItem(trx, job.id, {
+        status: 'failed',
+        errorCode: FAILED_ERROR_CODE,
+        errorMessage: FAILED_ERROR_MESSAGE,
+      });
+    }
+    return true;
+  });
 }
 
 /** Marks the active job canceled only after its handler has observed cancellation and returned from cleanup. */
 async function markCanceled(session: Kysely<Database>, job: Job, workerId: string): Promise<void> {
-  await session
-    .updateTable('jobs')
-    .set({
-      status: 'canceled',
-      result: null,
-      error_code: null,
-      error_message: null,
-      cancel_requested: true,
-      finished_at: sql`now()`,
-      locked_by: null,
-      locked_at: null,
-    })
-    .where('id', '=', job.id)
-    .where('status', '=', 'running')
-    .where('locked_by', '=', workerId)
-    .execute();
+  await withTransaction(session, async (trx) => {
+    const row = await trx
+      .updateTable('jobs')
+      .set({
+        status: 'canceled',
+        result: null,
+        error_code: null,
+        error_message: null,
+        cancel_requested: true,
+        finished_at: sql`now()`,
+        locked_by: null,
+        locked_at: null,
+      })
+      .where('id', '=', job.id)
+      .where('status', '=', 'running')
+      .where('locked_by', '=', workerId)
+      .returning('id')
+      .executeTakeFirst();
+    if (row !== undefined && job.type === 'download') {
+      await finalizeIntervalRunItem(trx, job.id, {
+        status: 'skipped',
+        errorCode: null,
+        errorMessage: 'The download was canceled.',
+      });
+    }
+  });
 }
 
 /** Closes a cancellation request that committed while a worker was persisting success/failure. */
+function resultVersion(result: JsonValue | null): string | null {
+  if (typeof result !== 'object' || result === null || Array.isArray(result)) return null;
+  return typeof result.version === 'string' ? result.version : null;
+}
+
 async function finishConcurrentCancellation(
   session: Kysely<Database>,
   job: Job,
