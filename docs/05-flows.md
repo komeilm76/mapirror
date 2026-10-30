@@ -500,7 +500,7 @@ the API; retention 7 days.
 | Trigger | Action |
 |---|---|
 | `running` job with `locked_at` older than 4 min 30 s **and** advisory lock acquirable (reaper scans every 15 s) | Proof the owner is gone → requeue with exponential backoff if attempts remain, else `failed` with `WORKER_LOST`. A slow job that still holds its lock is left untouched; 15 s remains for scan processing within the 5 min target |
-| Running interval with a still-running previous occurrence | Skip the occurrence (`SKIPPED_OVERLAP`), keep the schedule intact |
+| Running interval with a still-running previous occurrence | Advance `next_run_at`, skip without stacking, and log `SKIPPED_OVERLAP`; frequency and schedule configuration remain unchanged |
 | `interval_runs` stuck in `running` (crash mid-run) | The `interval_runs_one_active` unique index would block every future run of that interval, so the reaper closes runs older than 6 h as `failed` with `RUN_INTERRUPTED` — without it, one crash silently disables a schedule |
 | `.part` older than 24 h with no job | Delete |
 | Orphan file/dir under `CACHE_DIR` with no `ready` row | Reported in `/_admin/api/system/status` → `storage.orphans`, deleted only by an explicit admin action or the scheduled sweep |

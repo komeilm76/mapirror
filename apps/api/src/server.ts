@@ -25,6 +25,7 @@ import { createGeofabrikMapSource } from './modules/geofabrik/map-source';
 import { createCatalogSyncHandler } from './modules/jobs/catalog-sync-handler';
 import { createDownloadHandler } from './modules/jobs/download-handler';
 import { createImportHandler } from './modules/jobs/import-handler';
+import { startIntervalScheduler } from './modules/intervals/scheduler';
 import { createUploadStorage } from './modules/storage/upload-storage';
 import { startJobReaper } from './modules/jobs/reaper';
 import { startJobWorker, type JobHandlers } from './modules/jobs/worker';
@@ -152,8 +153,9 @@ export async function start(
       log: app.log,
     });
     const reaper = startJobReaper(app.db.db, { log: app.log });
+    const intervalScheduler = startIntervalScheduler(app.db.db, { log: app.log });
     stopWorkers = async () => {
-      await Promise.all([worker.stop(), reaper.stop()]);
+      await Promise.all([worker.stop(), reaper.stop(), intervalScheduler.stop()]);
     };
     stopBackgroundWork = stopWorkers;
   }

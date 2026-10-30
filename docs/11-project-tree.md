@@ -59,6 +59,8 @@ mapirror/
 │  │  │  │  │  ├─ catalog-sync-route.ts # Authenticated, idempotent catalog-job trigger
 │  │  │  │  ├─ routes/{catalog,cache,versions,imports,intervals,jobs,system,settings,audit}.ts
 │  │  │  │  │  └─ services/{cache,versions,publication,intervals,metrics}.ts
+│  │  │  │  ├─ intervals/
+│  │  │  │  │  └─ scheduler.ts      # 30 s due-interval loop; SKIP LOCKED and atomic run/job enqueue
 │  │  │  │  ├─ public/             # /_public/api: countries, versions, download, stats
 │  │  │  │  ├─ geofabrik/          # MapSource contract, catalog client, region parsing, later source operations
 │  │  │  │  │  ├─ source.ts        # MapSource interface (thin, 4 methods)

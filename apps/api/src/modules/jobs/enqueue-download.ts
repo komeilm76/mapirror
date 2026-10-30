@@ -11,6 +11,7 @@ import { sql, type Kysely } from 'kysely';
 
 import { lockCountryCacheForEnqueue } from '../../db/repositories/cache';
 import type { Database } from '../../db/schema';
+import type { RepositoryExecutor } from '../../db/repositories/executor';
 import { withTransaction } from '../../db/transaction';
 import { AppError } from '../../lib/errors';
 
@@ -47,70 +48,8 @@ export async function enqueueDownloadJob(
   database: Kysely<Database>,
   input: EnqueueDownloadJobInput,
 ): Promise<string> {
-  const payload = {
-    countryId: input.countryId,
-    version: input.version,
-    ...(input.origin === undefined ? {} : { origin: input.origin }),
-    ...(input.onlyIfChanged === undefined ? {} : { onlyIfChanged: input.onlyIfChanged }),
-  };
-
   try {
-    return await withTransaction(database, async (trx) => {
-      // Cache deletion holds the matching session advisory lock through post-commit file cleanup. This short
-      // transaction-scoped lock serializes the final admission step with deletion across API processes.
-      await lockCountryCacheForEnqueue(trx, input.countryId);
-      const country = await trx
-        .selectFrom('countries')
-        .select('id')
-        .where('id', '=', input.countryId)
-        .forKeyShare()
-        .executeTakeFirst();
-      if (country === undefined) {
-        throw new AppError('NOT_FOUND', 'The requested catalog region does not exist.');
-      }
-      if (input.version !== 'latest') {
-        const readyVersion = await trx
-          .selectFrom('map_versions')
-          .select('id')
-          .where('country_id', '=', input.countryId)
-          .where('version', '=', input.version)
-          .where('status', '=', 'ready')
-          .executeTakeFirst();
-        if (readyVersion !== undefined) {
-          throw new AppError(
-            'VERSION_ALREADY_CACHED',
-            'This source version is already cached for the requested region.',
-            { countryId: input.countryId, version: input.version },
-          );
-        }
-      }
-      const activeImport = await trx
-        .selectFrom('jobs')
-        .select('id')
-        .where('type', '=', 'import')
-        .where('status', 'in', ['queued', 'running'])
-        .where(sql<string>`payload ->> 'countryId'`, '=', input.countryId)
-        .where(sql<string>`payload ->> 'version'`, 'in', [input.version, 'latest'])
-        .executeTakeFirst();
-      if (activeImport !== undefined) {
-        throw new AppError(
-          'JOB_ALREADY_RUNNING',
-          'An import for this country and version is already queued or running.',
-          { countryId: input.countryId, version: input.version, jobId: activeImport.id },
-        );
-      }
-
-      const job = await trx
-        .insertInto('jobs')
-        .values({
-          type: 'download',
-          payload,
-          ...(input.createdBy === undefined ? {} : { created_by: input.createdBy }),
-        })
-        .returning('id')
-        .executeTakeFirstOrThrow();
-      return job.id;
-    });
+    return await withTransaction(database, (trx) => enqueueDownloadJobInTransaction(trx, input));
   } catch (error) {
     if (isUniqueViolation(error, 'jobs_one_active_download')) {
       throw new AppError(
@@ -122,6 +61,83 @@ export async function enqueueDownloadJob(
     }
     throw error;
   }
+}
+
+/**
+ * Creates the same protected download row inside a transaction owned by the caller.
+ *
+ * Used by interval scheduling so run, country items, jobs, and the next occurrence commit or roll back together. This
+ * function never opens a nested transaction; callers must let any failure escape their transaction callback.
+ *
+ * @param executor - The caller's transaction.
+ * @param input - Validated country, version and optional job metadata.
+ * @returns The generated job UUID.
+ */
+export async function enqueueDownloadJobInTransaction(
+  executor: RepositoryExecutor,
+  input: EnqueueDownloadJobInput,
+): Promise<string> {
+  const payload = {
+    countryId: input.countryId,
+    version: input.version,
+    ...(input.origin === undefined ? {} : { origin: input.origin }),
+    ...(input.onlyIfChanged === undefined ? {} : { onlyIfChanged: input.onlyIfChanged }),
+  };
+
+  // Cache deletion holds the matching session advisory lock through post-commit file cleanup. This transaction-scoped
+  // lock serializes the final admission step with deletion across API processes.
+  await lockCountryCacheForEnqueue(executor, input.countryId);
+  const country = await executor
+    .selectFrom('countries')
+    .select('id')
+    .where('id', '=', input.countryId)
+    .forKeyShare()
+    .executeTakeFirst();
+  if (country === undefined) {
+    throw new AppError('NOT_FOUND', 'The requested catalog region does not exist.');
+  }
+  if (input.version !== 'latest') {
+    const readyVersion = await executor
+      .selectFrom('map_versions')
+      .select('id')
+      .where('country_id', '=', input.countryId)
+      .where('version', '=', input.version)
+      .where('status', '=', 'ready')
+      .executeTakeFirst();
+    if (readyVersion !== undefined) {
+      throw new AppError(
+        'VERSION_ALREADY_CACHED',
+        'This source version is already cached for the requested region.',
+        { countryId: input.countryId, version: input.version },
+      );
+    }
+  }
+  const activeImport = await executor
+    .selectFrom('jobs')
+    .select('id')
+    .where('type', '=', 'import')
+    .where('status', 'in', ['queued', 'running'])
+    .where(sql<string>`payload ->> 'countryId'`, '=', input.countryId)
+    .where(sql<string>`payload ->> 'version'`, 'in', [input.version, 'latest'])
+    .executeTakeFirst();
+  if (activeImport !== undefined) {
+    throw new AppError(
+      'JOB_ALREADY_RUNNING',
+      'An import for this country and version is already queued or running.',
+      { countryId: input.countryId, version: input.version, jobId: activeImport.id },
+    );
+  }
+
+  const job = await executor
+    .insertInto('jobs')
+    .values({
+      type: 'download',
+      payload,
+      ...(input.createdBy === undefined ? {} : { created_by: input.createdBy }),
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  return job.id;
 }
 
 function isUniqueViolation(error: unknown, constraint: string): boolean {

@@ -170,11 +170,15 @@ stateDiagram-v2
 ## 5. Scheduler (intervals)
 
 - A dedicated loop wakes every 30 s, selects `intervals` where `enabled` and `next_run_at <= now()`,
-  and **claims each row** with `FOR UPDATE SKIP LOCKED` + immediate `next_run_at` recomputation in the
-  same transaction — this is the double-fire guard (no external lock service needed).
-- On fire, **one transaction** does all three: create the `interval_runs` row, enqueue one `download`
-  job per country (`only_if_changed`), and advance `next_run_at`. If enqueueing fails, the transaction
-  rolls back and the run is retried on the next tick — a claimed schedule can never lose its work.
+  and **claims each row** with `FOR UPDATE SKIP LOCKED` in the transaction — this is the double-fire guard
+  (no external lock service needed).
+- On fire, **one transaction** creates the `interval_runs` row, enqueues one `download` job and run item per
+  current country (`only_if_changed`), and advances `next_run_at` from the database clock after enqueueing.
+  If enqueueing fails, the transaction rolls back and the run is retried on a later pass — a claimed schedule can
+  never lose its work. A failed interval is excluded only for that pass so it cannot starve other due schedules.
+  An interval with no countries records a zero-country `succeeded` run instead of an unfinishable `running` row.
+- The loop starts with the worker services, runs immediately and then polls every 30 s; shutdown stops the poll and
+  waits for an in-flight scheduling transaction before the database pool closes.
 - If a run for that interval is still `running` (a slow download from the previous occurrence), this
   occurrence is **skipped** with a logged `SKIPPED_OVERLAP` instead of violating the
   `interval_runs_one_active` index. Runs are never stacked.
