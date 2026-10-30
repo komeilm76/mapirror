@@ -57,6 +57,7 @@ mapirror/
 │  │  │  │  │  ├─ catalog-route.ts # Authenticated search/filter/page + consistent freshness snapshot
 │  │  │  │  │  ├─ catalog-region-route.ts # Slug detail, parent chain, cached versions and outage-safe snapshots
 │  │  │  │  │  ├─ catalog-sync-route.ts # Authenticated, idempotent catalog-job trigger
+│  │  │  │  │  ├─ intervals-route.ts # Schedule CRUD, semantic validation, UTC recompute and audit
 │  │  │  │  ├─ routes/{catalog,cache,versions,imports,intervals,jobs,system,settings,audit}.ts
 │  │  │  │  │  └─ services/{cache,versions,publication,intervals,metrics}.ts
 │  │  │  │  ├─ intervals/
@@ -215,6 +216,7 @@ mapirror/
 │     │  ├─ license.ts             # ODbL + Geofabrik attribution strings
 │     │  ├─ constants.ts           # Token format, sort fields, 9 DB-mirrored vocabularies
 │     │  ├─ catalog.ts             # Catalog listing and sync-trigger request/response contracts
+│     │  ├─ intervals.ts           # Strict interval CRUD request/response contracts
 │     │  ├─ catalog-region.ts      # Region detail and snapshot request/response contracts
 │     │  ├─ schemas/               # Zod request/response schemas (with the API contract tasks)
 │     │  ├─ types/                 # z.infer exports (no hand-written duplicates)

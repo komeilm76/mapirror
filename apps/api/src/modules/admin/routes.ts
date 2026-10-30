@@ -29,6 +29,7 @@ import { getCatalog } from './catalog-route';
 import { postCatalogSync } from './catalog-sync-route';
 import { createImportHandler } from './import-route';
 import { getImportStatus } from './import-status-route';
+import { deleteInterval, getIntervals, patchInterval, postInterval } from './intervals-route';
 
 /** The validated settings required to configure admin source reads. */
 export interface AdminRouteOptions {
@@ -74,6 +75,10 @@ export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, op
   app.post('/cache/downloads', cacheDownload);
   app.post('/imports', importHandler);
   app.get('/imports/:uploadId', getImportStatus);
+  app.get('/intervals', getIntervals);
+  app.post('/intervals', postInterval);
+  app.patch('/intervals/:id', patchInterval);
+  app.delete('/intervals/:id', deleteInterval);
   app.get('/jobs', getJobs);
   app.get('/jobs/:jobId', getJob);
   app.post('/jobs/:jobId/cancel', cancelJob);

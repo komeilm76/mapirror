@@ -565,33 +565,36 @@ loss and may remain on a queued retry or become terminal when attempts are exhau
 
 ### 2.5 Intervals
 
-#### `GET /_admin/api/intervals` → list with `countries: [{countryId,name,slug}]`, `nextRunAt`, `lastRun`.
+#### `GET /_admin/api/intervals` → `{ data: [interval, …] }`
+
+The list is one repeatable-read snapshot, ordered newest-created first. Each interval includes `countries: [{countryId,name,slug}]`, `nextRunAt`, and `lastRun: {id,status,startedAt,finishedAt} | null`, plus its editable schedule fields.
 
 #### `POST /_admin/api/intervals`
 
 ```json
 {
-  "name": "Nordics nightly",
-  "frequency": "daily",              // 'daily' | 'weekly' | 'monthly'
-  "timeOfDay": "03:00",              // HH:mm, UTC
-  "weekday": 1,                      // required if weekly (1=Mon … 7=Sun)
-  "dayOfMonth": 1,                   // required if monthly (1…28)
-  "countryIds": ["…", "…"],          // ≥ 1, max 200
-  "keepVersions": 3,                 // 1…10, default from settings
-  "onlyIfChanged": true,
-  "enabled": true
+  "name": "Nordics weekly",
+  "frequency": "weekly",             // 'daily' | 'weekly' | 'monthly'
+  "timeOfDay": "03:00",              // HH:mm, UTC; default 03:00
+  "weekday": 1,                      // Monday=1 … Sunday=7; default Monday for weekly
+  "countryIds": ["…", "…"],          // at least 1, maximum 200, unique catalog country ids
+  "keepVersions": 3,                 // 1…10, default 3
+  "onlyIfChanged": true,             // default true
+  "enabled": true                    // default true
 }
 ```
 
-`201 { interval }` (includes computed `nextRunAt`).
-Validation: `422 SEMANTIC_ERROR` if `weekday` is sent for daily, or `countryIds` is empty.
+`name` is trimmed and must contain 1–100 characters. For `monthly`, use `dayOfMonth` (1…28; default 1) instead of `weekday`; daily schedules accept neither. The fields are mutually exclusive: a shape/frequency mismatch, an empty country list, or a country id absent from the catalog returns `422 SEMANTIC_ERROR`. Malformed types, bounds, duplicate ids, and unknown keys return `400 VALIDATION_ERROR`. `201 { interval }` includes computed `nextRunAt`; schedule time is UTC.
 
 #### `PATCH /_admin/api/intervals/:id`
-Partial update; any schedule field recomputes `nextRunAt`. Re-enabling a paused interval recomputes
-from **now** (never fires a backlog).
+
+Partial update; at least one field is required. Schedule field changes recompute `nextRunAt` from the database clock. A frequency change clears the old frequency-specific field and uses the documented default (Monday or day 1) unless the new field is supplied. Re-enabling a paused interval recomputes from **now** (never fires a backlog). A wrong frequency-field combination returns `422 SEMANTIC_ERROR`.
+
+Disabling an interval while a run is active requires `{ "enabled": false, "confirm": true }`; otherwise the route returns `409 CONFIRMATION_REQUIRED`. The current run continues; only future occurrences are paused. Every create, update, and delete writes an audit row in the same transaction.
 
 #### `DELETE /_admin/api/intervals/:id`
-`409 JOB_ALREADY_RUNNING` if a run is in progress unless `?force=true` (which marks the run failed).
+
+Hard-deletes the interval and its memberships/run history. `409 JOB_ALREADY_RUNNING` if a run is in progress unless `?force=true`; force closes the active run as failed before the schema's cascade removes the interval's run history. Already-enqueued download jobs are independent durable jobs and are not canceled by deleting the schedule. `204` on success.
 
 #### `POST /_admin/api/intervals/:id/run`
 `202 { "runId": "…", "jobIds": ["…"] }` — manual trigger, `triggered_by='manual'`.
@@ -647,7 +650,7 @@ credentials, token settings) come from env or are write-only: they are **never**
 response — the settings serializer projects an explicit allow-list of keys.
 
 #### `GET /_admin/api/audit?action=&page=`
-Paginated audit log (`auth.*`, `cache.*`, `catalog.*`, `version.*`, `interval.*`, `settings.*`), including `catalog.sync` after each successful catalog transaction.
+Paginated audit log (`auth.*`, `cache.*`, `catalog.*`, `version.*`, `interval.*`, `settings.*`), including `catalog.sync` after each successful catalog transaction and `interval.create`, `interval.update`, and `interval.delete` in the same transaction as each schedule mutation.
 
 ---
 
