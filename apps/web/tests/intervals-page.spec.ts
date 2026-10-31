@@ -156,6 +156,41 @@ afterEach(() => {
 });
 
 describe('admin intervals screen', () => {
+  it('shows initial loading, a retryable load error, and the empty state after recovery', async () => {
+    let rejectInitial!: (cause: unknown) => void;
+    const initialRequest = new Promise<Response>((_resolve, reject) => {
+      rejectInitial = reject;
+    });
+    let intervalCalls = 0;
+    const fetchImpl = vi.fn<typeof fetch>((input) => {
+      const url = requestUrl(input);
+      if (url.pathname === '/_auth/api/me') return Promise.resolve(jsonResponse(ME));
+      if (url.pathname === '/_admin/api/intervals') {
+        intervalCalls += 1;
+        return intervalCalls === 1 ? initialRequest : Promise.resolve(jsonResponse({ data: [] }));
+      }
+      return Promise.resolve(jsonResponse({ data: [] }));
+    });
+
+    const { container } = await mountIntervals(fetchImpl);
+    expect(container.textContent).toContain('Loading schedules');
+
+    rejectInitial(new TypeError('network unavailable'));
+    await flushPromises();
+    expect(container.textContent).toContain('The server could not be reached.');
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Retry');
+
+    [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.trim() === 'Retry')
+      ?.click();
+    await flushPromises();
+    await flushPromises();
+
+    expect(container.textContent).toContain('No intervals yet');
+    expect(container.textContent).not.toContain('Schedules could not be loaded');
+    expect(intervalCalls).toBe(2);
+  });
+
   it('starts a paused interval manually and renders all run statuses with safe country failure details', async () => {
     const interval = intervalFromBody({
       name: 'Paused Finland refresh',
