@@ -56,6 +56,27 @@ describe('compareSourceToCache', () => {
     });
   });
 
+  it('treats an unchanged timestamp and size as current even when version labels differ', () => {
+    const unchangedTimestamp = new Date('2026-10-23T20:20:51.000Z');
+    const unchanged = sourceDetail({
+      version: '261024',
+      dataTimestamp: unchangedTimestamp,
+      sizeBytes: 1000,
+    });
+
+    expect(
+      compareSourceToCache(unchanged, [
+        { ...CACHED[0]!, dataTimestamp: unchangedTimestamp, sizeBytes: '1000' },
+      ]),
+    ).toMatchObject({
+      state: 'up_to_date',
+      availableVersion: null,
+      availableSizeBytes: null,
+      availableAt: null,
+      reason: null,
+    });
+  });
+
   it('reports an identity change when data timestamps are equal but the advertised size differs', () => {
     expect(
       compareSourceToCache(

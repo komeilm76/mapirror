@@ -152,6 +152,54 @@ describe.skipIf(skipReason !== null)('persisted update checks', () => {
     });
   });
 
+  it('persists up-to-date when the exact upstream snapshot is already cached and clears a stale offer', async () => {
+    await withUpdateCountry(async ({ database, countryId }) => {
+      const sourceDetail: SourceRegionDetail = {
+        version: '261023',
+        dataTimestamp: new Date('2026-10-23T20:20:51.000Z'),
+        sizeBytes: 1000,
+        etag: null,
+        lastModified: null,
+      };
+      const getRegionDetail = vi.fn(() => Promise.resolve(sourceDetail));
+      const checker = createUpdateChecker({
+        database: database.db,
+        source: { id: 'geofabrik', getRegionDetail },
+        now: () => new Date(CHECKED_AT),
+      });
+
+      await expect(checker.check(countryId)).resolves.toMatchObject({
+        state: 'up_to_date',
+        availableVersion: null,
+        availableSizeBytes: null,
+        availableAt: null,
+        cached: { version: '261023', sizeBytes: '1000' },
+        source: { version: '261023', sizeBytes: 1000 },
+        checkedAt: CHECKED_AT,
+      });
+      expect(getRegionDetail).toHaveBeenCalledOnce();
+      expect(
+        await database.db
+          .selectFrom('country_cache')
+          .select([
+            'update_state',
+            'available_version',
+            'available_size_bytes',
+            'available_at',
+            'update_checked_at',
+          ])
+          .where('country_id', '=', countryId)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({
+        update_state: 'up_to_date',
+        available_version: null,
+        available_size_bytes: null,
+        available_at: null,
+        update_checked_at: CHECKED_AT,
+      });
+    });
+  });
+
   it('persists unknown on source failure and removes stale update claims', async () => {
     await withUpdateCountry(async ({ database, countryId }) => {
       const checker = createUpdateChecker({
