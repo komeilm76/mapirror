@@ -32,6 +32,7 @@ import {
   UPDATE_CHECK_SOURCE_TIMEOUT_MS,
 } from './modules/updates/update-check';
 import { startIntervalScheduler } from './modules/intervals/scheduler';
+import { startMetricsSampler } from './modules/system/metrics-sampler';
 import { createUploadStorage } from './modules/storage/upload-storage';
 import { startJobReaper } from './modules/jobs/reaper';
 import { startJobWorker, type JobHandlers } from './modules/jobs/worker';
@@ -188,10 +189,14 @@ export async function start(
   const housekeeping = startHousekeeping(app.db.db, app.log, {
     uploadStorage: createUploadStorage(config.tmpDir),
   });
-  const stopWorkersBeforeHousekeeping = stopBackgroundWork;
+  const metricsSampler = startMetricsSampler(app.db.db, config.cacheDir, app.log);
+  const stopWorkersBeforeMaintenance = stopBackgroundWork;
   stopBackgroundWork = async () => {
-    await stopWorkersBeforeHousekeeping?.();
-    await housekeeping.stop();
+    try {
+      await stopWorkersBeforeMaintenance?.();
+    } finally {
+      await Promise.all([housekeeping.stop(), metricsSampler.stop()]);
+    }
   };
 
   return { app, config };

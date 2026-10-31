@@ -1,9 +1,9 @@
 /**
- * Kysely types for the phase-1/2 foundation, interval schedules, download events, and import staging (`P1-DB-02`,
- * `P2-DB-01`, `P2-API-09`, `P4-IMP-01`, `P4-INT-01`).
+ * Kysely types for the phase-1/2 foundation, interval schedules, download events, import staging, and metrics samples
+ * (`P1-DB-02`, `P2-DB-01`, `P2-API-09`, `P4-IMP-01`, `P4-INT-01`, `P5-MON-01`).
  *
- * The columns here mirror `03-data-model.md` §§2.1–2.8, §2.10 and §2.11, and migrations `0001_init.sql`,
- * `0002_catalog.sql`, `0003_download_events.sql`, `0004_upload_sessions.sql` and `0005_intervals.sql`. Repositories import these types —
+ * The columns here mirror `03-data-model.md` §§2.1–2.11 and migrations `0001_init.sql` through
+ * `0007_metrics_samples.sql`. Repositories import these types —
  * never `any`, never `unknown` for a row — so queries against
  * nonexistent columns fail to compile instead of at 3 a.m. (`10-laws.md` L5).
  *
@@ -324,6 +324,20 @@ export interface DownloadEvents {
   created_at: CreatedTimestamp;
 }
 
+/** One process/container metrics snapshot (`03-data-model.md` §2.9, `P5-MON-01`). */
+export interface MetricsSamples {
+  sampled_at: RequiredTimestamp;
+  cpu_percent: number | null;
+  load1: number | null;
+  load5: number | null;
+  load15: number | null;
+  mem_used_bytes: NullableInt8Column;
+  mem_total_bytes: NullableInt8Column;
+  disk_used_bytes: NullableInt8Column;
+  disk_total_bytes: NullableInt8Column;
+  cache_size_bytes: NullableInt8Column;
+}
+
 export interface AuditLogs {
   /**
    * `bigserial PRIMARY KEY`. **A `string` at runtime** — `pg` returns int8 as text so ids past 2^53 survive.
@@ -373,6 +387,8 @@ export type Setting = SelectRow<Settings>;
 export type AuditLog = SelectRow<AuditLogs>;
 /** A row of `download_events`, as selected. */
 export type DownloadEvent = SelectRow<DownloadEvents>;
+/** A row of `metrics_samples`, as selected. */
+export type MetricsSample = SelectRow<MetricsSamples>;
 
 /**
  * The shape Kysely hands back for a table interface.
@@ -388,8 +404,8 @@ export type SelectRow<T> = {
  * Every table Kysely knows about.
  *
  * `P2-DB-01` adds catalog, cache, version and job tables; `P2-API-09` adds download events; `P4-IMP-01` adds upload
- * sessions; `P4-INT-01` adds interval schedules and run history. Metrics tables remain a future task. Until a table is listed here, a query against it does not
- * compile — which is the property that makes this file worth having.
+ * sessions; `P4-INT-01` adds interval schedules and run history; `P5-MON-01` adds metrics samples. Until a table is
+ * listed here, a query against it does not compile — which is the property that makes this file worth having.
  */
 export interface Database {
   admins: Admins;
@@ -406,4 +422,5 @@ export interface Database {
   settings: Settings;
   audit_logs: AuditLogs;
   download_events: DownloadEvents;
+  metrics_samples: MetricsSamples;
 }

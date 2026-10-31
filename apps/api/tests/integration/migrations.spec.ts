@@ -38,6 +38,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
         '0004_upload_sessions',
         '0005_intervals',
         '0006_interval_run_item_job_index',
+        '0007_metrics_samples',
       ]);
 
       const tables = await sql<{ table_name: string }>`
@@ -61,6 +62,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
         'audit_logs',
         'download_events',
         'upload_sessions',
+        'metrics_samples',
       ]) {
         expect(names, table).toContain(table);
       }
@@ -97,6 +99,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
         'interval_runs_one_active',
         'interval_run_items_unique',
         'interval_run_items_job_idx',
+        'metrics_samples_pkey',
       ]) {
         expect(indexNames, index).toContain(index);
       }
@@ -163,7 +166,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
       expect(error).toBeUndefined();
       expect(results).toEqual([
         {
-          migrationName: '0006_interval_run_item_job_index',
+          migrationName: '0007_metrics_samples',
           direction: 'Down',
           status: 'NotExecuted',
         },
@@ -526,6 +529,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
           '0004_upload_sessions',
           '0005_intervals',
           '0006_interval_run_item_job_index',
+          '0007_metrics_samples',
         ]);
       });
     } finally {
@@ -562,6 +566,7 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
         '0004_upload_sessions',
         '0005_intervals',
         '0006_interval_run_item_job_index',
+        '0007_metrics_samples',
       ]);
       const settings = await sql<{ n: number }>`select count(*)::int as n from settings`.execute(
         database.db,

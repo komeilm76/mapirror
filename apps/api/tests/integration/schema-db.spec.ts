@@ -38,9 +38,10 @@ const TABLE_INTERFACES = {
   settings: 'Settings',
   audit_logs: 'AuditLogs',
   download_events: 'DownloadEvents',
+  metrics_samples: 'MetricsSamples',
 } as const;
 
-/** Document sections whose tables are created by migrations 0001 through 0005. */
+/** Document sections whose tables are created by migrations 0001 through 0007. */
 const MIGRATED_HEADINGS = [
   '### 2.1 ',
   '### 2.2 ',
@@ -50,6 +51,7 @@ const MIGRATED_HEADINGS = [
   '### 2.6 ',
   '### 2.7 ',
   '### 2.8 ',
+  '### 2.9 ',
   '### 2.10 ',
   '### 2.11 ',
 ] as const;

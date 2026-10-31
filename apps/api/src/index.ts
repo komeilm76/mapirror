@@ -19,6 +19,7 @@ export * from './db/schema';
 export * from './db/transaction';
 export * from './db/version-check';
 export * from './modules/updates/update-check';
+export * from './modules/system/metrics-sampler';
 export {
   pendingPlugins,
   PLUGIN_ORDER,

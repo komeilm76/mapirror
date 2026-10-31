@@ -45,6 +45,7 @@ describe('listMigrationFiles', () => {
       '0004_upload_sessions',
       '0005_intervals',
       '0006_interval_run_item_job_index',
+      '0007_metrics_samples',
     ]);
     expect(files[0]?.path).toBe(join(MIGRATIONS_DIR, '0001_init.sql'));
     // The file has to exist, because the provider reads it by path.
@@ -126,6 +127,7 @@ describe('SqlMigrationProvider', () => {
       '0004_upload_sessions',
       '0005_intervals',
       '0006_interval_run_item_job_index',
+      '0007_metrics_samples',
     ]);
     const migration = migrations['0001_init']!;
     const catalogMigration = migrations['0002_catalog']!;
@@ -133,12 +135,14 @@ describe('SqlMigrationProvider', () => {
     const uploadSessionsMigration = migrations['0004_upload_sessions']!;
     const intervalsMigration = migrations['0005_intervals']!;
     const intervalItemJobIndexMigration = migrations['0006_interval_run_item_job_index']!;
+    const metricsSamplesMigration = migrations['0007_metrics_samples']!;
     expect(typeof migration.up).toBe('function');
     expect(typeof catalogMigration.up).toBe('function');
     expect(typeof downloadEventsMigration.up).toBe('function');
     expect(typeof uploadSessionsMigration.up).toBe('function');
     expect(typeof intervalsMigration.up).toBe('function');
     expect(typeof intervalItemJobIndexMigration.up).toBe('function');
+    expect(typeof metricsSamplesMigration.up).toBe('function');
     // Forward-only (`03-data-model.md` §4): rollback is a restore, not a script. Asserted as the *shape* of the
     // object, because a `down` that exists and does nothing is worse than one that is absent.
     expect(Object.keys(migration)).toEqual(['up']);
@@ -319,6 +323,32 @@ describe('the migration agrees with 03-data-model.md', () => {
     expect(
       [...sqlText.matchAll(/CREATE (?:UNIQUE )?INDEX (\w+)/g)].map((match) => match[1]),
     ).toEqual(['upload_sessions_temp_path_key', 'upload_sessions_expiry_idx']);
+  });
+
+  it('creates the documented metrics sample table in the P5-MON-01 migration', async () => {
+    const doc = await readFile(DOC, 'utf8');
+    const heading = '### 2.9 ';
+    const start = doc.indexOf(heading);
+    expect(start, '### 2.9 metrics_samples must exist').toBeGreaterThan(-1);
+    const end = doc.indexOf('\n### ', start + heading.length);
+    const section = doc.slice(start, end === -1 ? undefined : end);
+    const sqlText = await readFile(join(MIGRATIONS_DIR, '0007_metrics_samples.sql'), 'utf8');
+    const columnsIn = (text: string) =>
+      [...text.matchAll(/CREATE TABLE metrics_samples \(([\s\S]*?)\n\);/g)].flatMap((table) =>
+        (table[1] as string)
+          .split('\n')
+          .map((line) => /^ {2}(\w+)\s+(.+)$/.exec(line))
+          .filter((match): match is RegExpExecArray => match !== null && match[1] !== 'PRIMARY')
+          .map((match) => ({ name: match[1], nullable: !/NOT NULL|PRIMARY KEY/i.test(match[2]!) })),
+      );
+
+    expect([...section.matchAll(/CREATE TABLE (\w+)/g)].map((match) => match[1])).toEqual([
+      'metrics_samples',
+    ]);
+    expect([...sqlText.matchAll(/CREATE TABLE (\w+)/g)].map((match) => match[1])).toEqual([
+      'metrics_samples',
+    ]);
+    expect(columnsIn(sqlText)).toEqual(columnsIn(section));
   });
 
   it('creates the documented interval tables and indexes, with mutually exclusive frequency fields', async () => {

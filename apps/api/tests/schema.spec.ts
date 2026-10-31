@@ -19,6 +19,7 @@ import {
   type IntervalRun,
   type IntervalRunItem,
   type MapVersion,
+  type MetricsSample,
   type Setting,
   type UploadSession,
 } from '../src/index';
@@ -50,6 +51,7 @@ const TABLE_INTERFACES = {
   settings: 'Settings',
   audit_logs: 'AuditLogs',
   download_events: 'DownloadEvents',
+  metrics_samples: 'MetricsSamples',
 } as const;
 
 /**
@@ -73,10 +75,10 @@ function interfaceProperties(): Map<string, string[]> {
   return found;
 }
 
-/** The `CREATE TABLE` blocks in sections backed by migrations 0001 through 0006. */
+/** The `CREATE TABLE` blocks in sections backed by migrations 0001 through 0007. */
 const DOC = resolve(import.meta.dirname, '../../../docs/03-data-model.md');
 
-/** Document sections backed by `0001_init.sql` through `0005_intervals.sql` and `0006_interval_run_item_job_index.sql`. */
+/** Document sections backed by migrations `0001_init.sql` through `0007_metrics_samples.sql`. */
 const MIGRATED_HEADINGS = [
   '### 2.1 ',
   '### 2.2 ',
@@ -86,6 +88,7 @@ const MIGRATED_HEADINGS = [
   '### 2.6 ',
   '### 2.7 ',
   '### 2.8 ',
+  '### 2.9 ',
   '### 2.10 ',
   '### 2.11 ',
 ] as const;
@@ -161,6 +164,7 @@ describe('the migrated table interfaces', () => {
       'intervals',
       'jobs',
       'map_versions',
+      'metrics_samples',
       'settings',
       'upload_sessions',
     ]);
@@ -192,6 +196,8 @@ describe('the selected row types match what the driver returns', () => {
     expectTypeOf<Interval['id']>().toEqualTypeOf<string>();
     expectTypeOf<IntervalRun['bytes_downloaded']>().toEqualTypeOf<string>();
     expectTypeOf<IntervalRunItem['bytes']>().toEqualTypeOf<string>();
+    expectTypeOf<MetricsSample['sampled_at']>().toEqualTypeOf<Date>();
+    expectTypeOf<MetricsSample['mem_used_bytes']>().toEqualTypeOf<string | null>();
   });
 
   it('types timestamptz as Date, bytea as Buffer, jsonb as the parsed value, inet as string', () => {
@@ -259,8 +265,8 @@ describe('the selected row types match what the driver returns', () => {
     // The guarantee `P1-DB-02` exists for ("no `any` in repositories"). `@ts-expect-error` is checked by `tsc`:
     // if these expressions ever start compiling, the typecheck fails instead of the mistake shipping.
     const unknownTable = (db: Kysely<Database>): unknown =>
-      // @ts-expect-error - `metrics_samples` is not in the table map yet
-      db.selectFrom('metrics_samples').selectAll();
+      // @ts-expect-error - this table is not in the database map
+      db.selectFrom('not_a_real_table').selectAll();
 
     const unknownColumn = (db: Kysely<Database>): unknown =>
       // @ts-expect-error - `password` does not exist; the column is `password_hash`

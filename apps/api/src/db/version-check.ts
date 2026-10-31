@@ -41,6 +41,7 @@ export const EXPECTED_MIGRATIONS: readonly string[] = [
   '0004_upload_sessions',
   '0005_intervals',
   '0006_interval_run_item_job_index',
+  '0007_metrics_samples',
 ];
 
 /** Startup code for a schema that does not match the code (`INTERNAL_ERROR_CODES`). */
