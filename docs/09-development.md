@@ -32,15 +32,15 @@ open http://localhost:8080/_auth/login # admin login
 
 > **Where we are today:** the API boots, talks to PostgreSQL, and the whole `/_auth/api` namespace is real —
 > `login` (throttled, audited, `200`/`400`/`401`/`403`/`429`), `me` and `logout` (`P1-AUTH-03`, `P1-AUTH-04`), all as
-> `04-api.md` §1 describes. Two routes are still stubs answering `503 NOT_READY` (`04-api.md` §0.3), and every
-> `/_admin/api/*` request needs a token issued by `login` — the guard (`P1-AUTH-05`) answers `401` before the route
-> runs, so the stubs are reachable only with a credential (the public one is the anonymous exception).
+> `04-api.md` §1 describes. No `503 NOT_READY` placeholder routes are registered (`04-api.md` §0.3). Every
+> `/_admin/api/*` request needs a token issued by `login`; the guard (`P1-AUTH-05`) answers `401` before the route
+> runs, while `/_public/api/*` remains anonymous.
 >
 > The SPA is usable end to end in development (`P1-WEB-01`…`P1-WEB-08`): `bun run dev:web` serves
 > `http://localhost:5173` with the theme, the route tree, the admin guard, the login page (`/_auth/login`, real sign-in
 > against the API), the admin shell and a working proxy to `:3000` — so a signed-in reader can walk the shell and read
-> live API answers. Every screen inside it is still a `PlaceholderPage` naming its `13-ui-ux.md` §4 row and the task that
-> owns it (`P2`/`P3`), and the two routes `/healthz` reaches as stubs answer `503 NOT_READY` until `P3-API-03`.
+> live API answers. The Dashboard (S5), Catalog, Cache, cached-country detail, Import, Intervals and Jobs screens render
+> their task-owned pages; System, Settings and Audit remain honest `PlaceholderPage` routes naming their §4 row and owner.
 
 ## 3. First run (local dev, hot reload)
 

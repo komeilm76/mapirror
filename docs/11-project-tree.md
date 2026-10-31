@@ -161,6 +161,9 @@ mapirror/
 │     │  ├─ components/common/ToastHost.vue  # Renders the queue (position is P1-WEB-07's)
 │     │  ├─ components/admin/UserMenu.vue    # exists: who is signed in, and the way out
 │     │  ├─ components/admin/JobProgressDrawer.vue # exists: global 2 s detail polling, progress, cancel, safe errors
+│     │  ├─ components/admin/DashboardWidgets.vue   # exists (P5-MON-04): counts, jobs, disk, schedules, source state
+│     │  ├─ components/admin/MetricChart.vue        # exists (P5-MON-03): accessible SVG time series
+│     │  ├─ components/admin/SystemMetricsPanel.vue # exists (P5-MON-03): windows + persisted chart refresh
 │     │  ├─ plugins/vuetify.ts     # createAppVuetify(): both themes, built from styles/tokens.ts
 │     │  ├─ plugins/pinia.ts
 │     │  ├─ theme/policy.ts        # Path → theme (admin dark, public light, auth follows the system)
@@ -189,9 +192,12 @@ mapirror/
 │     │  │  ├─ admin/CatalogPage.vue     # exists (P2-WEB-01): filters, sort, pagination, responsive table/cards
 │     │  │  ├─ admin/CachePage.vue        # exists (P2-WEB-03): cache list, size sort, URL filters, table/cards
 │     │  │  ├─ admin/CacheCountryPage.vue # exists (P2-WEB-04, P3-WEB-06): detail, public switch, active jobs, paginated versions, streamed download/delete
-│     │  │  ├─ admin/JobsPage.vue          # exists (P2-WEB-06): queue filters, progress rows/cards
-│     │  │  ├─ admin/{Dashboard,Intervals,Import,
-│     │  │  │        System,Settings,Audit}Page.vue
+│     │  │  ├─ admin/DashboardPage.vue      # exists (P5-MON-04): linked status widgets + persisted metrics charts
+│     │  │  ├─ admin/IntervalsPage.vue       # exists (P4-INT-08): schedule editor + run history
+│     │  │  ├─ admin/ImportPage.vue          # exists (P4-IMP-05): validated upload + job tracking
+│     │  │  ├─ admin/SystemPage.vue          # future (P5-MON-02)
+│     │  │  ├─ admin/SettingsPage.vue        # future (P5-ADM-02)
+│     │  │  └─ admin/AuditPage.vue           # future (P5-ADM-04)
 │     │  │  ├─ public/{Home,CountryDetail,ApiDocs,NotFound}Page.vue  # Home (P3-WEB-01/05), CountryDetail (P3-WEB-02/03), ApiDocs (P3-WEB-04), NotFound (P3-WEB-05)
 │     │  ├─ components/
 │     │  │  ├─ common/             # PageHeader, DataTableShell, EmptyState, ErrorState,

@@ -13,14 +13,12 @@
  *
  * ## Which screens are real today
  *
- * Eleven: the public catalog, country detail and API documentation render `HomePage.vue` (`P3-WEB-01`),
- * `CountryDetailPage.vue` (`P3-WEB-02/03`) and `ApiDocsPage.vue` (`P3-WEB-04`); the admin catalog/cache/import/
- * intervals/jobs screens render `CatalogPage.vue` (`P2-WEB-01`), `CachePage.vue` (`P2-WEB-03`),
- * `CacheCountryPage.vue` (`P2-WEB-04`), `ImportPage.vue` (`P4-IMP-05`), `IntervalsPage.vue` (`P4-INT-08`) and
- * `JobsPage.vue` (`P2-WEB-06`); the login page renders `LoginPage.vue` (`P1-WEB-06`), and the not-found catch-all
- * renders `NotFoundPage.vue`. The other four are `PlaceholderPage`, which
- * says which screen it stands in for and which task replaces it. A router tree full of invented screens would be worse
- * than one that names its own gaps.
+ * The public catalog, country detail and API documentation render `HomePage.vue` (`P3-WEB-01`),
+ * `CountryDetailPage.vue` (`P3-WEB-02/03`) and `ApiDocsPage.vue` (`P3-WEB-04`); admin dashboard/catalog/cache/import/
+ * intervals/jobs render their task-owned pages (`P5-MON-04`, `P2-WEB-01/03/04`, `P4-IMP-05`, `P4-INT-08`,
+ * `P2-WEB-06`); the login page renders `LoginPage.vue` (`P1-WEB-06`), and the not-found catch-all renders
+ * `NotFoundPage.vue`. System, Settings and Audit remain `PlaceholderPage` routes, which name the task that replaces
+ * them. A router tree full of invented screens would be worse than one that names its own gaps.
  *
  * ## The two records that are not pages
  *
@@ -95,13 +93,12 @@ export const APP_ROUTES: readonly RouteRecordRaw[] = [
   },
 
   // ---- Admin (S5–S14). Guarded by path, not by a flag — see `guards.ts` ----
-  pending({
+  {
     path: adminPagePaths.dashboard(),
     name: 'admin-dashboard',
-    title: 'Dashboard',
-    screen: 'S5',
-    owner: 'P5-MON-04',
-  }),
+    component: () => import('@/pages/admin/DashboardPage.vue'),
+    meta: { title: 'Dashboard', screen: 'S5', owner: 'P5-MON-04' },
+  },
   {
     path: adminPagePaths.catalog(),
     name: 'admin-catalog',

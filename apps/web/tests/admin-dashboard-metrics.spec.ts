@@ -15,6 +15,50 @@ const ME = {
   lastUsedAt: null,
 };
 const mounted: VueApp<Element>[] = [];
+const SYSTEM_STATUS = {
+  version: '0.2.0-dev',
+  uptimeSeconds: 600,
+  worker: { enabled: true, concurrency: 4, running: 1 },
+  storage: {
+    cacheDir: '/data/cache',
+    usedBytes: 5 * 1_073_741_824,
+    freeBytes: 10 * 1_073_741_824,
+    reserveBytes: 2 * 1_073_741_824,
+    state: 'ok',
+    orphans: null,
+  },
+  counts: {
+    countries: 38,
+    cachedCountries: 2,
+    publicCountries: 1,
+    versions: 3,
+    updatesAvailable: 2,
+    jobsRunning: 1,
+    jobsQueued: 4,
+  },
+  source: { id: 'geofabrik', lastSyncAt: '2026-10-31T12:00:00.000Z', reachable: true },
+  branding: { displayName: 'MapMirror' },
+};
+const INTERVALS = {
+  data: [
+    {
+      id: 'a7c1df52-3620-4b6f-a86a-2f2d44115830',
+      name: 'Nightly Finland refresh',
+      frequency: 'daily',
+      timeOfDay: '03:00',
+      weekday: null,
+      dayOfMonth: null,
+      countries: [],
+      keepVersions: 3,
+      onlyIfChanged: true,
+      enabled: true,
+      nextRunAt: '2026-10-31T12:35:00.000Z',
+      lastRun: null,
+      createdAt: '2026-10-01T12:00:00.000Z',
+      updatedAt: '2026-10-01T12:00:00.000Z',
+    },
+  ],
+};
 
 const metrics: SystemMetricsResponse = {
   window: '1h',
@@ -92,9 +136,11 @@ function responseFor(
       const url = requestUrl(input);
       requests.push(url);
       if (url.pathname === '/_auth/api/me') return jsonResponse(ME);
-      if (url.pathname === '/_admin/api/cache') {
-        return jsonResponse({ data: [], meta: { page: 1, limit: 1, total: 2, totalPages: 2 } });
+      if (url.pathname === '/_admin/api/system/status') return jsonResponse(SYSTEM_STATUS);
+      if (url.pathname === '/_admin/api/jobs') {
+        return jsonResponse({ data: [], meta: { page: 1, limit: 1, total: 3, totalPages: 3 } });
       }
+      if (url.pathname === '/_admin/api/intervals') return jsonResponse(INTERVALS);
       if (url.pathname === '/_admin/api/system/metrics') {
         metricsCalls += 1;
         return metricsResponse(url.searchParams.get('window') ?? '', metricsCalls);
@@ -133,6 +179,24 @@ describe('admin dashboard resource charts', () => {
     expect(container.querySelectorAll('svg[role="img"]')).toHaveLength(5);
     expect(container.querySelector('svg[aria-labelledby*="summary"]')).not.toBeNull();
     expect(container.textContent).toContain('2 GiB');
+    expect(container.textContent).toContain('2 cached · 1 public · 3 ready versions');
+    expect(container.textContent).toContain('1 running · 4 queued');
+    expect(container.textContent).toContain('3 failed jobs');
+    expect(container.textContent).toContain('8 GiB');
+    expect(container.textContent).toContain('Nightly Finland refresh');
+    expect(container.textContent).toContain('Last completed sync succeeded');
+
+    const widgetLinks = [...container.querySelectorAll<HTMLAnchorElement>('.mm-dashboard-grid a')];
+    expect(widgetLinks).toHaveLength(7);
+    const widgetLink = (title: string): string | null =>
+      widgetLinks.find((link) => link.textContent?.includes(title))?.getAttribute('href') ?? null;
+    expect(widgetLink('Cached data (sampled)')).toBe(adminPagePaths.cache());
+    expect(widgetLink('Catalog regions')).toBe(adminPagePaths.catalog());
+    expect(widgetLink('Updates available')).toBe(`${adminPagePaths.cache()}?update=available`);
+    expect(widgetLink('Jobs')).toBe(adminPagePaths.jobs());
+    expect(widgetLink('Storage headroom')).toBe(adminPagePaths.system());
+    expect(widgetLink('Next scheduled interval')).toBe(adminPagePaths.intervals());
+    expect(widgetLink('Source sync freshness')).toBe(adminPagePaths.catalog());
 
     const dataDisclosure = container.querySelectorAll('details')[1];
     expect(dataDisclosure).not.toBeUndefined();

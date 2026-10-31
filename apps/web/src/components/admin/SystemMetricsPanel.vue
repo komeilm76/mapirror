@@ -86,6 +86,16 @@ const CHARTS: readonly ChartDefinition[] = [
   },
 ];
 
+const emit = defineEmits<{
+  'cache-size-updated': [
+    reading: {
+      readonly bytes: number | string;
+      readonly sampledAt: string;
+      readonly stepSeconds: number;
+    } | null,
+  ];
+}>();
+
 const api = useApi();
 const selectedWindow = ref<MetricWindow>('1h');
 const result = ref<SystemMetricsResponse | null>(null);
@@ -135,6 +145,25 @@ async function loadMetrics(): Promise<void> {
     }
 
     result.value = parsed.data;
+    const latestCacheSample = parsed.data.samples.reduce<
+      SystemMetricsResponse['samples'][number] | null
+    >(
+      (latest, sample) =>
+        sample.cacheSizeBytes !== null && (latest === null || sample.t > latest.t)
+          ? sample
+          : latest,
+      null,
+    );
+    emit(
+      'cache-size-updated',
+      latestCacheSample?.cacheSizeBytes === null || latestCacheSample === null
+        ? null
+        : {
+            bytes: latestCacheSample.cacheSizeBytes,
+            sampledAt: latestCacheSample.t,
+            stepSeconds: parsed.data.stepSeconds,
+          },
+    );
     errorMessage.value = null;
     errorRequestId.value = null;
   } catch (cause) {

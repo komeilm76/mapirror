@@ -11,16 +11,11 @@
  * page doubles as proof that the guard, the redirect parameter and the router's matching all did what the URL says —
  * which is exactly what a reviewer checking "unauthenticated `/_site/admin/*` lands on the login page" needs to see.
  *
- * S5 retains its honest placeholder framing while P5-MON-04 builds the remaining dashboard panels; the persisted
- * update count and resource charts already have their own task-owned components. Other pending screens state the fact,
- * name the task, and stop rather than faking unfinished content.
+ * Pending screens state the fact, name their owning task, and stop rather than faking unfinished content.
  */
 
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
-
-import DashboardUpdateCounter from '@/components/admin/DashboardUpdateCounter.vue';
-import SystemMetricsPanel from '@/components/admin/SystemMetricsPanel.vue';
 
 const route = useRoute();
 
@@ -38,22 +33,15 @@ const title = computed(() => route.meta.title);
 </script>
 
 <template>
-  <v-container
-    class="py-12"
-    :max-width="screen === 'S5' ? 'var(--mm-container-admin)' : 'var(--mm-container-public)'"
-  >
-    <v-row :justify="screen === 'S5' ? 'start' : 'center'">
-      <v-col cols="12" :md="screen === 'S5' ? 12 : 9" :lg="screen === 'S5' ? 12 : 7">
+  <v-container class="py-12" max-width="var(--mm-container-public)">
+    <v-row justify="center">
+      <v-col cols="12" md="9" lg="7">
         <p class="mm-caption mb-2">Screen {{ screen }} · 13-ui-ux.md §4</p>
         <h1 class="mm-display mb-4">{{ title }}</h1>
 
         <v-card border flat rounded="lg">
           <v-card-text>
-            <p v-if="screen === 'S5'" class="mm-body-public mb-4">
-              The remaining dashboard widgets arrive with <span class="mm-mono">{{ owner }}</span
-              >. Resource metrics and the database-backed update count are available below.
-            </p>
-            <p v-else class="mm-body-public mb-4">
+            <p class="mm-body-public mb-4">
               This screen is not built yet. It arrives with <span class="mm-mono">{{ owner }}</span
               >.
             </p>
@@ -70,9 +58,6 @@ const title = computed(() => route.meta.title);
             </p>
           </v-card-text>
         </v-card>
-
-        <DashboardUpdateCounter v-if="screen === 'S5'" class="mt-6" />
-        <SystemMetricsPanel v-if="screen === 'S5'" class="mt-6" />
 
         <v-btn class="mt-6" color="primary" :to="{ name: 'home' }" variant="tonal">
           Back to the site

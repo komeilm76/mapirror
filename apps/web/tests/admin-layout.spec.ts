@@ -40,6 +40,32 @@ const PROFILE = { id: '3f1c2b4a-5d6e-4f70-8a91-b2c3d4e5f607', username: 'admin' 
 /** What `GET /_auth/api/me` answers. */
 const ME = { admin: PROFILE, expiresAt: '2026-10-26T21:00:00.000Z', lastUsedAt: null };
 
+/** The monitoring summary consumed by the S5 dashboard. */
+const SYSTEM_STATUS = {
+  version: '0.2.0-dev',
+  uptimeSeconds: 120,
+  worker: { enabled: true, concurrency: 2, running: 1 },
+  storage: {
+    cacheDir: '/data/cache',
+    usedBytes: 10_000,
+    freeBytes: 100_000,
+    reserveBytes: 20_000,
+    state: 'ok',
+    orphans: null,
+  },
+  counts: {
+    countries: 38,
+    cachedCountries: 5,
+    publicCountries: 2,
+    versions: 7,
+    updatesAvailable: 7,
+    jobsRunning: 1,
+    jobsQueued: 3,
+  },
+  source: { id: 'geofabrik', lastSyncAt: '2026-10-26T20:00:00.000Z', reachable: true },
+  branding: { displayName: 'MapMirror' },
+};
+
 function jsonResponse(value: unknown): Response {
   return new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
 }
@@ -237,7 +263,7 @@ describe('the topbar', () => {
     );
   });
 
-  it('shows the database-backed count of cached updates and links to the matching cache filter', async () => {
+  it('shows the status-backed count of cached updates and links to the matching cache filter', async () => {
     const requests: URL[] = [];
     const respond = vi.fn<typeof fetch>((input) =>
       Promise.resolve().then(() => {
@@ -246,24 +272,26 @@ describe('the topbar', () => {
         const url = new URL(rawUrl, 'http://mapirror.test');
         requests.push(url);
         if (url.pathname === '/_auth/api/me') return jsonResponse(ME);
-        if (url.pathname === '/_admin/api/cache') {
-          return jsonResponse({
-            data: [],
-            meta: { page: 1, limit: 1, total: 7, totalPages: 7 },
-          });
+        if (url.pathname === '/_admin/api/system/status') return jsonResponse(SYSTEM_STATUS);
+        if (url.pathname === '/_admin/api/jobs') {
+          return jsonResponse({ data: [], meta: { page: 1, limit: 1, total: 0, totalPages: 0 } });
+        }
+        if (url.pathname === '/_admin/api/intervals') return jsonResponse({ data: [] });
+        if (url.pathname === '/_admin/api/system/metrics') {
+          return jsonResponse({ window: '1h', stepSeconds: 30, scope: 'container', samples: [] });
         }
         return jsonResponse({});
       }),
     );
     const { container } = await mountAdmin({ at: adminPagePaths.dashboard(), respond });
 
-    await vi.waitFor(() => expect(container.textContent).toContain('7 updates available'));
-    const countRequest = requests.find((url) => url.pathname === '/_admin/api/cache');
-    expect(countRequest?.searchParams.get('update')).toBe('available');
-    expect(countRequest?.searchParams.get('limit')).toBe('1');
-    expect(container.querySelector('.v-card a')?.getAttribute('href')).toBe(
-      `${adminPagePaths.cache()}?update=available`,
-    );
+    await vi.waitFor(() => expect(container.textContent).toContain('Updates available'));
+    const updateCard = [
+      ...container.querySelectorAll<HTMLAnchorElement>('.mm-dashboard-grid a'),
+    ].find((link) => link.textContent?.includes('Updates available'));
+    expect(updateCard?.textContent).toContain('7');
+    expect(updateCard?.getAttribute('href')).toBe(`${adminPagePaths.cache()}?update=available`);
+    expect(requests.some((url) => url.pathname === '/_admin/api/system/status')).toBe(true);
   });
 
   it('sends a catalog search to the catalog screen, in the URL', async () => {
