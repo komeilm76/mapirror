@@ -8,8 +8,8 @@
  * @module modules/storage/storage
  */
 
-import { constants } from 'node:fs';
-import { lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises';
+import { constants, type BigIntStats } from 'node:fs';
+import { lstat, mkdir, open, readdir, realpath, rename, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { FileHandle } from 'node:fs/promises';
 
@@ -30,8 +30,22 @@ export interface StorageFile {
   remove(): Promise<boolean>;
 }
 
+/** A non-following cache-root entry found by a storage scan. */
+export interface CacheStorageEntry {
+  /** Relative forward-slash path below the canonical cache root. */
+  readonly relativePath: string;
+  /** Entry kind as observed with `lstat`; symlinks are never traversed. */
+  readonly kind: 'file' | 'directory' | 'symlink' | 'other';
+  /** File length; zero for directories, links, and other special entries. */
+  readonly sizeBytes: bigint;
+  /** Last-modified time from `lstat`. */
+  readonly modifiedAt: Date;
+}
+
 /** Cache-owned filesystem operations. */
 export interface CacheStorage {
+  /** Lists entries under the canonical cache root without following symlinks. */
+  listEntries(): Promise<readonly CacheStorageEntry[]>;
   /** Creates a version artifact reference from validated path components. */
   versionFile(slug: string, version: string, filename: string): StorageFile;
   /** Reconstructs and validates the three-part relative path stored in `map_versions`. */
@@ -205,6 +219,54 @@ export function createCacheStorage(cacheDirectory: string): CacheStorage {
   }
 
   return {
+    listEntries: async () => {
+      const root = await getRoot();
+      const entries: CacheStorageEntry[] = [];
+
+      async function walk(directory: string, parentPath: string): Promise<void> {
+        let names: string[];
+        try {
+          names = await readdir(directory);
+        } catch (error) {
+          if (hasCode(error, 'ENOENT')) return;
+          throw error;
+        }
+
+        for (const name of names) {
+          if (name === '.' || name === '..' || name.includes('/') || name.includes('\\')) continue;
+          const absolutePath = join(directory, name);
+          let details: BigIntStats;
+          try {
+            details = await lstat(absolutePath, { bigint: true });
+          } catch (error) {
+            if (hasCode(error, 'ENOENT')) continue;
+            throw error;
+          }
+
+          const relativePath = parentPath === '' ? name : `${parentPath}/${name}`;
+          const kind = details.isSymbolicLink()
+            ? 'symlink'
+            : details.isFile()
+              ? 'file'
+              : details.isDirectory()
+                ? 'directory'
+                : 'other';
+          entries.push({
+            relativePath,
+            kind,
+            sizeBytes: kind === 'file' ? details.size : 0n,
+            modifiedAt: new Date(Number(details.mtimeMs)),
+          });
+
+          if (kind === 'directory' && (await realpath(absolutePath)) === absolutePath) {
+            await walk(absolutePath, relativePath);
+          }
+        }
+      }
+
+      await walk(root, '');
+      return entries;
+    },
     versionFile: createVersionFile,
     versionFileAt: (relativePath) => {
       if (typeof relativePath !== 'string' || relativePath.includes('\\')) {

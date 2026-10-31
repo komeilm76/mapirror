@@ -501,10 +501,10 @@ sequenceDiagram
 ```
 
 **Rules:** charts show real samples or an explicit "no data yet" state; sampling failure never crashes
-the API; retention 7 days. The metrics endpoint averages epoch-aligned PostgreSQL buckets at 10 s / 30 s /
-5 min / 30 min for the 5 m / 1 h / 24 h / 7 d windows. Status reports database-backed counts, configured
-worker capacity, measured cache-filesystem headroom, and last-known catalog-sync outcome; orphan statistics
-remain null until P5-MON-05.
+the API; housekeeping prunes samples older than `METRICS_RETENTION_DAYS` (default 7). The metrics endpoint averages
+epoch-aligned PostgreSQL buckets at 10 s / 30 s / 5 min / 30 min for the 5 m / 1 h / 24 h / 7 d windows. Status reports
+database-backed counts, configured worker capacity, measured cache-filesystem headroom, last-known catalog-sync outcome,
+and a path-free cache orphan aggregate (null only if its scan fails).
 **Tests:** sampler writes rows, all window-step mappings, byte-safe downsampled shape, empty-window response,
 status count/storage/source projections, retention cleanup.
 
@@ -517,8 +517,8 @@ status count/storage/source projections, retention cleanup.
 | `running` job with `locked_at` older than 4 min 30 s **and** advisory lock acquirable (reaper scans every 15 s) | Proof the owner is gone → requeue with exponential backoff if attempts remain, else `failed` with `WORKER_LOST`. A slow job that still holds its lock is left untouched; 15 s remains for scan processing within the 5 min target |
 | Running interval with a still-running previous occurrence | Advance `next_run_at`, skip without stacking, and log `SKIPPED_OVERLAP`; frequency and schedule configuration remain unchanged |
 | `interval_runs` stuck in `running` (crash mid-run) | The `interval_runs_one_active` unique index would block every future run of that interval, so the reaper closes runs older than 6 h as `failed` with `RUN_INTERRUPTED` — without it, one crash silently disables a schedule |
-| `.part` older than 24 h with no job | Delete |
-| Orphan file/dir under `CACHE_DIR` with no `ready` row | Reported in `/_admin/api/system/status` → `storage.orphans`, deleted only by an explicit admin action or the scheduled sweep |
+| `.part` older than 24 h with no queued/running owner | Delete through the validated cache-storage boundary |
+| Orphan file/dir under `CACHE_DIR` with no `ready` row | Reported in `/_admin/api/system/status` → `storage.orphans`; stale UUID `.part` files are swept after 24 h only when no queued/running job owns them. Other artifacts are report-only until an explicit admin deletion is available |
 | `ready` row whose file is missing | Mark the version `failed` with `VERSION_FILE_MISSING`, close publication if it was the only version |
 | Expired `upload_sessions` | Delete temp files + rows; skip sessions whose import job is `installing` |
 | Old finished `jobs` | Delete beyond `JOB_RETENTION_DAYS` |

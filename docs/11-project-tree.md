@@ -101,7 +101,7 @@ mapirror/
 │  │  │  └─ lib/
 │  │  │     ├─ client-ip.ts        # Untrusted forwarded address → a value `inet` accepts, or null
 │  │  │     ├─ rate-limit.ts       # Sliding-window limiter: bounded, injectable clock, refusal is free
-│  │  │     ├─ housekeeping.ts     # Bounded token/upload expiry sweeps after listen; drained on shutdown
+│  │  │     ├─ housekeeping.ts     # Bounded token/job/metric/upload retention and cache recovery sweeps
 │  │  │     ├─ download.ts         # Streamed fetch, resume, progress, checksum via a storage-owned file handle
 │  │  │     ├─ checksum.ts         # MD5/SHA-256 streaming
 │  │  │     ├─ time.ts             # UTC helpers, schedule math (tested)

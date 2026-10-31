@@ -1,9 +1,10 @@
 /**
- * Startup housekeeping for old authentication tokens and expired upload sessions.
+ * Startup housekeeping for expired credentials, completed work, metric samples and upload staging.
  *
  * Work is bounded and never holds the listening socket hostage: `server.ts` calls this after `listen`, fire-and-forget.
  * A failure is a warning, not a reason to take the API offline. Upload cleanup locks a bounded batch, skips active
  * installs, removes only validated UUID-derived paths under `TMP_DIR`, then deletes the rows in the same DB transaction.
+ * Finished jobs and metric samples are pruned using their configured retention windows.
  *
  * @module lib/housekeeping
  */
@@ -13,7 +14,12 @@ import type { Kysely } from 'kysely';
 import type { Database } from '../db/schema';
 import { withTransaction } from '../db/transaction';
 import { pruneExpiredTokens } from '../modules/auth/tokens';
+import type { CacheStorage } from '../modules/storage/storage';
 import type { UploadStorage } from '../modules/storage/upload-storage';
+import {
+  reconcileMissingReadyVersions,
+  sweepStalePartFiles,
+} from '../modules/system/storage-reconciliation';
 
 /** How long one housekeeping transaction may run before it is rolled back and abandoned. */
 export const HOUSEKEEPING_TIMEOUT_MS = 5_000;
@@ -29,16 +35,16 @@ export interface HousekeepingLog {
 }
 
 /**
- * Prunes expired rows and staged files in one bounded transaction.
+ * Runs bounded retention cleanup and safe storage reconciliation.
  *
- * If `uploadStorage` is omitted, only token pruning runs; production supplies it so the configured `TMP_DIR` is used.
- * Expired `installing` sessions are skipped because their job owns the staged file. At most one batch is removed per
- * invocation; a later interval sweep drains any larger backlog.
+ * Optional storage boundaries let tests exercise only database cleanup; production supplies both configured roots.
+ * Expired `installing` sessions are skipped because their job owns the staged file. At most one upload batch is removed
+ * per invocation; missing ready cache artifacts are reconciled while holding the country mutation lock.
  *
  * @param database - Kysely pool instance, not an existing transaction.
  * @param log - Logger for the outcome; silent when nothing was deleted and warning-only on failure.
- * @param options - Injectable clock, timeout and upload-storage root for tests.
- * @returns Total number of token rows and upload-session rows deleted, or `null` if the transaction was abandoned.
+ * @param options - Injectable clock, retention windows, timeout and upload-storage root for tests.
+ * @returns Rows deleted plus missing ready versions reconciled, or `null` if the transaction was abandoned.
  */
 export async function runHousekeeping(
   database: Kysely<Database>,
@@ -46,17 +52,47 @@ export async function runHousekeeping(
   options: {
     readonly timeoutMs?: number;
     readonly now?: Date;
+    readonly jobRetentionDays?: number;
+    readonly metricsRetentionDays?: number;
     readonly uploadStorage?: UploadStorage;
+    readonly cacheStorage?: CacheStorage;
   } = {},
 ): Promise<number | null> {
   const timeoutMs = options.timeoutMs ?? HOUSEKEEPING_TIMEOUT_MS;
   const now = options.now ?? new Date();
+  const jobCutoff = retentionCutoff(now, options.jobRetentionDays ?? 30, 'jobRetentionDays');
+  const metricsCutoff = retentionCutoff(
+    now,
+    options.metricsRetentionDays ?? 7,
+    'metricsRetentionDays',
+  );
 
   try {
     const result = await withTransaction(
       database,
       async (trx) => {
         const prunedTokens = await pruneExpiredTokens(trx, { now });
+        const expiredJobs = trx
+          .selectFrom('jobs')
+          .select('id')
+          .where('status', 'in', ['succeeded', 'failed', 'canceled'])
+          .where('finished_at', '<', jobCutoff);
+        await trx
+          .updateTable('interval_run_items')
+          .set({ job_id: null })
+          .where('job_id', 'in', expiredJobs)
+          .execute();
+        const deletedJobs = await trx
+          .deleteFrom('jobs')
+          .where('status', 'in', ['succeeded', 'failed', 'canceled'])
+          .where('finished_at', '<', jobCutoff)
+          .executeTakeFirst();
+        const prunedJobs = Number(deletedJobs.numDeletedRows);
+        const deletedMetrics = await trx
+          .deleteFrom('metrics_samples')
+          .where('sampled_at', '<', metricsCutoff)
+          .executeTakeFirst();
+        const prunedMetrics = Number(deletedMetrics.numDeletedRows);
         let prunedUploads = 0;
 
         if (options.uploadStorage !== undefined) {
@@ -98,7 +134,7 @@ export async function runHousekeeping(
           }
         }
 
-        return { prunedTokens, prunedUploads };
+        return { prunedTokens, prunedJobs, prunedMetrics, prunedUploads };
       },
       { statementTimeoutMs: timeoutMs },
     );
@@ -106,10 +142,41 @@ export async function runHousekeeping(
     if (result.prunedTokens > 0) {
       log.info({ pruned: result.prunedTokens }, 'expired tokens pruned');
     }
+    if (result.prunedJobs > 0) {
+      log.info({ pruned: result.prunedJobs }, 'finished jobs pruned');
+    }
+    if (result.prunedMetrics > 0) {
+      log.info({ pruned: result.prunedMetrics }, 'old metrics samples pruned');
+    }
     if (result.prunedUploads > 0) {
       log.info({ pruned: result.prunedUploads }, 'expired upload sessions pruned');
     }
-    return result.prunedTokens + result.prunedUploads;
+    let reconciledVersions = 0;
+    let removedParts = 0;
+    if (options.cacheStorage !== undefined) {
+      try {
+        reconciledVersions = await reconcileMissingReadyVersions(
+          database,
+          options.cacheStorage,
+          log,
+        );
+      } catch (error) {
+        log.warn({ err: error }, 'could not reconcile ready cache files; will retry later');
+      }
+      try {
+        removedParts = await sweepStalePartFiles(database, options.cacheStorage, log, now);
+      } catch (error) {
+        log.warn({ err: error }, 'could not sweep stale cache parts; will retry later');
+      }
+    }
+    return (
+      result.prunedTokens +
+      result.prunedJobs +
+      result.prunedMetrics +
+      result.prunedUploads +
+      reconciledVersions +
+      removedParts
+    );
   } catch (error) {
     log.warn({ err: error, timeoutMs }, 'could not run housekeeping; continuing');
     return null;
@@ -130,7 +197,10 @@ export function startHousekeeping(
   options: {
     readonly timeoutMs?: number;
     readonly intervalMs?: number;
+    readonly jobRetentionDays?: number;
+    readonly metricsRetentionDays?: number;
     readonly uploadStorage?: UploadStorage;
+    readonly cacheStorage?: CacheStorage;
   } = {},
 ): { stop: () => Promise<void> } {
   const intervalMs = options.intervalMs ?? HOUSEKEEPING_INTERVAL_MS;
@@ -139,7 +209,14 @@ export function startHousekeeping(
   }
   const sweepOptions = {
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(options.jobRetentionDays === undefined
+      ? {}
+      : { jobRetentionDays: options.jobRetentionDays }),
+    ...(options.metricsRetentionDays === undefined
+      ? {}
+      : { metricsRetentionDays: options.metricsRetentionDays }),
     ...(options.uploadStorage === undefined ? {} : { uploadStorage: options.uploadStorage }),
+    ...(options.cacheStorage === undefined ? {} : { cacheStorage: options.cacheStorage }),
   };
   let stopped = false;
   let active: Promise<number | null> | undefined;
@@ -170,4 +247,14 @@ export function startHousekeeping(
       await active;
     },
   };
+}
+
+function retentionCutoff(now: Date, days: number, name: string): Date {
+  if (!Number.isSafeInteger(days) || days < 1) {
+    throw new RangeError(`${name} must be a positive whole number of days`);
+  }
+  const cutoff = new Date(now.getTime() - days * 86_400_000);
+  if (!Number.isFinite(cutoff.getTime()))
+    throw new RangeError(`${name} cutoff is outside the date range`);
+  return cutoff;
 }

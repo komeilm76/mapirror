@@ -7,7 +7,12 @@ import { sql } from 'kysely';
 import { describe, expect, it, vi } from 'vitest';
 
 import { runHousekeeping } from '../../src/lib/housekeeping';
+import {
+  acquireCountryCacheStreamLock,
+  releaseCountryCacheStreamLock,
+} from '../../src/db/repositories/cache';
 import { issueToken } from '../../src/modules/auth/tokens';
+import { createCacheStorage } from '../../src/modules/storage/storage';
 import { createUploadStorage } from '../../src/modules/storage/upload-storage';
 import type { SqlDatabase } from '../../src/index';
 import { dsnFor, freshDatabaseSkipReason, withFreshDatabase } from '../helpers/fresh-db';
@@ -31,6 +36,20 @@ const NOW = new Date('2026-10-25T09:00:00.000Z');
 /** A logger that records what it was told, so "warned" and "stayed quiet" are both observable. */
 function recordingLog() {
   return { info: vi.fn(), warn: vi.fn() };
+}
+
+function emptyMetricSample() {
+  return {
+    cpu_percent: null,
+    load1: null,
+    load5: null,
+    load15: null,
+    mem_used_bytes: null,
+    mem_total_bytes: null,
+    disk_used_bytes: null,
+    disk_total_bytes: null,
+    cache_size_bytes: null,
+  };
 }
 
 /** Inserts an admin and one token that expired `daysAgo` days before {@link NOW}; returns the token id. */
@@ -95,6 +114,188 @@ describe.skipIf(skipReason !== null)('runHousekeeping', () => {
       },
       { prefix: 'hk', migrate: true },
     );
+  });
+
+  it('keeps the configured seven-day window and removes only samples older than the cutoff', async () => {
+    await withFreshDatabase(
+      async (database) => {
+        const cutoff = new Date(NOW.getTime() - 7 * 86_400_000);
+        await database.db
+          .insertInto('metrics_samples')
+          .values([
+            { sampled_at: new Date(cutoff.getTime() - 1), ...emptyMetricSample() },
+            { sampled_at: cutoff, ...emptyMetricSample() },
+            { sampled_at: new Date(cutoff.getTime() + 1), ...emptyMetricSample() },
+          ])
+          .execute();
+        const log = recordingLog();
+
+        await expect(
+          runHousekeeping(database.db, log, { now: NOW, metricsRetentionDays: 7 }),
+        ).resolves.toBe(1);
+
+        const remaining = await database.db
+          .selectFrom('metrics_samples')
+          .select('sampled_at')
+          .orderBy('sampled_at', 'asc')
+          .execute();
+        expect(remaining.map(({ sampled_at }) => sampled_at.toISOString())).toEqual([
+          cutoff.toISOString(),
+          new Date(cutoff.getTime() + 1).toISOString(),
+        ]);
+        expect(log.info).toHaveBeenCalledWith({ pruned: 1 }, 'old metrics samples pruned');
+        expect(log.warn).not.toHaveBeenCalled();
+      },
+      { prefix: 'hk', migrate: true },
+    );
+  });
+
+  it('prunes only finished jobs older than the configured retention period', async () => {
+    await withFreshDatabase(
+      async (database) => {
+        const cutoff = new Date(NOW.getTime() - 30 * 86_400_000);
+        await database.db
+          .insertInto('jobs')
+          .values([
+            {
+              type: 'update_check',
+              payload: { countryIds: [] },
+              status: 'succeeded',
+              finished_at: new Date(cutoff.getTime() - 1),
+            },
+            {
+              type: 'update_check',
+              payload: { countryIds: [] },
+              status: 'failed',
+              finished_at: cutoff,
+            },
+            { type: 'update_check', payload: { countryIds: [] }, status: 'queued' },
+          ])
+          .execute();
+        const log = recordingLog();
+
+        await expect(
+          runHousekeeping(database.db, log, { now: NOW, jobRetentionDays: 30 }),
+        ).resolves.toBe(1);
+
+        const remaining = await database.db
+          .selectFrom('jobs')
+          .select(['status', 'finished_at'])
+          .execute();
+        expect(remaining).toHaveLength(2);
+        expect(remaining.some(({ status }) => status === 'succeeded')).toBe(false);
+        expect(log.info).toHaveBeenCalledWith({ pruned: 1 }, 'finished jobs pruned');
+        expect(log.warn).not.toHaveBeenCalled();
+      },
+      { prefix: 'hk', migrate: true },
+    );
+  });
+
+  it('reconciles missing ready files under the country lock and unpublishes the last version', async () => {
+    const cacheDirectory = await mkdtemp(join(tmpdir(), 'mapirror-missing-ready-'));
+    const cacheStorage = createCacheStorage(cacheDirectory);
+
+    try {
+      await withFreshDatabase(
+        async (database) => {
+          const country = await database.db
+            .insertInto('countries')
+            .values({ source_id: 'europe/finland', slug: 'finland', name: 'Finland' })
+            .returning('id')
+            .executeTakeFirstOrThrow();
+          await database.db
+            .insertInto('country_cache')
+            .values({
+              country_id: country.id,
+              is_public: true,
+              public_since: NOW,
+              versions_ready_count: 1,
+              total_size_bytes: 17,
+            })
+            .execute();
+          const version = await database.db
+            .insertInto('map_versions')
+            .values({
+              country_id: country.id,
+              version: '261024',
+              origin: 'geofabrik_snapshot',
+              source_filename: 'finland-261024.osm.pbf',
+              file_size_bytes: 17,
+              storage_path: 'finland/261024/finland-261024.osm.pbf',
+              status: 'ready',
+              ready_at: NOW,
+            })
+            .returning('id')
+            .executeTakeFirstOrThrow();
+
+          let unlock!: () => void;
+          let acquired!: () => void;
+          const lockAcquired = new Promise<void>((resolve) => {
+            acquired = resolve;
+          });
+          const releaseGate = new Promise<void>((resolve) => {
+            unlock = resolve;
+          });
+          const heldLock = database.db.connection().execute(async (connection) => {
+            await acquireCountryCacheStreamLock(connection, country.id);
+            acquired();
+            await releaseGate;
+            await releaseCountryCacheStreamLock(connection, country.id);
+          });
+          await lockAcquired;
+          try {
+            await expect(
+              runHousekeeping(database.db, recordingLog(), { now: NOW, cacheStorage }),
+            ).resolves.toBe(0);
+            await expect(
+              database.db
+                .selectFrom('map_versions')
+                .select('status')
+                .where('id', '=', version.id)
+                .executeTakeFirstOrThrow(),
+            ).resolves.toMatchObject({ status: 'ready' });
+          } finally {
+            unlock();
+            await heldLock;
+          }
+
+          const log = recordingLog();
+          await expect(runHousekeeping(database.db, log, { now: NOW, cacheStorage })).resolves.toBe(
+            1,
+          );
+          await expect(
+            database.db
+              .selectFrom('map_versions')
+              .select(['status', 'failure_reason', 'ready_at'])
+              .where('id', '=', version.id)
+              .executeTakeFirstOrThrow(),
+          ).resolves.toMatchObject({
+            status: 'failed',
+            failure_reason: 'VERSION_FILE_MISSING',
+            ready_at: null,
+          });
+          await expect(
+            database.db
+              .selectFrom('country_cache')
+              .select(['is_public', 'public_since', 'versions_ready_count', 'total_size_bytes'])
+              .where('country_id', '=', country.id)
+              .executeTakeFirstOrThrow(),
+          ).resolves.toMatchObject({
+            is_public: false,
+            public_since: null,
+            versions_ready_count: 0,
+            total_size_bytes: '0',
+          });
+          expect(log.info).toHaveBeenCalledWith(
+            { reconciled: 1 },
+            'ready cache versions with missing files marked failed',
+          );
+        },
+        { prefix: 'hk', migrate: true },
+      );
+    } finally {
+      await rm(cacheDirectory, { recursive: true, force: true });
+    }
   });
 
   it('gives up on a locked row instead of waiting, and deletes nothing', async () => {

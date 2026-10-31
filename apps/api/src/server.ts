@@ -33,6 +33,7 @@ import {
 } from './modules/updates/update-check';
 import { startIntervalScheduler } from './modules/intervals/scheduler';
 import { startMetricsSampler } from './modules/system/metrics-sampler';
+import { createCacheStorage } from './modules/storage/storage';
 import { createUploadStorage } from './modules/storage/upload-storage';
 import { startJobReaper } from './modules/jobs/reaper';
 import { startJobWorker, type JobHandlers } from './modules/jobs/worker';
@@ -184,9 +185,12 @@ export async function start(
     throw error;
   }
 
-  // Housekeeping begins only after the socket is open, never on the boot path: bounded sweeps prune tokens and expire
-  // upload staging after 24 h. The loop skips overlap and is drained before the database pool closes.
+  // Housekeeping begins only after the socket is open, never on the boot path: bounded sweeps prune expired tokens,
+  // finished jobs, old metric samples, and upload staging after 24 h. The loop skips overlap and drains before DB close.
   const housekeeping = startHousekeeping(app.db.db, app.log, {
+    jobRetentionDays: config.jobRetentionDays,
+    metricsRetentionDays: config.metricsRetentionDays,
+    cacheStorage: createCacheStorage(config.cacheDir),
     uploadStorage: createUploadStorage(config.tmpDir),
   });
   const metricsSampler = startMetricsSampler(app.db.db, config.cacheDir, app.log);

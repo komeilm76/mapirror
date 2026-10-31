@@ -210,6 +210,30 @@ describe('cache storage paths and safe filesystem operations', () => {
     });
   });
 
+  it('lists cache entries without following symlinked directories', async () => {
+    await withDirectories(async (root, outside) => {
+      const storage = createCacheStorage(root);
+      const part = storage.partFile(JOB_ID);
+      const ready = storage.versionFile('finland', '261023', 'finland-261023.osm.pbf');
+      await part.ensureParent();
+      const handle = await part.open('write');
+      await handle.writeFile('known bytes');
+      await handle.close();
+      await storage.installPart(part, ready);
+      await writeFile(join(outside, 'hidden'), 'must not be read');
+      await symlink(outside, join(root, 'escape'), 'dir');
+
+      const entries = await storage.listEntries();
+      const readyEntry = entries.find(({ relativePath }) => relativePath === ready.relativePath);
+      expect(readyEntry).toMatchObject({ kind: 'file', sizeBytes: 11n });
+      expect(readyEntry?.modifiedAt).toBeInstanceOf(Date);
+      const symlinkEntry = entries.find(({ relativePath }) => relativePath === 'escape');
+      expect(symlinkEntry).toMatchObject({ kind: 'symlink', sizeBytes: 0n });
+      expect(symlinkEntry?.modifiedAt).toBeInstanceOf(Date);
+      expect(entries.some(({ relativePath }) => relativePath.startsWith('escape/'))).toBe(false);
+    });
+  });
+
   it('proves writability with one byte and removes the fixed readiness probe', async () => {
     await withDirectories(async (root) => {
       await createCacheStorage(root).probeWritable();

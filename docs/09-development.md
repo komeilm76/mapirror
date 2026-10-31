@@ -520,9 +520,11 @@ The rules that make it a single path, each with a test:
     An `async` hook that throws stops the chain and goes through the one error path.
   - Revocation is idempotent and keeps the first `revoked_at`; a password reset calls `revokeAllTokens` in the same
     transaction as the new hash.
-  - `pruneExpiredTokens` runs once at boot through `lib/housekeeping.ts`, **after** `listen`, bounded by
-    `statement_timeout`, and is never awaited. Measured reason: run before the socket with no bound, a row lock held
-    on an expired token kept the process booted and answering nothing. A failure is a `warn` and never fatal.
+  - Housekeeping runs after `listen` and every 15 minutes, with a bounded database transaction; it prunes expired tokens,
+    finished jobs and metric samples, expires upload staging, reconciles missing ready cache files under the country lock,
+    and removes only stale UUID `.part` files with no active job. It is never awaited on the boot path. A failure is a
+    `warn` and never fatal; the cutoff and missing-file behavior have fresh-PostgreSQL integration tests (Docker-backed;
+    skipped when no scratch database is available).
   - **Client addresses are untrusted input.** `request.ip` is whatever a trusted proxy forwarded, with no validation
     (measured: `X-Forwarded-For: not-an-ip` arrives verbatim), and the `inet` columns refuse it with `22P02` — which
     is a `500` on login. Every `inet` write and every rate-limit key goes through `normaliseIp` (`lib/client-ip.ts`),

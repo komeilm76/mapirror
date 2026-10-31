@@ -389,7 +389,7 @@ CREATE TABLE metrics_samples (
 );
 ```
 
-- One row / 10 s (≈ 60 k rows / week). Retention 7 days; older rows deleted hourly.
+- One row / 10 s (≈ 60 k rows / week). Retention is configured by `METRICS_RETENTION_DAYS` (default 7); older rows are pruned during the 15-minute housekeeping sweep.
 - The sampler writes with `INSERT … ON CONFLICT (sampled_at) DO NOTHING`: immediate restarts in the same
   second and periodic replicas on the same epoch-aligned sampling slot must not fail or duplicate samples.
 - The metrics API averages epoch-aligned buckets in PostgreSQL: 5 m→10 s, 1 h→30 s, 24 h→5 min, and 7 d→30 min. Retention and these presentation steps are independent.

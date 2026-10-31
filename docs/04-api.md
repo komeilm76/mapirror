@@ -639,7 +639,7 @@ A sibling route (`/intervals/runs/:runId`) would be ambiguous with `/intervals/:
 {
   "version": "0.2.0-dev", "uptimeSeconds": 84213, "worker": { "enabled": true, "concurrency": 2, "running": 1 },
   "storage": { "cacheDir": "/data/cache", "usedBytes": 2319000000, "freeBytes": 48000000000,
-               "reserveBytes": 2147483648, "state": "ok", "orphans": null },
+               "reserveBytes": 2147483648, "state": "ok", "orphans": { "count": 3, "bytes": 1200 } },
   "counts": { "countries": 389, "cachedCountries": 12, "publicCountries": 5,
               "versions": 31, "updatesAvailable": 2, "jobsRunning": 1, "jobsQueued": 0 },
   "source": { "id": "geofabrik", "lastSyncAt": "2026-10-24T08:00:00.000Z", "reachable": true },
@@ -649,8 +649,11 @@ A sibling route (`/intervals/runs/:runId`) would be ambiguous with `/intervals/:
 
 `worker.running` and the job counts are database-backed. `source.reachable` reflects the most recent completed
 catalog-sync outcome (or the durable last-success marker when sync-job history is absent); the endpoint does not
-probe the upstream. `storage.orphans` is `null` until P5-MON-05 adds its read-only report. Disk state is `full` when
-no bytes are available, `low` when available bytes are at or below `DISK_RESERVE_BYTES`, and `ok` otherwise.
+probe the upstream. `storage.orphans` reports the aggregate count and byte size of cache entries with no ready or
+active-job owner; it never returns paths. It is `null` only when the non-following scan fails. Housekeeping prunes
+metrics beyond the configured seven-day window, removes unowned `.part` files older than 24 hours, and marks ready
+rows with missing/non-regular files failed while closing publication if none remain. Disk state is `full` when no bytes
+are available, `low` when available bytes are at or below `DISK_RESERVE_BYTES`, and `ok` otherwise.
 
 #### `GET /_admin/api/system/metrics?window=5m|1h|24h|7d`
 

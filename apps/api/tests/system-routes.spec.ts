@@ -201,6 +201,18 @@ describe('system status route', () => {
     });
   });
 
+  it('includes the read-only cache orphan report when available', async () => {
+    const { request } = statusRequest();
+    await expect(
+      getSystemStatus(request, parseEnv({}), {
+        uptimeSeconds: () => 0,
+        readDiskSpace: () =>
+          Promise.resolve({ freeBytes: 1_000_000_000n, totalBytes: 2_000_000_000n }),
+        readOrphans: () => Promise.resolve({ count: 2, bytes: '9007199254740992' }),
+      }),
+    ).resolves.toMatchObject({ storage: { orphans: { count: 2, bytes: '9007199254740992' } } });
+  });
+
   it('does not report an upstream as reachable after its latest completed sync failed', async () => {
     const { request } = statusRequest({
       settings: [{ key: 'source.catalogSyncedAt', value: '2026-10-31T12:30:00.000Z' }],

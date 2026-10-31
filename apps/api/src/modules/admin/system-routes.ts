@@ -61,6 +61,10 @@ export interface SystemStatusRuntime {
   readonly uptimeSeconds?: () => number;
   /** Filesystem reader for the configured cache directory. */
   readonly readDiskSpace?: DiskSpaceReader;
+  /** Read-only orphan summary; failures are logged and reported as `null`. */
+  readonly readOrphans?: () => Promise<NonNullable<
+    SystemStatusResponse['storage']['orphans']
+  > | null>;
 }
 
 /**
@@ -125,8 +129,8 @@ export async function getSystemMetrics(
  * Handles `GET /_admin/api/system/status` from a consistent database snapshot plus current filesystem facts.
  *
  * `source.reachable` is the last completed source-sync outcome (or the durable successful-sync marker when job history
- * is unavailable); this endpoint does not perform a new upstream request. Orphan reporting is reserved for P5-MON-05
- * and is `null` until that read-only scan is available.
+ * is unavailable); this endpoint does not perform a new upstream request. The cache orphan report is a read-only scan;
+ * scan failures are logged and leave `storage.orphans` null rather than failing the whole status response.
  *
  * @param request - Fastify request; status accepts no query parameters.
  * @param config - Validated process configuration.
@@ -194,6 +198,15 @@ export async function getSystemStatus(
     throw new RangeError('cache filesystem returned invalid capacity values');
   }
 
+  let orphans: NonNullable<SystemStatusResponse['storage']['orphans']> | null = null;
+  if (runtime.readOrphans !== undefined) {
+    try {
+      orphans = await runtime.readOrphans();
+    } catch (error) {
+      request.log.warn({ err: error }, 'could not read cache orphan report');
+    }
+  }
+
   const usedBytes = disk.totalBytes - disk.freeBytes;
   const reserveBytes = BigInt(config.diskReserveBytes);
   const state = disk.freeBytes === 0n ? 'full' : disk.freeBytes <= reserveBytes ? 'low' : 'ok';
@@ -220,7 +233,7 @@ export async function getSystemStatus(
       freeBytes: jsonBytes(disk.freeBytes),
       reserveBytes: jsonBytes(reserveBytes),
       state,
-      orphans: null,
+      orphans,
     },
     counts: {
       countries: safeCount(snapshot.counts.countries),
