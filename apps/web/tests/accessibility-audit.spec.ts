@@ -124,6 +124,25 @@ describe('accessibility audit', () => {
   });
 
   it.each([
+    ['System', '/_site/admin/system'],
+    ['Settings', '/_site/admin/settings'],
+    ['Audit log', '/_site/admin/audit'],
+  ])(
+    'keeps the %s placeholder free of internal identifiers and offers a dashboard action',
+    async (title, path) => {
+      const container = await mountAuditRoute(path);
+      expect(container.textContent).toContain(`The ${title} page isn't available yet.`);
+      expect(container.textContent).toContain(
+        'Return to the dashboard to use the available admin tools.',
+      );
+      expect(container.textContent).toContain('Go to dashboard');
+      expect(container.textContent).not.toMatch(
+        /P\d-(?:WEB|MON|ADM)-\d+|S\d+|13-ui-ux|\/_site\/admin/,
+      );
+    },
+  );
+
+  it.each([
     ['login', '/_auth/login'],
     ['public API documentation', '/_site/api-docs'],
     ['public country detail', '/_site/countries/finland'],

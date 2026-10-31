@@ -10,12 +10,20 @@ const JOB_TYPE_LABELS: Record<JobView['type'], string> = {
   download: 'Download',
   import: 'Import',
   update_check: 'Update check',
-  catalog_sync: 'Catalog sync',
-  prune: 'Prune',
+  catalog_sync: 'Catalog refresh',
+  prune: 'Cache cleanup',
+};
+
+const JOB_STATUS_LABELS: Record<JobView['status'], string> = {
+  queued: 'Queued',
+  running: 'Running',
+  succeeded: 'Completed',
+  failed: 'Failed',
+  canceled: 'Canceled',
 };
 
 const PHASE_LABELS: Record<NonNullable<JobView['phase']>, string> = {
-  fetching_index: 'Fetching source index',
+  fetching_index: 'Finding available files',
   downloading: 'Downloading',
   verifying: 'Verifying file',
   installing: 'Installing',
@@ -26,15 +34,20 @@ export function jobTypeLabel(type: JobView['type']): string {
   return JOB_TYPE_LABELS[type];
 }
 
+/** Label a job lifecycle state without displaying its internal enum value. */
+export function jobStatusLabel(status: JobView['status']): string {
+  return JOB_STATUS_LABELS[status];
+}
+
 /** Label a phase, or a stable neutral state when no phase is currently reported. */
 export function jobPhaseLabel(phase: JobView['phase']): string {
-  return phase === null ? 'Waiting for worker' : PHASE_LABELS[phase];
+  return phase === null ? 'Waiting to start' : PHASE_LABELS[phase];
 }
 
 /** Label update-check work and terminal states without calling country counts bytes. */
 export function jobActivityLabel(job: Pick<JobView, 'type' | 'status' | 'phase'>): string {
   if (job.type !== 'update_check') return jobPhaseLabel(job.phase);
-  if (job.status === 'queued') return 'Waiting for worker';
+  if (job.status === 'queued') return 'Waiting to start';
   if (job.status === 'running') return 'Checking updates';
   if (job.status === 'succeeded') return 'Update check complete';
   if (job.status === 'failed') return 'Update check failed';
@@ -104,11 +117,15 @@ export function jobProgressLabel(
   job: Pick<JobView, 'type' | 'progressBytes' | 'totalBytes'>,
 ): string {
   if (job.type === 'update_check') {
-    const checked = BigInt(job.progressBytes).toLocaleString();
-    if (job.totalBytes === null) return `${checked} countries checked`;
-    const total = BigInt(job.totalBytes).toLocaleString();
+    const checkedValue = BigInt(job.progressBytes);
+    const checked = checkedValue.toLocaleString();
+    if (job.totalBytes === null)
+      return `${checked} ${checkedValue === 1n ? 'country' : 'countries'} checked`;
+    const totalValue = BigInt(job.totalBytes);
+    const total = totalValue.toLocaleString();
     const percent = progressPercent(job);
-    return `${checked} of ${total} countries checked${percent === null ? '' : ` · ${percent}%`}`;
+    const unit = totalValue === 1n ? 'country' : 'countries';
+    return `${checked} of ${total} ${unit} checked${percent === null ? '' : ` · ${percent}%`}`;
   }
   if (job.totalBytes === null) return `${formatBytes(job.progressBytes)} transferred`;
   const percent = progressPercent(job);
@@ -126,8 +143,8 @@ export function jobRateLabel(job: Pick<JobView, 'type' | 'speedBps'>): string {
 /** Compact safe aggregate of a completed bulk check. */
 export function updateCheckResultLabel(result: JobView['updateCheckResult']): string | null {
   if (result === null) return null;
-  const updates = `${result.updateAvailable} update${result.updateAvailable === 1 ? '' : 's'}`;
-  return `${result.checked} checked · ${updates} · ${result.upToDate} current · ${result.unknown} unknown · ${result.skipped} skipped`;
+  const updates = `${result.updateAvailable} update${result.updateAvailable === 1 ? '' : 's'} available`;
+  return `${result.checked} checked · ${updates} · ${result.upToDate} up to date · ${result.unknown} unknown · ${result.skipped} skipped`;
 }
 
 /** Friendly date in the administrator's current locale. */

@@ -143,7 +143,8 @@ describe('admin job queue and persistent progress drawer', () => {
 
     expect(container.querySelector('h1')?.textContent).toBe('Jobs');
     expect(container.textContent).toContain('Download');
-    expect(container.textContent).toContain('running');
+    expect(container.textContent).toContain('Running');
+    expect(container.textContent).not.toContain('running');
     expect(document.body.textContent).toContain('512 B/s');
     expect(
       container
@@ -279,9 +280,9 @@ describe('admin job queue and persistent progress drawer', () => {
       ),
     ).toBe(true);
     expect(document.body.textContent).toContain(
-      'Cancellation requested. Waiting for the worker to finish cleanup…',
+      'Cancellation requested. Waiting for the job to finish cleanup…',
     );
-    expect(document.body.querySelector('.mm-job-progress-card')?.textContent).toContain('running');
+    expect(document.body.querySelector('.mm-job-progress-card')?.textContent).toContain('Running');
     expect(document.body.querySelector('.mm-job-progress-card')?.textContent).not.toContain(
       'canceled',
     );
@@ -307,10 +308,10 @@ describe('admin job queue and persistent progress drawer', () => {
     openProgress?.click();
     await flushPromises();
 
-    expect(document.body.textContent).toContain('JOB_HANDLER_FAILED');
+    expect(document.body.textContent).not.toContain('JOB_HANDLER_FAILED');
     expect(document.body.textContent).toContain('The job could not be completed.');
     expect(document.body.textContent).toContain(
-      'The worker retries with backoff while attempts remain; if it ends in failure, start the work again.',
+      'We will retry automatically while attempts remain. If the job still fails, start the work again.',
     );
     expect(document.body.textContent).not.toContain('It may be retried.');
     expect(document.body.textContent).not.toContain('Cancel job');

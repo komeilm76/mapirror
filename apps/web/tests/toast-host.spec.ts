@@ -92,9 +92,9 @@ describe('a toast on screen', () => {
     const text = document.body.textContent ?? '';
     expect(text).toContain('The update could not be queued.');
     expect(text).toContain('Try again, or check the jobs page.');
-    expect(text).toContain('Request 9f1c2d1e');
+    expect(text).toContain('Request ID: 9f1c2d1e');
     expect(document.body.querySelector('.v-snackbar .mm-mono-small')?.textContent).toContain(
-      'Request 9f1c2d1e',
+      'Request ID: 9f1c2d1e',
     );
   });
 

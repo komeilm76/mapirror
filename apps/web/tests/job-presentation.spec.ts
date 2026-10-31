@@ -9,6 +9,7 @@ import {
   jobPhaseLabel,
   jobProgressLabel,
   jobRateLabel,
+  jobStatusLabel,
   jobTypeLabel,
   progressPercent,
   updateCheckResultLabel,
@@ -28,9 +29,14 @@ describe('job progress presentation', () => {
     expect(formatEta(45)).toBe('45 sec');
     expect(formatEta(3_600)).toBe('1 hr');
     expect(formatEta(90_000)).toBe('1 d 1 hr');
-    expect(jobTypeLabel('catalog_sync')).toBe('Catalog sync');
+    expect(jobTypeLabel('catalog_sync')).toBe('Catalog refresh');
+    expect(jobStatusLabel('queued')).toBe('Queued');
+    expect(jobStatusLabel('running')).toBe('Running');
+    expect(jobStatusLabel('succeeded')).toBe('Completed');
+    expect(jobStatusLabel('failed')).toBe('Failed');
+    expect(jobStatusLabel('canceled')).toBe('Canceled');
     expect(jobPhaseLabel('verifying')).toBe('Verifying file');
-    expect(jobPhaseLabel(null)).toBe('Waiting for worker');
+    expect(jobPhaseLabel(null)).toBe('Waiting to start');
     expect(isJobActive('queued')).toBe(true);
     expect(isJobActive('succeeded')).toBe(false);
   });
@@ -46,6 +52,12 @@ describe('job progress presentation', () => {
     };
     expect(jobActivityLabel(updateJob)).toBe('Checking updates');
     expect(jobProgressLabel(updateJob)).toBe('2 of 4 countries checked · 50%');
+    expect(jobProgressLabel({ type: 'update_check', progressBytes: 1, totalBytes: 1 })).toBe(
+      '1 of 1 country checked · 100%',
+    );
+    expect(jobProgressLabel({ type: 'update_check', progressBytes: 1, totalBytes: null })).toBe(
+      '1 country checked',
+    );
     expect(jobRateLabel(updateJob)).toBe('1 country/s');
     expect(
       updateCheckResultLabel({
@@ -56,7 +68,7 @@ describe('job progress presentation', () => {
         unknown: 1,
         skipped: 1,
       }),
-    ).toBe('3 checked · 1 update · 1 current · 1 unknown · 1 skipped');
+    ).toBe('3 checked · 1 update available · 1 up to date · 1 unknown · 1 skipped');
   });
 
   it('computes determinate progress safely for large integers and clamps out-of-range values', () => {

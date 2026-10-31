@@ -26,6 +26,7 @@ import {
   jobActivityLabel,
   jobProgressLabel,
   jobRateLabel,
+  jobStatusLabel,
   jobTypeLabel,
   progressPercent,
 } from '@/jobs/presentation';
@@ -93,7 +94,7 @@ async function loadJobs(): Promise<void> {
     if (requestController.signal.aborted || currentRequest !== requestNumber) return;
     const parsed = JobListResponseSchema.safeParse(response);
     if (!parsed.success) {
-      errorMessage.value = 'The server returned a job list this page could not read.';
+      errorMessage.value = "We couldn't read the job list.";
       errorRequestId.value = null;
       return;
     }
@@ -179,8 +180,8 @@ onUnmounted(() => {
         <p class="mm-caption mb-2">Administration · Queue</p>
         <h1 id="mm-jobs-title" class="mm-display">Jobs</h1>
         <p class="mm-body-public mm-jobs-intro">
-          Follow queued and running work, review completed results, or open progress for
-          cancellation and safe error details.
+          Track background work and review completed jobs. Open a job for progress, cancellation,
+          and error guidance.
         </p>
       </div>
       <v-btn variant="tonal" @click="retry">Refresh</v-btn>
@@ -191,7 +192,9 @@ onUnmounted(() => {
         <label for="mm-job-status">Status</label>
         <select id="mm-job-status" :value="statusFilter" @change="statusChanged">
           <option value="">All statuses</option>
-          <option v-for="status in JOB_STATUSES" :key="status" :value="status">{{ status }}</option>
+          <option v-for="status in JOB_STATUSES" :key="status" :value="status">
+            {{ jobStatusLabel(status) }}
+          </option>
         </select>
       </div>
       <div class="mm-cache-filter-field">
@@ -204,7 +207,9 @@ onUnmounted(() => {
         </select>
       </div>
       <span class="mm-caption" :aria-live="result ? 'polite' : 'off'">{{
-        result ? `${result.meta.total} jobs` : 'Loading jobs…'
+        result
+          ? `${result.meta.total.toLocaleString('en-GB')} ${result.meta.total === 1 ? 'job' : 'jobs'}`
+          : 'Loading jobs…'
       }}</span>
     </section>
 
@@ -258,14 +263,14 @@ onUnmounted(() => {
     <section v-else-if="errorMessage && result === null" class="mm-jobs-state" role="alert">
       <h2 class="mm-heading">Jobs could not be loaded</h2>
       <p class="mm-body-public">{{ errorMessage }}</p>
-      <p v-if="errorRequestId" class="mm-caption">Request {{ errorRequestId }}</p>
+      <p v-if="errorRequestId" class="mm-caption">Request ID: {{ errorRequestId }}</p>
       <v-btn class="mt-3" color="primary" variant="tonal" @click="retry">Retry</v-btn>
     </section>
 
     <div v-else-if="result" class="mm-jobs-results" :aria-busy="loading">
       <p v-if="errorMessage" class="mm-jobs-refresh-error" role="status">
         {{ errorMessage }} The last successful job list is still shown.
-        <span v-if="errorRequestId">Request {{ errorRequestId }}</span>
+        <span v-if="errorRequestId">Request ID: {{ errorRequestId }}</span>
       </p>
 
       <div v-if="result.data.length === 0" class="mm-jobs-state" role="status">
@@ -302,7 +307,9 @@ onUnmounted(() => {
                   <span class="mm-jobs-id mm-mono">{{ job.id }}</span>
                 </td>
                 <td>
-                  <span class="mm-job-status" :data-status="job.status">{{ job.status }}</span
+                  <span class="mm-job-status" :data-status="job.status">{{
+                    jobStatusLabel(job.status)
+                  }}</span
                   ><span class="mm-job-phase">{{ jobActivityLabel(job) }}</span>
                 </td>
                 <td class="mm-jobs-progress">
@@ -348,7 +355,9 @@ onUnmounted(() => {
                 <strong>{{ jobTypeLabel(job.type) }}</strong>
                 <span class="mm-job-phase">{{ jobActivityLabel(job) }}</span>
               </div>
-              <span class="mm-job-status" :data-status="job.status">{{ job.status }}</span>
+              <span class="mm-job-status" :data-status="job.status">{{
+                jobStatusLabel(job.status)
+              }}</span>
             </div>
             <span class="mm-jobs-id mm-mono">{{ job.id }}</span>
             <div class="mm-jobs-mobile-progress">

@@ -17,6 +17,7 @@ import {
 } from '@mapirror/shared';
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 
+import { errorCopyForCode } from '@/api/error-copy';
 import { ApiError } from '@/api/errors';
 import { useApi } from '@/composables/useApi';
 import { formatBytes, formatJobDate } from '@/jobs/presentation';
@@ -199,13 +200,22 @@ function nextPage(): void {
 
 /** Human labels preserve the server's finite lifecycle vocabulary without exposing an implementation code. */
 function statusLabel(status: IntervalRunView['status']): string {
-  return status === 'partial' ? 'Partially completed' : status[0]!.toUpperCase() + status.slice(1);
+  if (status === 'succeeded') return 'Completed';
+  if (status === 'partial') return 'Partially completed';
+  return status[0]!.toUpperCase() + status.slice(1);
 }
 
 function itemStatusLabel(status: IntervalRunItemView['status']): string {
+  if (status === 'queued') return 'Queued';
   if (status === 'downloaded') return 'Downloaded';
-  if (status === 'queued') return 'Queued or processing';
-  return status[0]!.toUpperCase() + status.slice(1);
+  if (status === 'skipped') return 'Skipped';
+  return 'Failed';
+}
+
+function runCountrySummary(failed: number, total: number): string {
+  const failureLabel = failed === 1 ? 'failure' : 'failures';
+  const countryLabel = total === 1 ? 'country' : 'countries';
+  return `${failed} ${failureLabel} · ${total} ${countryLabel}`;
 }
 
 function formatDuration(milliseconds: number): string {
@@ -268,7 +278,7 @@ onUnmounted(() => {
       <section class="mm-run-list" aria-label="Interval runs">
         <div v-if="historyError" class="mm-intervals-alert" role="alert">
           <p>{{ historyError }}</p>
-          <p v-if="historyRequestId" class="mm-mono">Request {{ historyRequestId }}</p>
+          <p v-if="historyRequestId" class="mm-mono">Request ID: {{ historyRequestId }}</p>
           <button class="mm-intervals-secondary" type="button" @click="loadHistory">
             Retry history
           </button>
@@ -291,14 +301,13 @@ onUnmounted(() => {
             @click="selectRun(run.id)"
           >
             <span class="mm-run-list-item-heading">
-              <strong>{{ statusLabel(run.status) }}</strong>
-              <span class="mm-run-status" :class="`mm-run-status--${run.status}`">{{
-                run.status
-              }}</span>
+              <strong class="mm-run-status" :class="`mm-run-status--${run.status}`">{{
+                statusLabel(run.status)
+              }}</strong>
             </span>
             <span>{{ run.triggeredBy === 'manual' ? 'Manual run' : 'Scheduled run' }}</span>
             <span>{{ formatJobDate(run.startedAt) }}</span>
-            <span>{{ run.countriesFailed }} failed · {{ run.countriesTotal }} countries</span>
+            <span>{{ runCountrySummary(run.countriesFailed, run.countriesTotal) }}</span>
           </button>
           <nav
             v-if="history.meta.totalPages > 1"
@@ -329,7 +338,7 @@ onUnmounted(() => {
       <section class="mm-run-detail" aria-label="Selected run details">
         <div v-if="detailError" class="mm-intervals-alert" role="alert">
           <p>{{ detailError }}</p>
-          <p v-if="detailRequestId" class="mm-mono">Request {{ detailRequestId }}</p>
+          <p v-if="detailRequestId" class="mm-mono">Request ID: {{ detailRequestId }}</p>
           <button
             v-if="selectedRunId"
             class="mm-intervals-secondary"
@@ -353,9 +362,6 @@ onUnmounted(() => {
               </p>
               <h3>{{ statusLabel(detail.run.status) }}</h3>
             </div>
-            <span class="mm-run-status" :class="`mm-run-status--${detail.run.status}`">{{
-              detail.run.status
-            }}</span>
           </header>
           <dl class="mm-run-facts">
             <div>
@@ -408,11 +414,12 @@ onUnmounted(() => {
               <p v-else-if="item.status === 'downloaded'" class="mm-caption">
                 Downloaded · {{ formatBytes(item.bytes) }}
               </p>
-              <p v-if="item.errorMessage" class="mm-run-item-error">
-                <strong v-if="item.errorCode">{{ item.errorCode }}: </strong>{{ item.errorMessage }}
+              <p v-if="item.errorCode || item.errorMessage" class="mm-run-item-error">
+                <strong>{{ errorCopyForCode(item.errorCode ?? 'UNKNOWN').message }}</strong>
+                <span>{{ errorCopyForCode(item.errorCode ?? 'UNKNOWN').action }}</span>
               </p>
               <p v-else-if="item.status === 'failed'" class="mm-run-item-error">
-                Failure details were not provided.
+                No failure details are available.
               </p>
             </article>
           </section>

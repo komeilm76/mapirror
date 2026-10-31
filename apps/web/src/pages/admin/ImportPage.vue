@@ -31,6 +31,12 @@ const COUNTRY_PAGE_SIZE = 100;
 const VERSION_PAGE_SIZE = 100;
 const COUNTRY_SEARCH_DELAY_MS = 250;
 
+class UnreadableImportResponseError extends Error {
+  constructor() {
+    super('The upload was accepted, but its confirmation could not be read.');
+  }
+}
+
 const api = useApi();
 const router = useRouter();
 const jobProgress = useJobProgress();
@@ -219,7 +225,10 @@ async function submitImport(): Promise<void> {
     );
     if (controller.signal.aborted) return;
     if (existingStatus === 'ready' || existingStatus === 'failed') {
-      replaceDialogMessage.value = `Version ${version.value.trim()} already exists for ${selectedCountry.value?.name ?? 'this country'}. The current version stays available unless the new upload installs successfully.`;
+      replaceDialogMessage.value =
+        existingStatus === 'ready'
+          ? `A ready version ${version.value.trim()} is already stored for ${selectedCountry.value?.name ?? 'this country'}. Confirm to replace it with this upload.`
+          : `A previous import of version ${version.value.trim()} failed for ${selectedCountry.value?.name ?? 'this country'}. Confirm to replace the failed record with this upload.`;
       replaceDialogOpen.value = true;
       submitting.value = false;
       return;
@@ -227,7 +236,7 @@ async function submitImport(): Promise<void> {
     if (existingStatus === 'pending') {
       requestError.value = {
         message: 'An import for this version is already pending.',
-        action: 'Follow its job before trying again.',
+        action: 'Open the job drawer and check its progress before trying again.',
         requestId: null,
       };
       submitting.value = false;
@@ -270,7 +279,7 @@ async function sendImport(replace: boolean): Promise<void> {
       },
     });
     const parsed = ImportResponseSchema.safeParse(response);
-    if (!parsed.success) throw new Error('The server accepted an unreadable import response.');
+    if (!parsed.success) throw new UnreadableImportResponseError();
     queuedJobId.value = parsed.data.jobId;
     queuedUploadId.value = parsed.data.uploadId;
     jobProgress.track(parsed.data.jobId);
@@ -278,7 +287,7 @@ async function sendImport(replace: boolean): Promise<void> {
     if (controller.signal.aborted) return;
     if (cause instanceof ApiError && cause.code === 'VERSION_DUPLICATE') {
       if (replaceAllowed(cause)) {
-        replaceDialogMessage.value = `Version ${version.value.trim()} became available for replacement after the preflight check. Confirm to send the upload with explicit replacement.`;
+        replaceDialogMessage.value = `Version ${version.value.trim()} became available after the check. Confirm to replace it with this upload.`;
         replaceDialogOpen.value = true;
       } else {
         requestError.value = {
@@ -290,10 +299,27 @@ async function sendImport(replace: boolean): Promise<void> {
       uploadProgress.value = null;
       return;
     }
-    showRequestError(
-      cause,
-      'The map file could not be uploaded. Check the connection and try again.',
-    );
+    if (
+      cause instanceof UnreadableImportResponseError ||
+      (cause instanceof ApiError &&
+        (cause.code === 'NETWORK' ||
+          cause.code === 'TIMEOUT' ||
+          (cause.code === 'MALFORMED' &&
+            cause.status !== null &&
+            cause.status >= 200 &&
+            cause.status < 300)))
+    ) {
+      requestError.value = {
+        message: "We couldn't confirm whether the upload was received.",
+        action: 'Check Jobs before uploading again; if no import appears, try again.',
+        requestId: cause instanceof ApiError ? cause.requestId : null,
+      };
+    } else {
+      showRequestError(
+        cause,
+        'The map file could not be uploaded. Check the connection and try again.',
+      );
+    }
     uploadProgress.value = null;
   } finally {
     if (uploadRequest === controller) uploadRequest = undefined;
@@ -469,7 +495,7 @@ onUnmounted(() => {
         <p class="ma-0">{{ requestError.message }}</p>
         <p v-if="requestError.action" class="ma-0">{{ requestError.action }}</p>
         <span v-if="requestError.requestId" class="mm-import-request-id"
-          >Request {{ requestError.requestId }}</span
+          >Request ID: {{ requestError.requestId }}</span
         >
       </div>
 
@@ -500,12 +526,10 @@ onUnmounted(() => {
       <div v-if="queuedJobId" class="mm-import-success" role="status" aria-live="polite">
         <div>
           <strong>Import queued</strong>
-          <p class="ma-0">
-            The worker will verify and install the map before it appears in the cache.
-          </p>
-          <span class="mm-import-request-id">Job {{ queuedJobId }}</span>
+          <p class="ma-0">We will verify and install the map before it appears in the cache.</p>
+          <span class="mm-import-request-id">Job ID: {{ queuedJobId }}</span>
           <span v-if="queuedUploadId" class="mm-import-request-id"
-            >Upload {{ queuedUploadId }}</span
+            >Upload ID: {{ queuedUploadId }}</span
           >
         </div>
         <v-btn type="button" color="primary" variant="tonal" @click="goToJobs">View jobs</v-btn>
@@ -525,7 +549,7 @@ onUnmounted(() => {
         <v-card-text>
           <p>{{ replaceDialogMessage }}</p>
           <p class="ma-0">
-            The current ready file remains available unless the replacement installs successfully.
+            Any current ready file remains available until the replacement installs successfully.
           </p>
         </v-card-text>
         <v-card-actions>

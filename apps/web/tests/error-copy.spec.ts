@@ -4,7 +4,12 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { ERROR_STATUS, INTERNAL_ERROR_CODES, JobErrorSchema } from '@mapirror/shared';
 
 import { ApiError, CLIENT_ERROR_CODES } from '../src/api/errors';
-import { ERROR_COPY, errorCopyFor, type UiErrorCode } from '../src/api/error-copy';
+import {
+  ERROR_COPY,
+  errorCopyFor,
+  errorCopyForCode,
+  type UiErrorCode,
+} from '../src/api/error-copy';
 import { notifyApiError } from '../src/api/notify-error';
 import { useNotifications } from '../src/stores/notifications';
 
@@ -36,6 +41,11 @@ describe('the web error-copy contract', () => {
 });
 
 describe('API error toast mapping', () => {
+  it('maps unknown string codes to safe fallback copy', () => {
+    expect(errorCopyForCode('NOT_A_PUBLIC_CODE')).toEqual(ERROR_COPY.UNKNOWN);
+    expect(errorCopyForCode('SOURCE_UNAVAILABLE')).toEqual(ERROR_COPY.SOURCE_UNAVAILABLE);
+  });
+
   it('uses stable code copy, preserves the request id, and remains until dismissed', () => {
     const notifications = useNotifications();
     const error = new ApiError({

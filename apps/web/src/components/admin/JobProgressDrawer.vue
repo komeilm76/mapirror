@@ -28,6 +28,7 @@ import {
   jobActivityLabel,
   jobProgressLabel,
   jobRateLabel,
+  jobStatusLabel,
   jobTypeLabel,
   progressPercent,
   updateCheckResultLabel,
@@ -263,7 +264,7 @@ onUnmounted(() => {
           <div v-if="loadErrors[jobId]" class="mm-job-error" role="alert">
             <p class="ma-0">{{ loadErrors[jobId]?.message }}</p>
             <p v-if="loadErrors[jobId]?.requestId" class="mm-caption ma-0 mt-1">
-              Request {{ loadErrors[jobId]?.requestId }}
+              Request ID: {{ loadErrors[jobId]?.requestId }}
             </p>
             <v-btn class="mt-2" size="small" variant="tonal" @click="loadJob(jobId, true)"
               >Retry</v-btn
@@ -281,7 +282,9 @@ onUnmounted(() => {
         >
           <div class="mm-job-card-heading">
             <div>
-              <p class="mm-caption ma-0">{{ jobTypeLabel(job.type) }} · {{ job.status }}</p>
+              <p class="mm-caption ma-0">
+                {{ jobTypeLabel(job.type) }} · {{ jobStatusLabel(job.status) }}
+              </p>
               <h3 class="mm-heading mt-1 mb-0">{{ jobActivityLabel(job) }}</h3>
             </div>
             <v-btn
@@ -354,19 +357,18 @@ onUnmounted(() => {
             class="mm-job-notice"
             role="status"
           >
-            Cancellation requested. Waiting for the worker to finish cleanup…
+            Cancellation requested. Waiting for the job to finish cleanup…
           </div>
 
           <div v-if="job.error" class="mm-job-error" role="alert">
-            <strong>{{ job.error.code }}</strong>
-            <p class="ma-0 mt-1">{{ errorCopyFor(job.error.code).message }}</p>
+            <p class="ma-0">{{ errorCopyFor(job.error.code).message }}</p>
             <p class="ma-0 mt-1">{{ errorCopyFor(job.error.code).action }}</p>
           </div>
 
           <div v-if="loadErrors[jobId]" class="mm-job-error" role="alert">
             <p class="ma-0">{{ loadErrors[jobId]?.message }}</p>
             <p v-if="loadErrors[jobId]?.requestId" class="mm-caption ma-0 mt-1">
-              Request {{ loadErrors[jobId]?.requestId }}
+              Request ID: {{ loadErrors[jobId]?.requestId }}
             </p>
             <v-btn class="mt-2" size="small" variant="tonal" @click="loadJob(jobId, true)"
               >Retry</v-btn
@@ -376,7 +378,7 @@ onUnmounted(() => {
           <div v-if="cancelErrors[jobId]" class="mm-job-error" role="alert">
             <p class="ma-0">{{ cancelErrors[jobId]?.message }}</p>
             <p v-if="cancelErrors[jobId]?.requestId" class="mm-caption ma-0 mt-1">
-              Request {{ cancelErrors[jobId]?.requestId }}
+              Request ID: {{ cancelErrors[jobId]?.requestId }}
             </p>
           </div>
 

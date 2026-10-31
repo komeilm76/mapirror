@@ -145,17 +145,22 @@ const { pause, resume } = useIntervalFn(
 /** Whole seconds until the form may be used again; `0` when it may be used now. */
 const lockedFor = computed(() => Math.max(0, Math.ceil((retryAt.value - now.value) / 1_000)));
 
-/** `m:ss`, because a person reads a clock and a machine reads seconds. */
-const lockedForClock = computed(() => {
+/** Spell out the remaining wait so it reads clearly without clock-format knowledge. */
+const lockedForLabel = computed(() => {
   const seconds = lockedFor.value;
-  return `${String(Math.floor(seconds / 60))}:${String(seconds % 60).padStart(2, '0')}`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  if (minutes === 0) return `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`;
+  const minuteLabel = `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+  if (remainder === 0) return minuteLabel;
+  return `${minuteLabel} ${remainder} ${remainder === 1 ? 'second' : 'seconds'}`;
 });
 
 /** The sentence shown while the form is limited — recomputed every second, so the number on screen is true. */
 const failureText = computed(() => {
   if (failure.value === null) return null;
   if (lockedFor.value === 0) return failure.value.detail;
-  return `Try again in ${lockedForClock.value}.`;
+  return `Try again in ${lockedForLabel.value}.`;
 });
 
 /** What the reader is told after a refusal: the plain sentence, then the next step. */
@@ -320,7 +325,7 @@ onMounted(() => {
               <p class="mm-body-public mb-1">{{ failure.message }}</p>
               <p v-if="failureText" class="mm-caption mb-1">{{ failureText }}</p>
               <p v-else-if="lockedFor > 0" class="mm-caption mb-1">
-                Try again in {{ lockedForClock }}.
+                Try again in {{ lockedForLabel }}.
               </p>
               <p v-if="failure.requestId" class="mm-mono ma-0">
                 Request ID: {{ failure.requestId }}

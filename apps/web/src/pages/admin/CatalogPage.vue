@@ -547,7 +547,7 @@ async function queueDownload(): Promise<void> {
     queuedJobs.value = { ...queuedJobs.value, [region.countryId]: parsed.data.jobId };
     jobProgress.track(parsed.data.jobId);
     const version = parsed.data.resolvedVersion ?? request.data.version;
-    queueAnnouncement.value = `${region.name} download queued for ${version}. Job id: ${parsed.data.jobId}.`;
+    queueAnnouncement.value = `${region.name} download queued for ${version}. Job ID: ${parsed.data.jobId}.`;
     returnFocusElement = null;
     queueingDownload.value = false;
     closeDownloadPicker();
@@ -597,7 +597,7 @@ async function queueDownload(): Promise<void> {
 
     <section class="mm-catalog-filters" aria-label="Catalog filters">
       <div class="mm-catalog-filter-field">
-        <label for="catalog-continent">Continent / parent id</label>
+        <label for="catalog-continent">Continent or source region ID</label>
         <input
           id="catalog-continent"
           v-model="continentInput"
@@ -607,7 +607,7 @@ async function queueDownload(): Promise<void> {
           placeholder="e.g. europe"
           type="search"
         />
-        <span class="mm-caption">Exact source parent id</span>
+        <span class="mm-caption">Enter an exact source region ID.</span>
       </div>
 
       <div class="mm-catalog-filter-field">
@@ -644,7 +644,8 @@ async function queueDownload(): Promise<void> {
       <span v-else-if="loading">Updating catalog…</span>
       <span v-else-if="result !== null">
         Showing {{ rangeStart }}–{{ rangeEnd }} of
-        {{ result.meta.total.toLocaleString('en-GB') }} regions
+        {{ result.meta.total.toLocaleString('en-GB') }}
+        {{ result.meta.total === 1 ? 'region' : 'regions' }}
       </span>
     </div>
 
@@ -653,7 +654,7 @@ async function queueDownload(): Promise<void> {
         <h2 class="mm-catalog-state-title">The catalog could not be loaded</h2>
         <p class="mm-catalog-state-copy">{{ errorMessage }}</p>
         <p v-if="errorRequestId" class="mm-mono-small mm-catalog-request-id">
-          Request id: {{ errorRequestId }}
+          Request ID: {{ errorRequestId }}
         </p>
       </div>
       <button class="mm-catalog-button mm-catalog-button-primary" type="button" @click="retry">
@@ -681,9 +682,9 @@ async function queueDownload(): Promise<void> {
     </div>
 
     <div v-else-if="result !== null && result.data.length === 0" class="mm-catalog-empty">
-      <h2 class="mm-catalog-state-title">No country matches</h2>
+      <h2 class="mm-catalog-state-title">No regions match</h2>
       <p class="mm-catalog-state-copy">
-        Try a different name or parent id, or clear the filters to start again.
+        Try a different name or region ID, or clear the filters to start again.
       </p>
       <button
         class="mm-catalog-button mm-catalog-button-primary"
@@ -739,7 +740,7 @@ async function queueDownload(): Promise<void> {
                 <span class="mm-catalog-source mm-mono-small">{{ item.sourceId }}</span>
               </th>
               <td>
-                <span>{{ item.continent ?? 'Root region' }}</span>
+                <span>{{ item.continent ?? 'Top-level region' }}</span>
                 <span class="mm-catalog-secondary">{{ isoLabel(item) }}</span>
               </td>
               <td class="mm-catalog-number mm-mono">{{ formatBytes(item.sourceSizeHintBytes) }}</td>
@@ -798,7 +799,7 @@ async function queueDownload(): Promise<void> {
           <dl>
             <div>
               <dt>Continent · ISO</dt>
-              <dd>{{ item.continent ?? 'Root region' }} · {{ isoLabel(item) }}</dd>
+              <dd>{{ item.continent ?? 'Top-level region' }} · {{ isoLabel(item) }}</dd>
             </div>
             <div>
               <dt>Source size</dt>
@@ -909,8 +910,8 @@ async function queueDownload(): Promise<void> {
           </button>
         </header>
         <p id="catalog-download-description" class="mm-catalog-state-copy">
-          Choose the newest Geofabrik extract or a dated snapshot. Downloads are queued for the
-          worker.
+          Choose the newest Geofabrik extract or a dated snapshot. Downloads are queued for
+          background processing.
         </p>
 
         <div
@@ -925,7 +926,7 @@ async function queueDownload(): Promise<void> {
           <div>
             <p class="mm-catalog-state-copy">{{ snapshotsErrorMessage }}</p>
             <p v-if="snapshotsErrorRequestId" class="mm-mono-small mm-catalog-request-id">
-              Request id: {{ snapshotsErrorRequestId }}
+              Request ID: {{ snapshotsErrorRequestId }}
             </p>
           </div>
           <button class="mm-catalog-button" type="button" @click="loadSnapshots">Try again</button>
@@ -1006,7 +1007,7 @@ async function queueDownload(): Promise<void> {
           <div v-if="downloadErrorMessage !== null" class="mm-catalog-action-error" role="alert">
             <p>{{ downloadErrorMessage }}</p>
             <p v-if="downloadErrorRequestId" class="mm-mono-small mm-catalog-request-id">
-              Request id: {{ downloadErrorRequestId }}
+              Request ID: {{ downloadErrorRequestId }}
             </p>
           </div>
           <footer class="mm-catalog-dialog-actions">

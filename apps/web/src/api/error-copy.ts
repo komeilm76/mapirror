@@ -139,12 +139,12 @@ export const ERROR_COPY = {
   JOB_HANDLER_FAILED: {
     message: 'The job could not be completed.',
     action:
-      'The worker retries with backoff while attempts remain; if it ends in failure, start the work again.',
+      'We will retry automatically while attempts remain. If the job still fails, start the work again.',
   },
   WORKER_LOST: {
-    message: 'The worker stopped before this job completed.',
+    message: 'This job stopped before it was complete.',
     action:
-      'The system retries with backoff while attempts remain; if it ends in failure, start the work again.',
+      'We will retry automatically while attempts remain. If the job still fails, start the work again.',
   },
   RUN_INTERRUPTED: {
     message: 'This scheduled run was interrupted when the service stopped.',
@@ -187,4 +187,9 @@ export const ERROR_COPY = {
 /** Return the stable human copy for a documented web-visible error code. */
 export function errorCopyFor(code: UiErrorCode): ErrorCopy {
   return ERROR_COPY[code];
+}
+
+/** Safely map a server-supplied string code, falling back when it is not in the documented vocabulary. */
+export function errorCopyForCode(code: string): ErrorCopy {
+  return Object.hasOwn(ERROR_COPY, code) ? ERROR_COPY[code as UiErrorCode] : ERROR_COPY.UNKNOWN;
 }

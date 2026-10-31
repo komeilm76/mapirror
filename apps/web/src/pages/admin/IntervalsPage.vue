@@ -432,7 +432,9 @@ function frequencyLabel(frequency: IntervalFrequency): string {
 }
 
 function runStatusLabel(status: NonNullable<IntervalView['lastRun']>['status']): string {
-  return status === 'partial' ? 'Partially completed' : status[0]!.toUpperCase() + status.slice(1);
+  if (status === 'succeeded') return 'Completed';
+  if (status === 'partial') return 'Partially completed';
+  return status[0]!.toUpperCase() + status.slice(1);
 }
 
 function scheduleDescription(interval: IntervalView): string {
@@ -477,11 +479,11 @@ onUnmounted(() => {
 
     <section v-if="actionError" class="mm-intervals-alert" role="alert">
       <p>{{ actionError }}</p>
-      <p v-if="mutationId" class="mm-mono">Request {{ mutationId }}</p>
+      <p v-if="mutationId" class="mm-mono">Request ID: {{ mutationId }}</p>
     </section>
     <section v-if="listError" class="mm-intervals-alert" role="alert">
       <p>{{ listError }}</p>
-      <p v-if="listRequestId" class="mm-mono">Request {{ listRequestId }}</p>
+      <p v-if="listRequestId" class="mm-mono">Request ID: {{ listRequestId }}</p>
       <button class="mm-intervals-secondary" type="button" @click="loadIntervals">Retry</button>
     </section>
 
@@ -622,7 +624,7 @@ onUnmounted(() => {
       </p>
       <div v-if="manualRunError" class="mm-intervals-alert" role="alert">
         <p>{{ manualRunError }}</p>
-        <p v-if="manualRunRequestId" class="mm-mono">Request {{ manualRunRequestId }}</p>
+        <p v-if="manualRunRequestId" class="mm-mono">Request ID: {{ manualRunRequestId }}</p>
       </div>
       <div class="mm-interval-form-actions">
         <button
@@ -777,7 +779,7 @@ onUnmounted(() => {
 
         <div v-if="formError" class="mm-intervals-alert" role="alert">
           <p>{{ formError }}</p>
-          <p v-if="formRequestId" class="mm-mono">Request {{ formRequestId }}</p>
+          <p v-if="formRequestId" class="mm-mono">Request ID: {{ formRequestId }}</p>
         </div>
         <div class="mm-interval-form-actions">
           <button
@@ -805,7 +807,9 @@ onUnmounted(() => {
       <h2 id="mm-interval-delete-title">Delete {{ deleteTarget.name }}?</h2>
       <p id="mm-interval-delete-copy">
         This permanently removes the schedule and its run history for
-        {{ deleteTarget.countries.length }} countries. Downloaded map versions are retained.
+        {{ deleteTarget.countries.length }}
+        {{ deleteTarget.countries.length === 1 ? 'country' : 'countries' }}. Downloaded map versions
+        are retained.
       </p>
       <div class="mm-interval-form-actions">
         <button

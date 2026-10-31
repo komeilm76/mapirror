@@ -233,7 +233,7 @@ onUnmounted(() => {
           System overview
         </h2>
         <p class="mm-dashboard-overview-description mm-text-secondary">
-          Counts, queue health and cache-volume headroom.
+          Counts, active work and available space on the cache drive.
         </p>
       </div>
       <v-btn :disabled="loading" color="primary" variant="text" @click="refreshDashboard">
@@ -258,7 +258,7 @@ onUnmounted(() => {
       <p class="ma-0">
         {{
           hasDashboardData
-            ? 'Some dashboard data could not be refreshed. Last successful readings remain visible where available.'
+            ? 'Some dashboard data could not be refreshed. Last successful readings remain visible; refresh to try again.'
             : 'Dashboard data could not be loaded. Check the connection and refresh.'
         }}
       </p>
@@ -266,7 +266,7 @@ onUnmounted(() => {
         <li v-for="entry in endpointErrors" :key="entry.name">
           {{ entry.name }}: {{ entry.error.message }}
           <span v-if="entry.error.requestId" class="mm-mono-small">
-            Request id: {{ entry.error.requestId }}
+            Request ID: {{ entry.error.requestId }}
           </span>
         </li>
       </ul>
@@ -334,11 +334,14 @@ onUnmounted(() => {
         <v-card-title>Jobs</v-card-title>
         <v-card-text>
           <p class="mm-dashboard-value mm-text-primary">
-            {{ status?.counts.jobsRunning.toLocaleString('en-GB') ?? '—' }} running ·
-            {{ status?.counts.jobsQueued.toLocaleString('en-GB') ?? '—' }} queued
+            {{ status?.counts.jobsRunning.toLocaleString('en-GB') ?? '—' }}
+            {{ status?.counts.jobsRunning === 1 ? 'job' : 'jobs' }} running ·
+            {{ status?.counts.jobsQueued.toLocaleString('en-GB') ?? '—' }}
+            {{ status?.counts.jobsQueued === 1 ? 'job' : 'jobs' }} queued
           </p>
           <p class="mm-dashboard-detail mm-text-secondary">
-            {{ failedJobCount?.toLocaleString('en-GB') ?? '—' }} failed jobs
+            {{ failedJobCount?.toLocaleString('en-GB') ?? '—' }}
+            {{ failedJobCount === 1 ? 'failed job' : 'failed jobs' }}
           </p>
         </v-card-text>
       </v-card>
@@ -380,24 +383,24 @@ onUnmounted(() => {
       </v-card>
 
       <v-card border flat rounded="lg" :to="adminPagePaths.catalog()" class="mm-dashboard-card">
-        <v-card-title>Source sync freshness</v-card-title>
+        <v-card-title>Catalog refresh status</v-card-title>
         <v-card-text>
           <p class="mm-dashboard-value mm-text-primary">
             {{
               status === null
                 ? 'Unavailable'
-                : status.source.reachable
-                  ? 'Last completed sync succeeded'
-                  : status.source.lastSyncAt === null
-                    ? 'No successful sync recorded'
-                    : 'Most recent sync failed'
+                : status.source.lastSyncAt === null
+                  ? 'No successful catalog refresh recorded'
+                  : status.source.reachable
+                    ? 'Latest catalog refresh succeeded'
+                    : 'Most recent catalog refresh failed'
             }}
           </p>
           <p class="mm-dashboard-detail mm-text-secondary">
             {{
               status?.source.lastSyncAt === null || status === null
-                ? 'No successful sync time available.'
-                : `Last successful sync ${formatUtc(status.source.lastSyncAt)} UTC`
+                ? 'No successful catalog refresh time is available.'
+                : `Last successful catalog refresh ${formatUtc(status.source.lastSyncAt)} UTC`
             }}
           </p>
         </v-card-text>

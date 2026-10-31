@@ -525,7 +525,7 @@ function isoLabel(item: CacheListItem): string {
         <h2 class="mm-cache-state-title">The update check could not be queued</h2>
         <p class="mm-cache-state-copy">{{ checkAllError.message }}</p>
         <p v-if="checkAllError.requestId" class="mm-mono-small mm-cache-request-id">
-          Request id: {{ checkAllError.requestId }}
+          Request ID: {{ checkAllError.requestId }}
         </p>
       </div>
     </div>
@@ -574,7 +574,7 @@ function isoLabel(item: CacheListItem): string {
       <span v-else-if="loading">Updating cached countries…</span>
       <span v-else-if="result !== null">
         Showing {{ rangeStart }}–{{ rangeEnd }} of {{ result.meta.total.toLocaleString('en-GB') }}
-        cached countries
+        {{ result.meta.total === 1 ? 'cached country' : 'cached countries' }}
       </span>
     </div>
 
@@ -583,7 +583,7 @@ function isoLabel(item: CacheListItem): string {
         <h2 class="mm-cache-state-title">The cache could not be loaded</h2>
         <p class="mm-cache-state-copy">{{ errorMessage }}</p>
         <p v-if="errorRequestId" class="mm-mono-small mm-cache-request-id">
-          Request id: {{ errorRequestId }}
+          Request ID: {{ errorRequestId }}
         </p>
       </div>
       <button class="mm-cache-button mm-cache-button-primary" type="button" @click="retry">
@@ -615,7 +615,7 @@ function isoLabel(item: CacheListItem): string {
         <h2 class="mm-cache-state-title">
           {{
             cacheQuery.q || cacheQuery.update === 'available'
-              ? 'No cached country matches'
+              ? 'No cached countries match'
               : 'Nothing cached yet'
           }}
         </h2>
@@ -623,7 +623,7 @@ function isoLabel(item: CacheListItem): string {
           {{
             cacheQuery.q || cacheQuery.update === 'available'
               ? 'Adjust the search or clear filters to see the full cache.'
-              : 'The mirror has no stored regions yet. Choose a country from the source catalog to begin.'
+              : 'The mirror has no cached regions yet. Choose a country from the source catalog to begin.'
           }}
         </p>
       </div>
@@ -749,7 +749,7 @@ function isoLabel(item: CacheListItem): string {
                 <p v-if="checkErrors[item.countryId]" class="mm-cache-row-error" role="alert">
                   {{ checkErrors[item.countryId]?.message }}
                   <span v-if="checkErrors[item.countryId]?.requestId" class="mm-mono-small">
-                    Request id: {{ checkErrors[item.countryId]?.requestId }}
+                    Request ID: {{ checkErrors[item.countryId]?.requestId }}
                   </span>
                 </p>
                 <p
@@ -757,7 +757,7 @@ function isoLabel(item: CacheListItem): string {
                   class="mm-cache-row-status"
                   role="status"
                 >
-                  Update queued. Job {{ queuedUpdateJobs[item.countryId] }}
+                  Update queued. Job ID: {{ queuedUpdateJobs[item.countryId] }}
                 </p>
               </td>
             </tr>
@@ -839,11 +839,11 @@ function isoLabel(item: CacheListItem): string {
           <p v-if="checkErrors[item.countryId]" class="mm-cache-row-error" role="alert">
             {{ checkErrors[item.countryId]?.message }}
             <span v-if="checkErrors[item.countryId]?.requestId" class="mm-mono-small">
-              Request id: {{ checkErrors[item.countryId]?.requestId }}
+              Request ID: {{ checkErrors[item.countryId]?.requestId }}
             </span>
           </p>
           <p v-if="queuedUpdateJobs[item.countryId]" class="mm-cache-row-status" role="status">
-            Update queued. Job {{ queuedUpdateJobs[item.countryId] }}
+            Update queued. Job ID: {{ queuedUpdateJobs[item.countryId] }}
           </p>
         </article>
       </div>
@@ -911,7 +911,7 @@ function isoLabel(item: CacheListItem): string {
             <div>
               <p class="mm-cache-state-copy">{{ updateErrorMessage }}</p>
               <p v-if="updateErrorRequestId" class="mm-mono-small mm-cache-request-id">
-                Request id: {{ updateErrorRequestId }}
+                Request ID: {{ updateErrorRequestId }}
               </p>
             </div>
           </div>

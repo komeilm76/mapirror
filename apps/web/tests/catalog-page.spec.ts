@@ -276,8 +276,8 @@ describe('admin catalog page', () => {
       '?q=not-a-region&continent=moon&cache=uncached',
     );
 
-    await vi.waitFor(() => expect(container.textContent).toContain('No country matches'));
-    expect(container.textContent).toContain('Try a different name or parent id');
+    await vi.waitFor(() => expect(container.textContent).toContain('No regions match'));
+    expect(container.textContent).toContain('Try a different name or region ID');
     expect(container.querySelector('.mm-catalog-empty button')?.textContent).toContain(
       'Clear filters',
     );
@@ -413,7 +413,7 @@ describe('admin catalog page', () => {
     await vi.waitFor(() =>
       expect(document.querySelector('#mm-job-progress-drawer')).not.toBeNull(),
     );
-    expect(document.body.textContent).toContain('Download · queued');
+    expect(document.body.textContent).toContain('Download · Queued');
     expect(
       [...container.querySelectorAll<HTMLButtonElement>('.mm-catalog-download-button')].every(
         (button) => button.disabled,

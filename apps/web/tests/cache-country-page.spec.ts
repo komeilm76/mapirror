@@ -178,7 +178,7 @@ describe('admin cached-country detail', () => {
     expect(container.textContent).toContain('Public');
     expect(container.textContent).toContain('Update available · 261026');
     expect(container.textContent).toContain('Active work');
-    expect(container.textContent).toContain('download · running');
+    expect(container.textContent).toContain('Download · Running');
     expect(container.textContent).toContain('1.0 MiB of 3.0 MiB');
     expect(container.textContent).toContain('261025');
     expect(container.textContent).toContain('261024');
@@ -524,7 +524,7 @@ describe('admin cached-country detail', () => {
       ),
     );
     expect(container.querySelectorAll('.mm-cache-version-table tbody tr')).toHaveLength(2);
-    expect(container.textContent).toContain('Request id: req-busy');
+    expect(container.textContent).toContain('Request ID: req-busy');
     expect(container.textContent).toContain('Delete version 261025?');
   });
 
@@ -637,8 +637,12 @@ describe('admin cached-country detail', () => {
     );
     expect(deleteRequest.url?.searchParams.get('confirm')).toBe('finland');
     expect(deleteRequest.url?.searchParams.get('cancelJobs')).toBe('true');
-    expect(container.textContent).toContain('Request id: req-delete-busy');
+    expect(container.textContent).toContain('Request ID: req-delete-busy');
     expect(container.textContent).toContain('Delete cached country Finland?');
+    expect(container.textContent).toContain(
+      'The cache records are removed first, then stored files are deleted.',
+    );
+    expect(container.textContent).not.toContain('the cache stays intact');
   });
 
   it('offers explicit cancellation when a country job appears after the detail was loaded', async () => {

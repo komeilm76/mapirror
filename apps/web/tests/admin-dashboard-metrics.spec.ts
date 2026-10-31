@@ -180,11 +180,11 @@ describe('admin dashboard resource charts', () => {
     expect(container.querySelector('svg[aria-labelledby*="summary"]')).not.toBeNull();
     expect(container.textContent).toContain('2 GiB');
     expect(container.textContent).toContain('2 cached · 1 public · 3 ready versions');
-    expect(container.textContent).toContain('1 running · 4 queued');
+    expect(container.textContent).toContain('1 job running · 4 jobs queued');
     expect(container.textContent).toContain('3 failed jobs');
     expect(container.textContent).toContain('8 GiB');
     expect(container.textContent).toContain('Nightly Finland refresh');
-    expect(container.textContent).toContain('Last completed sync succeeded');
+    expect(container.textContent).toContain('Latest catalog refresh succeeded');
 
     const widgetLinks = [...container.querySelectorAll<HTMLAnchorElement>('.mm-dashboard-grid a')];
     expect(widgetLinks).toHaveLength(7);
@@ -196,7 +196,7 @@ describe('admin dashboard resource charts', () => {
     expect(widgetLink('Jobs')).toBe(adminPagePaths.jobs());
     expect(widgetLink('Storage headroom')).toBe(adminPagePaths.system());
     expect(widgetLink('Next scheduled interval')).toBe(adminPagePaths.intervals());
-    expect(widgetLink('Source sync freshness')).toBe(adminPagePaths.catalog());
+    expect(widgetLink('Catalog refresh status')).toBe(adminPagePaths.catalog());
 
     const dataDisclosure = container.querySelectorAll('details')[1];
     expect(dataDisclosure).not.toBeUndefined();

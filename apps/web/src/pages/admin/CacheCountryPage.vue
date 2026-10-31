@@ -21,10 +21,18 @@ import { ApiError } from '@/api/errors';
 import { notifyApiError } from '@/api/notify-error';
 import { useApi } from '@/composables/useApi';
 import { adminPagePaths } from '@/router/paths';
+import { jobStatusLabel, jobTypeLabel } from '@/jobs/presentation';
 import { useBreadcrumbs } from '@/stores/breadcrumbs';
 import { useNotifications } from '@/stores/notifications';
 
 const VERSION_PAGE_SIZE = 25;
+
+/** Human labels for the cache-version lifecycle. */
+function versionStatusLabel(status: CacheVersionListItem['status']): string {
+  if (status === 'pending') return 'Pending';
+  if (status === 'ready') return 'Ready';
+  return 'Failed';
+}
 const CACHE_API = '/_admin/api/cache';
 
 /** Browser-native save picker contract, kept local because browser typings vary. */
@@ -756,7 +764,7 @@ const deletionWarning = computed(() =>
         <h2 class="mm-cache-state-title">The cached country could not be loaded</h2>
         <p class="mm-cache-state-copy">{{ errorMessage }}</p>
         <p v-if="errorRequestId" class="mm-mono-small mm-cache-request-id">
-          Request id: {{ errorRequestId }}
+          Request ID: {{ errorRequestId }}
         </p>
       </div>
       <button class="mm-cache-button mm-cache-button-primary" type="button" @click="retry">
@@ -838,7 +846,7 @@ const deletionWarning = computed(() =>
         <h2 id="cache-active-jobs-heading" class="mm-cache-section-title">Active work</h2>
         <ul>
           <li v-for="job in detail.activeJobs" :key="job.id">
-            <span>{{ job.type.replaceAll('_', ' ') }} · {{ job.status }}</span>
+            <span>{{ jobTypeLabel(job.type) }} · {{ jobStatusLabel(job.status) }}</span>
             <span class="mm-cache-secondary">
               {{ formatBytes(job.progressBytes)
               }}<template v-if="job.totalBytes !== null">
@@ -866,7 +874,7 @@ const deletionWarning = computed(() =>
           <div>
             <p class="mm-cache-state-copy">{{ downloadErrorMessage }}</p>
             <p v-if="downloadErrorRequestId" class="mm-mono-small mm-cache-request-id">
-              Request id: {{ downloadErrorRequestId }}
+              Request ID: {{ downloadErrorRequestId }}
             </p>
           </div>
           <button
@@ -941,7 +949,7 @@ const deletionWarning = computed(() =>
                 </th>
                 <td>
                   <span :class="['mm-cache-pill', `mm-cache-version-${version.status}`]">{{
-                    version.status
+                    versionStatusLabel(version.status)
                   }}</span>
                 </td>
                 <td>{{ originLabel(version.origin) }}</td>
@@ -985,7 +993,7 @@ const deletionWarning = computed(() =>
             <header>
               <h3 class="mm-cache-name mm-mono">{{ version.version }}</h3>
               <span :class="['mm-cache-pill', `mm-cache-version-${version.status}`]">{{
-                version.status
+                versionStatusLabel(version.status)
               }}</span>
             </header>
             <dl>
@@ -1086,7 +1094,7 @@ const deletionWarning = computed(() =>
           {{ deleteErrorMessage }}
         </p>
         <p v-if="deleteErrorRequestId" class="mm-mono-small mm-cache-request-id">
-          Request id: {{ deleteErrorRequestId }}
+          Request ID: {{ deleteErrorRequestId }}
         </p>
         <label class="mm-cache-confirm-check">
           <input ref="deleteAcknowledgeElement" v-model="deleteAcknowledged" type="checkbox" />
@@ -1132,30 +1140,31 @@ const deletionWarning = computed(() =>
           Delete cached country {{ detail.country.name }}?
         </h2>
         <p id="cache-country-delete-copy" class="mm-cache-state-copy">
-          Every locally stored map version will be permanently removed, and public access will
-          close. The country will remain in the catalog and can be cached again later.
+          All map versions will be removed from the cache and public access will close. The catalog
+          entry remains, so you can cache the country again later.
         </p>
         <p id="cache-country-delete-guidance" class="mm-cache-delete-guidance">
-          Files are removed only after the database deletion commits. If cleanup cannot finish, the
-          cache stays intact; try again after active work has stopped.
+          The cache records are removed first, then stored files are deleted. If a file cannot be
+          removed right away, it is left for later cleanup.
         </p>
         <div v-if="countryDeleteNeedsCancel" class="mm-cache-delete-active-jobs" role="status">
           <p v-if="countryDeleteHasActiveJobs" class="mm-cache-state-copy">
-            This country has queued or running work. You can request cooperative cancellation; the
-            server waits up to three seconds for cleanup before it deletes anything.
+            Active jobs are still working on this country. If you request cancellation, the system
+            waits up to three seconds for them to stop and clean up. If they are still running,
+            nothing is deleted; try again shortly.
           </p>
           <p v-else class="mm-cache-state-copy">
-            A country job or cache operation started since this page loaded. You may request
-            cooperative cancellation of active jobs before retrying the deletion.
+            New work started on this country while this page was open. Request cancellation of any
+            active jobs before trying the deletion again.
           </p>
           <ul v-if="countryDeleteHasActiveJobs" class="mm-cache-delete-job-list">
             <li v-for="job in detail.activeJobs" :key="job.id">
-              {{ job.type.replaceAll('_', ' ') }} · {{ job.status }}
+              {{ jobTypeLabel(job.type) }} · {{ jobStatusLabel(job.status) }}
             </li>
           </ul>
           <label class="mm-cache-confirm-check">
             <input v-model="countryDeleteCancelJobs" type="checkbox" />
-            <span>Request cancellation of active country jobs and wait for cleanup</span>
+            <span>Ask active jobs to stop, then wait for cleanup before deleting</span>
           </label>
         </div>
         <label class="mm-cache-confirm-field">
@@ -1176,7 +1185,7 @@ const deletionWarning = computed(() =>
           {{ countryDeleteErrorMessage }}
         </p>
         <p v-if="countryDeleteErrorRequestId" class="mm-mono-small mm-cache-request-id">
-          Request id: {{ countryDeleteErrorRequestId }}
+          Request ID: {{ countryDeleteErrorRequestId }}
         </p>
         <footer>
           <button

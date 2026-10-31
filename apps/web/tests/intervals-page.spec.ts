@@ -267,7 +267,7 @@ describe('admin intervals screen', () => {
     runNow?.click();
     await flushPromises();
     expect(container.textContent).toContain('A paused schedule can still be run manually.');
-    expect(container.textContent).toContain('1 countries');
+    expect(container.textContent).toContain('1 failure · 1 country');
 
     [...container.querySelectorAll<HTMLButtonElement>('button')]
       .find((button) => button.textContent?.includes('Start run'))
@@ -282,7 +282,7 @@ describe('admin intervals screen', () => {
       body: '{}',
     });
     expect(container.textContent).toContain('Running');
-    expect(container.textContent).toContain('Succeeded');
+    expect(container.textContent).toContain('Completed');
     expect(container.textContent).toContain('Partially completed');
     expect(container.textContent).toContain('Failed');
 
@@ -293,8 +293,11 @@ describe('admin intervals screen', () => {
     await flushPromises();
     expect(container.textContent).toContain('One country could not be refreshed safely.');
     expect(container.textContent).toContain('Sweden');
-    expect(container.textContent).toContain('SOURCE_UNAVAILABLE');
-    expect(container.textContent).toContain('The source did not return a usable snapshot.');
+    expect(container.textContent).not.toContain('SOURCE_UNAVAILABLE');
+    expect(container.textContent).toContain('The map source could not be reached.');
+    expect(container.textContent).toContain(
+      'Check the connection and retry; cached maps remain available.',
+    );
   });
 
   it('polls an active run until it reaches a terminal status', async () => {
@@ -362,7 +365,7 @@ describe('admin intervals screen', () => {
     await flushPromises();
     await flushPromises();
     expect(detailRequests).toBe(2);
-    expect(container.textContent).toContain('Succeeded');
+    expect(container.textContent).toContain('Completed');
   });
 
   it('paginates run history and requests the selected page', async () => {
@@ -493,7 +496,7 @@ describe('admin intervals screen', () => {
     await flushPromises();
     await flushPromises();
     expect(container.textContent).toContain(message);
-    expect(container.textContent).toContain(`Request ${requestId}`);
+    expect(container.textContent).toContain(`Request ID: ${requestId}`);
   });
 
   it('creates a multi-country schedule and shows five UTC preview entries', async () => {

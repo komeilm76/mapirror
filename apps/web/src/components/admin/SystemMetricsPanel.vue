@@ -239,7 +239,7 @@ onUnmounted(() => {
       <div>
         <h2 id="mm-metrics-title" class="mm-metrics-title mm-text-primary">Resource metrics</h2>
         <p class="mm-metrics-description mm-text-secondary">
-          Container readings from the API process, updated every 2 seconds.
+          Measurements from the API container, refreshed every 2 seconds.
         </p>
       </div>
       <div class="mm-metrics-controls">
@@ -280,7 +280,7 @@ onUnmounted(() => {
       <div>
         <p class="ma-0">{{ errorMessage }}</p>
         <p v-if="errorRequestId" class="mm-mono-small ma-0 mt-1">
-          Request id: {{ errorRequestId }}
+          Request ID: {{ errorRequestId }}
         </p>
       </div>
       <v-btn :disabled="loading" color="primary" variant="tonal" @click="loadMetrics">

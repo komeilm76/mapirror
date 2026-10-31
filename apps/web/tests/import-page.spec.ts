@@ -103,6 +103,7 @@ async function mountImport(
   options: {
     readonly versions?: unknown;
     readonly uploadFailure?: boolean;
+    readonly uploadMalformedSuccess?: boolean;
     readonly fetchImpl?: typeof fetch;
   } = {},
 ): Promise<{ app: VueApp<Element>; container: HTMLElement; uploadBodies: string[] }> {
@@ -131,6 +132,8 @@ async function mountImport(
         if (options.uploadFailure === true) throw new TypeError('offline');
         if (!(init.body instanceof ReadableStream)) throw new Error('upload body was not streamed');
         uploadBodies.push(await new Response(init.body).text());
+        if (options.uploadMalformedSuccess === true)
+          return new Response('Unreadable response', { status: 202 });
         return jsonResponse({ uploadId: UPLOAD_ID, jobId: JOB_ID, version: '261030' }, 202);
       }
       if (url.pathname === '/_admin/api/jobs') {
@@ -228,10 +231,64 @@ describe('admin import form', () => {
     await flushPromises();
     container.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
     await vi.waitFor(() =>
-      expect(container.textContent).toContain('The server could not be reached.'),
+      expect(container.textContent).toContain(
+        "We couldn't confirm whether the upload was received.",
+      ),
     );
-    expect(container.textContent).toContain('Check your connection and try again.');
+    expect(container.textContent).toContain(
+      'Check Jobs before uploading again; if no import appears, try again.',
+    );
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  it('checks for a queued job when the server accepts an upload but returns unreadable data', async () => {
+    const { container } = await mountImport({ uploadMalformedSuccess: true });
+    chooseFile(container);
+    await chooseCountry(container);
+    const versionInput = container.querySelector<HTMLInputElement>('#mm-import-version');
+    if (versionInput === null) throw new Error('version input missing');
+    versionInput.value = '261030';
+    versionInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await flushPromises();
+    container.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain(
+        "We couldn't confirm whether the upload was received.",
+      ),
+    );
+    expect(container.textContent).toContain(
+      'Check Jobs before uploading again; if no import appears, try again.',
+    );
+  });
+
+  it('describes a failed previous import without implying a ready file exists', async () => {
+    const failedVersion = {
+      id: '00000000-0000-4000-8000-000000000105',
+      version: '261030',
+      origin: 'upload',
+      dataTimestamp: null,
+      sizeBytes: 3,
+      checksumMd5: null,
+      status: 'failed',
+      createdAt: CREATED_AT,
+    };
+    const { container, uploadBodies } = await mountImport({
+      versions: { data: [failedVersion], meta: { page: 1, limit: 100, total: 1, totalPages: 1 } },
+    });
+    chooseFile(container);
+    await chooseCountry(container);
+    const versionInput = container.querySelector<HTMLInputElement>('#mm-import-version');
+    if (versionInput === null) throw new Error('version input missing');
+    versionInput.value = '261030';
+    versionInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await flushPromises();
+    container.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Replace this version?'));
+
+    expect(document.body.textContent).toContain(
+      'A previous import of version 261030 failed for Finland.',
+    );
+    expect(uploadBodies).toEqual([]);
   });
 
   it('preflights a ready duplicate, requires confirmation, uploads with progress and tracks the job', async () => {
@@ -266,6 +323,8 @@ describe('admin import form', () => {
     await flushPromises();
     await vi.waitFor(() => expect(uploadBodies).toHaveLength(1));
     await vi.waitFor(() => expect(container.textContent).toContain('Import queued'));
+    expect(container.textContent).toContain('Job ID:');
+    expect(container.textContent).toContain('Upload ID:');
     expect(uploadBodies[0]).toContain(`name="countryId"\r\n\r\n${COUNTRY_ID}`);
     expect(uploadBodies[0]).toContain('name="version"\r\n\r\n261030');
     expect(uploadBodies[0]).toContain('name="replace"\r\n\r\ntrue');

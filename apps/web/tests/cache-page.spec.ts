@@ -287,7 +287,9 @@ describe('admin cache page', () => {
     [...document.body.querySelectorAll<HTMLButtonElement>('button')]
       .find((button) => button.textContent?.includes('Queue update'))
       ?.click();
-    await vi.waitFor(() => expect(container.textContent).toContain(`Update queued. Job ${jobId}`));
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain(`Update queued. Job ID: ${jobId}`),
+    );
     const downloadCall = calls.find((call) => call.url.pathname === '/_admin/api/cache/downloads');
     expect(downloadCall?.init?.method).toBe('POST');
     expect(downloadCall?.init?.body).toBe(JSON.stringify({ countryId, version: '261031' }));
@@ -424,7 +426,7 @@ describe('admin cache page', () => {
     expect(browse?.getAttribute('href')).toBe(adminPagePaths.catalog());
 
     await router.replace({ query: { q: 'moon' } });
-    await vi.waitFor(() => expect(container.textContent).toContain('No cached country matches'));
+    await vi.waitFor(() => expect(container.textContent).toContain('No cached countries match'));
     container.querySelector<HTMLButtonElement>('.mm-cache-empty button')?.click();
     await vi.waitFor(() => expect(router.currentRoute.value.query).toEqual({}));
   });

@@ -207,7 +207,8 @@ describe('the navigation is the router', () => {
       expect(router.currentRoute.value.path).toBe(adminPagePaths.audit());
     });
     await flushPromises();
-    expect(container.textContent).toContain('Screen S14');
+    expect(container.textContent).toContain("The Audit log page isn't available yet.");
+    expect(container.textContent).toContain('Go to dashboard');
   });
 });
 

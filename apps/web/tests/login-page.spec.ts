@@ -164,7 +164,7 @@ describe('the form is a form', () => {
 
     expect(auth.isAuthenticated).toBe(true);
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('mm_fresh');
-    expect(router.currentRoute.value.path).toBe(`${ADMIN_ROOT}/`);
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(`${ADMIN_ROOT}/`));
   });
 
   it('is a real form with a real submit button, which is what makes Enter work', async () => {
@@ -320,13 +320,13 @@ describe('a refusal', () => {
     await submit(container);
 
     expect(text(container)).toContain('Too many attempts.');
-    expect(text(container)).toContain('Try again in 2:00.');
+    expect(text(container)).toContain('Try again in 2 minutes.');
     const button = container.querySelector<HTMLButtonElement>('button[type="submit"]');
     expect(button?.disabled).toBe(true);
 
     vi.advanceTimersByTime(60_000);
     await flushPromises();
-    expect(text(container)).toContain('Try again in 1:00.');
+    expect(text(container)).toContain('Try again in 1 minute.');
 
     vi.advanceTimersByTime(60_000);
     await flushPromises();
@@ -448,7 +448,7 @@ describe('the session that is already there', () => {
     await submit(container);
 
     expect(auth.isAuthenticated).toBe(true);
-    expect(router.currentRoute.value.path).toBe(`${ADMIN_ROOT}/`);
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(`${ADMIN_ROOT}/`));
     expect(notifications.items.map((item) => item.message).join(' ')).toContain(
       'not keeping the session',
     );
@@ -479,7 +479,7 @@ describe('the app as the browser gets it', () => {
     await fill(container);
     await submit(container);
 
-    expect(router.currentRoute.value.path).toBe(`${ADMIN_ROOT}/`);
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(`${ADMIN_ROOT}/`));
     expect(sessionStorage.getItem(SESSION_TOKEN_KEY)).toBe('mm_fresh');
     vi.unstubAllGlobals();
   });
@@ -496,7 +496,9 @@ describe('where a visitor is sent afterwards', () => {
     await fill(container);
     await submit(container);
 
-    expect(router.currentRoute.value.fullPath).toBe(`${ADMIN_ROOT}/jobs?status=failed`);
+    await vi.waitFor(() =>
+      expect(router.currentRoute.value.fullPath).toBe(`${ADMIN_ROOT}/jobs?status=failed`),
+    );
   });
 
   it('ignores a target that is not a page of this site', async () => {
@@ -509,6 +511,6 @@ describe('where a visitor is sent afterwards', () => {
 
     // Nothing about the hostile value survives into the address bar either, whichever way it was mangled.
     expect(router.currentRoute.value.fullPath).not.toContain('evil');
-    expect(router.currentRoute.value.path).toBe(`${ADMIN_ROOT}/`);
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(`${ADMIN_ROOT}/`));
   });
 });
