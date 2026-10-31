@@ -11,12 +11,15 @@
  * page doubles as proof that the guard, the redirect parameter and the router's matching all did what the URL says —
  * which is exactly what a reviewer checking "unauthenticated `/_site/admin/*` lands on the login page" needs to see.
  *
- * No invented content: a placeholder that fakes a table of countries teaches a reviewer to distrust every screenshot in
- * the repository. It states the fact, names the task, and stops.
+ * No invented content: the S5 dashboard placeholder hosts only the database-backed update count owned by P4-UPD-04;
+ * its monitoring panels remain with P5-MON-04. Other pending screens state the fact, name the task, and stop rather than
+ * faking unfinished content.
  */
 
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
+
+import DashboardUpdateCounter from '@/components/admin/DashboardUpdateCounter.vue';
 
 const route = useRoute();
 
@@ -42,7 +45,12 @@ const title = computed(() => route.meta.title);
 
         <v-card border flat rounded="lg">
           <v-card-text>
-            <p class="mm-body-public mb-4">
+            <p v-if="screen === 'S5'" class="mm-body-public mb-4">
+              The monitoring dashboard is still under construction with
+              <span class="mm-mono">{{ owner }}</span
+              >. Its database-backed update counter is available below.
+            </p>
+            <p v-else class="mm-body-public mb-4">
               This screen is not built yet. It arrives with <span class="mm-mono">{{ owner }}</span
               >.
             </p>
@@ -55,10 +63,12 @@ const title = computed(() => route.meta.title);
             <p class="mm-caption ma-0">
               The route, its title and the guard that protects it are real (<span class="mm-mono"
                 >P1-WEB-03</span
-              >); only the contents are owed.
+              >); only the remaining contents are owed.
             </p>
           </v-card-text>
         </v-card>
+
+        <DashboardUpdateCounter v-if="screen === 'S5'" class="mt-6" />
 
         <v-btn class="mt-6" color="primary" :to="{ name: 'home' }" variant="tonal">
           Back to the site

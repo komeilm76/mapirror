@@ -4,13 +4,15 @@
  *
  * Search, update filter, sort and pagination are kept in the route query. Every request goes through the shared API
  * client and its strict response is parsed against the shared cache contract. Update checks use the inline admin
- * endpoint so badges are persisted independently of local page state; dated update downloads are confirmed and then
- * tracked by the shell-level job drawer.
+ * endpoint so badges are persisted independently of local page state. The all-country action queues the durable bulk
+ * worker, and dated update downloads are confirmed before being tracked by the shell-level job drawer.
  *
  * @module pages/admin/CachePage
  */
 
 import {
+  CacheBulkUpdateCheckRequestSchema,
+  CacheBulkUpdateCheckResponseSchema,
   CacheDownloadRequestSchema,
   CacheDownloadResponseSchema,
   CacheListResponseSchema,
@@ -48,6 +50,9 @@ const searchInput = ref(queryText(route.query.q) ?? '');
 const jobProgress = useJobProgress();
 const checkingCountryIds = ref<Record<string, boolean>>({});
 const checkErrors = ref<Record<string, { message: string; requestId: string | null }>>({});
+const checkingAll = ref(false);
+const checkAllError = ref<{ message: string; requestId: string | null } | null>(null);
+const checkAllJobId = ref<string | null>(null);
 const queuedUpdateJobs = ref<Record<string, string>>({});
 const updateTarget = ref<CacheListItem | null>(null);
 const queueingUpdate = ref(false);
@@ -220,6 +225,41 @@ function clearFilters(): void {
 /** Retries the same request without changing URL state. */
 function retry(): void {
   retryNumber.value += 1;
+}
+
+/** Queues a persisted bulk check for every cached country and opens the shared job drawer. */
+async function checkAllUpdates(): Promise<void> {
+  if (checkingAll.value || checkAllJobId.value !== null) return;
+  const request = CacheBulkUpdateCheckRequestSchema.safeParse({});
+  if (!request.success) return;
+
+  checkingAll.value = true;
+  checkAllError.value = null;
+  try {
+    const response = await api.post<unknown>(`${CACHE_API}/check-updates`, request.data);
+    if (!pageMounted) return;
+    const parsed = CacheBulkUpdateCheckResponseSchema.safeParse(response);
+    if (!parsed.success) {
+      checkAllError.value = {
+        message: 'The check-all response could not be read. Check the jobs page before retrying.',
+        requestId: null,
+      };
+      return;
+    }
+    checkAllJobId.value = parsed.data.jobId;
+    jobProgress.track(parsed.data.jobId);
+  } catch (cause) {
+    if (!pageMounted) return;
+    checkAllError.value =
+      cause instanceof ApiError
+        ? { message: cause.message, requestId: cause.requestId }
+        : {
+            message: 'The update check could not be queued. Check your connection and try again.',
+            requestId: null,
+          };
+  } finally {
+    if (pageMounted) checkingAll.value = false;
+  }
 }
 
 /** Checks one cached country inline and applies the persisted response to the visible row. */
@@ -464,7 +504,31 @@ function isoLabel(item: CacheListItem): string {
           Review stored regions, their ready versions, visibility and update availability.
         </p>
       </div>
+      <div class="mm-cache-page-actions">
+        <button
+          class="mm-cache-button mm-cache-button-primary"
+          type="button"
+          :disabled="checkingAll || checkAllJobId !== null"
+          @click="checkAllUpdates"
+        >
+          {{ checkingAll ? 'Queueing…' : checkAllJobId !== null ? 'Check submitted' : 'Check all' }}
+        </button>
+        <span class="mm-cache-secondary">Check every cached country in the background.</span>
+      </div>
     </header>
+
+    <div v-if="checkAllJobId !== null" class="mm-cache-row-status" role="status">
+      Bulk update check submitted. Job {{ checkAllJobId }} is tracked in the job drawer.
+    </div>
+    <div v-if="checkAllError !== null" class="mm-cache-error" role="alert">
+      <div>
+        <h2 class="mm-cache-state-title">The update check could not be queued</h2>
+        <p class="mm-cache-state-copy">{{ checkAllError.message }}</p>
+        <p v-if="checkAllError.requestId" class="mm-mono-small mm-cache-request-id">
+          Request id: {{ checkAllError.requestId }}
+        </p>
+      </div>
+    </div>
 
     <section class="mm-cache-filters" aria-label="Cached-country filters">
       <div class="mm-cache-filter-field">

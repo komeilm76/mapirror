@@ -40,6 +40,10 @@ const PROFILE = { id: '3f1c2b4a-5d6e-4f70-8a91-b2c3d4e5f607', username: 'admin' 
 /** What `GET /_auth/api/me` answers. */
 const ME = { admin: PROFILE, expiresAt: '2026-10-26T21:00:00.000Z', lastUsedAt: null };
 
+function jsonResponse(value: unknown): Response {
+  return new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
+}
+
 /** Mounted apps, unmounted after each case. */
 const mounted: VueApp<Element>[] = [];
 
@@ -230,6 +234,35 @@ describe('the topbar', () => {
 
     expect(fetchImpl.mock.calls.filter(([url]) => url === '/_auth/api/me')).toHaveLength(
       profileCalls,
+    );
+  });
+
+  it('shows the database-backed count of cached updates and links to the matching cache filter', async () => {
+    const requests: URL[] = [];
+    const respond = vi.fn<typeof fetch>((input) =>
+      Promise.resolve().then(() => {
+        const rawUrl =
+          typeof input === 'string' || input instanceof URL ? input.toString() : input.url;
+        const url = new URL(rawUrl, 'http://mapirror.test');
+        requests.push(url);
+        if (url.pathname === '/_auth/api/me') return jsonResponse(ME);
+        if (url.pathname === '/_admin/api/cache') {
+          return jsonResponse({
+            data: [],
+            meta: { page: 1, limit: 1, total: 7, totalPages: 7 },
+          });
+        }
+        return jsonResponse({});
+      }),
+    );
+    const { container } = await mountAdmin({ at: adminPagePaths.dashboard(), respond });
+
+    await vi.waitFor(() => expect(container.textContent).toContain('7 updates available'));
+    const countRequest = requests.find((url) => url.pathname === '/_admin/api/cache');
+    expect(countRequest?.searchParams.get('update')).toBe('available');
+    expect(countRequest?.searchParams.get('limit')).toBe('1');
+    expect(container.querySelector('.v-card a')?.getAttribute('href')).toBe(
+      `${adminPagePaths.cache()}?update=available`,
     );
   });
 

@@ -14,7 +14,8 @@
  *
  * **The Jobs dot is data-backed in `AdminLayout.vue`.** The shell polls queued/running totals from the authenticated
  * jobs endpoint and renders a dot only after a validated non-zero count; the navigation data stays declarative and does
- * not carry a second, stale copy of the queue count. The Catalog update counter remains with its owning screen task.
+ * not carry a second, stale copy of the queue count. The update-availability count is shown on the dashboard and comes
+ * from the cache API's persisted-state total.
  *
  * **Icons.** The Material Design set is not installed (see `ToastHost.vue` and pass 35): an `icon` here would render an
  * empty element. Entries are labelled text.

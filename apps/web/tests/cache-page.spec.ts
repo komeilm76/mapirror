@@ -293,6 +293,65 @@ describe('admin cache page', () => {
     expect(downloadCall?.init?.body).toBe(JSON.stringify({ countryId, version: '261031' }));
   });
 
+  it('queues a bulk update check and tracks the returned job in the shell drawer', async () => {
+    const jobId = '00000000-0000-4000-8000-000000000088';
+    const createdAt = '2026-10-31T08:00:00.000Z';
+    const calls: { url: URL; init: RequestInit | undefined }[] = [];
+    const fetchMock = vi.fn<typeof fetch>((input, init) =>
+      Promise.resolve().then(() => {
+        const rawUrl =
+          typeof input === 'string' || input instanceof URL ? input.toString() : input.url;
+        const url = new URL(rawUrl, 'http://mapirror.test');
+        calls.push({ url, init });
+        if (url.pathname === '/_auth/api/me') return jsonResponse(ME);
+        if (url.pathname === '/_admin/api/cache' && init?.method !== 'POST')
+          return jsonResponse(TWO_ROWS);
+        if (url.pathname === '/_admin/api/cache/check-updates') return jsonResponse({ jobId }, 202);
+        if (url.pathname === `/_admin/api/jobs/${jobId}`) {
+          return jsonResponse({
+            id: jobId,
+            type: 'update_check',
+            status: 'queued',
+            phase: null,
+            progressBytes: 0,
+            totalBytes: null,
+            speedBps: null,
+            etaSeconds: null,
+            payload: {},
+            updateCheckResult: null,
+            cancelRequested: false,
+            attempts: 0,
+            maxAttempts: 3,
+            createdAt,
+            startedAt: null,
+            finishedAt: null,
+            error: null,
+          });
+        }
+        if (url.pathname === '/_admin/api/jobs') {
+          return jsonResponse({ data: [], meta: { page: 1, limit: 1, total: 0, totalPages: 0 } });
+        }
+        return jsonResponse({});
+      }),
+    );
+    const { container } = await mountCache(fetchMock);
+
+    await vi.waitFor(() => expect(container.textContent).toContain('Sweden'));
+    container.querySelector<HTMLButtonElement>('.mm-cache-page-actions button')?.click();
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain(`Bulk update check submitted. Job ${jobId}`),
+    );
+
+    const request = calls.find((call) => call.url.pathname === '/_admin/api/cache/check-updates');
+    expect(request?.init?.method).toBe('POST');
+    expect(request?.init?.body).toBe('{}');
+    expect(
+      container
+        .querySelector<HTMLButtonElement>('button[aria-controls="mm-job-progress-drawer"]')
+        ?.getAttribute('aria-expanded'),
+    ).toBe('true');
+  });
+
   it('keeps search, update filter, supported sorting and pagination bookmarkable', async () => {
     const requested: URL[] = [];
     const fetchMock = makeFetch((url) => {
