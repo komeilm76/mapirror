@@ -244,11 +244,12 @@ rows (not the moving `latest` alias or subregion links), converts displayed size
 leaves unparseable timestamps and unavailable sizes as `null`. Its offline fixtures cover three region
 pages, including a region without subregions. The update decision is made in this order:
 
-1. If the source's current snapshot id is already a cached version → `up_to_date`.
-2. Else if the source's data timestamp is newer than the newest cached version's → `update_available`.
-3. Else if the identity differs (size/etag changed while the timestamp is missing or equal) →
+1. If the source's current snapshot id is already a ready cached version → `up_to_date`.
+2. Else if its data timestamp is newer than the newest ready cached source version's → `update_available`.
+3. Else if the timestamp is equal or unavailable and a known source size differs from the cached artifact →
    `update_available` (conservative: better a redundant download than a missed update).
-4. Else → `up_to_date`. Any failure to fetch or parse → `unknown`.
+4. An older source timestamp is `up_to_date`; equal timestamps without a known size change are also `up_to_date`.
+   If the source or cache lacks enough identity to make either comparison, or the source fetch/parse fails → `unknown`.
 
 | Result | Meaning |
 |---|---|

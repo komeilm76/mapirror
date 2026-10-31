@@ -526,6 +526,12 @@ async function finalizeVersion(
           select coalesce(sum(file_size_bytes), 0)::bigint from map_versions
            where country_id = ${countryId} and status = 'ready'
         )`,
+        // A new ready source artifact changes the comparison baseline; discard any stale offer rather than implying
+        // that the previous update check still describes the cache after this installation.
+        update_state: 'unknown',
+        available_version: null,
+        available_size_bytes: null,
+        available_at: null,
         updated_at: new Date(),
       })
       .where('country_id', '=', countryId)

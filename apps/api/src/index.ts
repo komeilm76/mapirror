@@ -18,6 +18,7 @@ export * from './db/client';
 export * from './db/schema';
 export * from './db/transaction';
 export * from './db/version-check';
+export * from './modules/updates/update-check';
 export {
   pendingPlugins,
   PLUGIN_ORDER,

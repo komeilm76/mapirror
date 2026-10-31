@@ -230,7 +230,7 @@ prove L1–L3.
 
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
-| P4-UPD-01 | Compare source vs cached; persist state | UPD-1/4 | P2-SRC-03 | ⬜ | Three states, `unknown` honest |
+| P4-UPD-01 | Compare source vs cached; persist state | UPD-1/4 | P2-SRC-03 | ✅ | Exact cached snapshot or older source → `up_to_date`; newer data timestamp or changed known size → `update_available`; unavailable/insufficient identity → `unknown`. Persist state and safe available-version metadata, clear stale offers on non-available results, invalidate comparisons after a source download completes, and cache successful source details for 10 minutes |
 | P4-UPD-02 | `POST .../check-update` + bulk job | UPD-1/3 | P4-UPD-01 | ⬜ | Bulk aggregates results |
 | P4-UPD-03 | UI: check button per cached country + badge + update action | UPD-1/2 | P4-UPD-02 | ⬜ | Badge persists after reload |
 | P4-UPD-04 | "Check all" action + dashboard counter | UPD-3 | P4-UPD-02 | ⬜ | Counter matches DB |

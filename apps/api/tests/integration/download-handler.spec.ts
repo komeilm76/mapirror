@@ -82,6 +82,17 @@ describe.skipIf(skipReason !== null)('PostgreSQL download handler', () => {
               })
               .returning('id')
               .executeTakeFirstOrThrow();
+            await db
+              .insertInto('country_cache')
+              .values({
+                country_id: country.id,
+                update_state: 'update_available',
+                available_version: '261024',
+                available_size_bytes: 1200,
+                available_at: new Date('2026-10-24T20:20:51.000Z'),
+                update_checked_at: new Date('2026-10-24T12:00:00.000Z'),
+              })
+              .execute();
             const job = await db
               .insertInto('jobs')
               .values({ type: 'download', payload: { countryId: country.id, version: '261023' } })
@@ -138,12 +149,23 @@ describe.skipIf(skipReason !== null)('PostgreSQL download handler', () => {
             });
             const summary = await db
               .selectFrom('country_cache')
-              .select(['versions_ready_count', 'total_size_bytes'])
+              .select([
+                'versions_ready_count',
+                'total_size_bytes',
+                'update_state',
+                'available_version',
+                'available_size_bytes',
+                'available_at',
+              ])
               .where('country_id', '=', country.id)
               .executeTakeFirstOrThrow();
             expect(summary).toEqual({
               versions_ready_count: 1,
               total_size_bytes: String(payloadBytes.byteLength),
+              update_state: 'unknown',
+              available_version: null,
+              available_size_bytes: null,
+              available_at: null,
             });
             expect(requests).toEqual([
               'GET /europe/finland.html',
