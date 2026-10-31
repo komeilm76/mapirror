@@ -383,48 +383,38 @@ describe('a refusal', () => {
 });
 
 describe('the password', () => {
-  it('shows and hides behind a button whose visible text says which', async () => {
-    // Two failures this prevents, both measured:
-    //
-    // 1. Vuetify's `append-inner` icon is a `v-icon` with a click handler — not focusable, so a keyboard user cannot reach
-    //    it. This is a real `<button>`.
-    // 2. The icon font is not installed (the built CSS has no `.mdi` rule), so `icon="mdi-eye"` is an empty `<i>`: the
-    //    button would be a blank square a sighted person cannot find. The label is text, and it is visible.
+  it('shows and hides behind a keyboard-focusable icon button with an accessible name', async () => {
     const { container } = await mountLogin();
 
     expect(inputOf(container, 'password').type).toBe('password');
     const toggle = container.querySelector<HTMLButtonElement>('button[aria-pressed]');
     expect(toggle, 'a button must toggle the password').not.toBeNull();
     expect(toggle?.type).toBe('button');
-    expect(toggle?.textContent?.trim()).toBe('Show');
+    expect(toggle?.tabIndex).toBe(0);
+    expect(toggle?.getAttribute('aria-label')).toBe('Show password');
+    expect(toggle?.querySelector('.mdi.mdi-eye')).not.toBeNull();
 
     toggle?.click();
     await flushPromises();
 
+    const shownToggle = container.querySelector<HTMLButtonElement>('button[aria-pressed]');
     expect(inputOf(container, 'password').type).toBe('text');
-    expect(container.querySelector('button[aria-pressed]')?.textContent?.trim()).toBe('Hide');
-    expect(container.querySelector('button[aria-pressed]')?.getAttribute('aria-pressed')).toBe(
-      'true',
-    );
+    expect(shownToggle?.getAttribute('aria-label')).toBe('Hide password');
+    expect(shownToggle?.querySelector('.mdi.mdi-eye-off')).not.toBeNull();
+    expect(shownToggle?.getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('renders no icon the app cannot draw, in either state', async () => {
-    // `13-ui-ux.md` §5 asks for Material Design icons, and they are not installed: `@mdi/font` is absent and the built CSS
-    // contains no `.mdi` rule, so every `.mdi` element is an invisible box occupying layout. Measured on this page before
-    // the fix (pass 35): the toggle was `mdi-eye` (an empty 32 px square) and the failed form added
-    // `mdi-close-circle` in `v-alert__prepend` — a blank gap beside the message. Until the icon set lands
-    // (`P1-WEB-07`/`P5-UX-05`), a `.mdi` element in this page's DOM is a defect, and this case is what says so.
-    const { container } = await mountLogin({
-      respond: failing('INVALID_CREDENTIALS', 401),
-    });
-
-    expect(container.querySelectorAll('.mdi')).toHaveLength(0);
+  it('keeps the validation alert free of a redundant default icon', async () => {
+    // MDI now renders the password control. The alert disables Vuetify's default close-circle because the error copy
+    // already carries a textual message and the icon would add noise rather than information.
+    const { container } = await mountLogin({ respond: failing('INVALID_CREDENTIALS', 401) });
+    expect(container.querySelector('.mdi.mdi-eye')).not.toBeNull();
 
     await fill(container);
     await submit(container);
 
     expect(text(container)).toContain('do not match');
-    expect(container.querySelectorAll('.mdi')).toHaveLength(0);
+    expect(container.querySelector('.v-alert .mdi')).toBeNull();
   });
 });
 

@@ -36,14 +36,14 @@
 .mm-import-field > label,
 .mm-import-label-row label {
   color: rgb(var(--v-theme-text-primary));
-  font-size: var(--mm-text-sm);
-  font-weight: var(--mm-weight-semibold);
+  font-size: var(--mm-text-ui);
+  font-weight: var(--mm-weight-bold);
 }
 
 .mm-import-field label span,
 .mm-import-label-row label span {
   color: rgb(var(--v-theme-text-secondary));
-  font-size: var(--mm-text-xs);
+  font-size: var(--mm-text-caption-compact);
   font-weight: var(--mm-weight-regular);
 }
 
@@ -108,7 +108,7 @@
 .mm-import-field-error {
   margin: 0;
   color: rgb(var(--v-theme-error));
-  font-size: var(--mm-text-sm);
+  font-size: var(--mm-text-ui);
 }
 
 .mm-import-error,
@@ -144,7 +144,7 @@
   overflow-wrap: anywhere;
   color: rgb(var(--v-theme-text-secondary));
   font-family: var(--mm-font-mono);
-  font-size: var(--mm-text-xs);
+  font-size: var(--mm-text-caption-compact);
 }
 
 .mm-import-transfer {

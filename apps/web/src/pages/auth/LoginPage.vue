@@ -13,7 +13,7 @@
  * | Enter submits | §6, and the task's criterion | the form is a real `<form>` with a `type="submit"` button, so the browser does it — no key handler to forget |
  * | errors say what failed, why, and what to do | §5 | one `role="alert"` region, with the request id in small mono text for support; Vuetify's `VAlert` already emits that role, and the page states it anyway so the guarantee is the page's rather than a library default's |
  * | errors are tied to their field | §7 | Vuetify's `aria-describedby` on the input, asserted in `tests/login-page.spec.ts` |
- * | no icon the app cannot draw | §5, `ToastHost.vue`'s note | **Material Design icons are not installed**: no `@mdi/font`, and the built CSS has no `.mdi` rule at all, so `icon="mdi-eye"` renders an empty `<i>` — a control a sighted person cannot see and only a screen reader can find. The show/hide toggle is therefore a labelled text button (the toast's "Dismiss" is the same decision), and the alert turns Vuetify's default `$close-circle` off rather than leaving a gap where a glyph would be. `tests/login-page.spec.ts` asserts the page renders **no `.mdi` element**, so re-introducing one fails |
+ * | icon and accessible name | §5, `typography.css` | Material Design Icons are self-hosted through `@mdi/font`; the password toggle uses a 20 px eye/eye-off glyph inside a real button with a changing accessible name. The error alert still disables Vuetify's unrelated default icon. `tests/login-page.spec.ts` asserts the glyph and both names |
  *
  * ## What the page does *not* do
  *
@@ -354,14 +354,19 @@ onMounted(() => {
               >
                 <template #append-inner>
                   <v-btn
+                    :aria-label="showPassword ? 'Hide password' : 'Show password'"
                     :aria-pressed="showPassword"
-                    class="mr-n2"
+                    class="mr-n2 mm-icon-control"
                     size="small"
                     type="button"
                     variant="text"
                     @click="showPassword = !showPassword"
                   >
-                    {{ showPassword ? 'Hide' : 'Show' }}
+                    <v-icon
+                      class="mm-icon-20"
+                      :icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
+                      aria-hidden="true"
+                    />
                   </v-btn>
                 </template>
               </v-text-field>

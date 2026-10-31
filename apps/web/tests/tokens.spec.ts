@@ -335,7 +335,7 @@ describe('the lengths and durations in tokens.css are the ones in §2', () => {
   it('uses the documented spacing scale, and nothing else', () => {
     const row = tableRows(spacingSection).find((cells) => cells[0] === 'Spacing scale');
     const documented = (row?.[1] ?? '').split('/').map((value) => Number(value.trim()));
-    expect(documented.length).toBe(8);
+    expect(documented.length).toBe(10);
 
     const implemented = [...tokens.entries()]
       .filter(([name]) => /^--mm-space-\d+$/u.test(name))
@@ -440,6 +440,100 @@ describe('the lengths and durations in tokens.css are the ones in §2', () => {
 describe('the type system is the one §2 describes, and stays inside its budget', () => {
   const typography = section('### Typography');
   const fonts = customProperties('src/styles/typography.css');
+  const sourceFiles = walk(resolve(import.meta.dirname, '../src'), ['.css', '.vue']);
+
+  it('defines every MapMirror custom property that the UI source references', () => {
+    const declarations = new Set<string>();
+    const references = new Set<string>();
+    for (const file of sourceFiles) {
+      const source = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+      for (const [, name] of source.matchAll(/(--mm-[a-z0-9-]+)\s*:/gu))
+        if (name !== undefined) declarations.add(name);
+      for (const [, name] of source.matchAll(/var\(\s*(--mm-[a-z0-9-]+)/gu))
+        if (name !== undefined) references.add(name);
+    }
+
+    const undefinedTokens = [...references].filter((name) => !declarations.has(name)).sort();
+    expect(undefinedTokens).toEqual([]);
+  });
+
+  it('uses the spacing tokens for every non-zero margin, padding and gap', () => {
+    const unTokenized: string[] = [];
+    for (const file of sourceFiles) {
+      const source = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+      for (const match of source.matchAll(
+        /(?:^|[;{])\s*((?:margin|padding)(?:-[a-z]+)?|gap|row-gap|column-gap)\s*:\s*([^;]+);/gmu,
+      )) {
+        const property = match[1] ?? 'spacing';
+        const value = match[2]?.trim() ?? '';
+        // Remove recognized tokens first, then reject every remaining nonzero fixed length. This catches a mixed value
+        // such as `var(--mm-space-4) 5px`, which a simple "contains a token" check would incorrectly accept.
+        const withoutSpacingTokens = value.replace(/var\(\s*--mm-space-\d+\s*\)/gu, '');
+        const nonZeroFixedLength = [
+          ...withoutSpacingTokens.matchAll(/(?<![\w.-])(\d+(?:\.\d+)?)(?:px|rem|em)\b/gu),
+        ].some(([, amount]) => Number(amount) > 0);
+        if (nonZeroFixedLength) unTokenized.push(`${relative(REPO, file)}: ${property}: ${value}`);
+      }
+    }
+
+    expect(unTokenized).toEqual([]);
+  });
+
+  it('keeps font-size declarations on named typography tokens', () => {
+    const unTokenized: string[] = [];
+    for (const file of sourceFiles) {
+      const source = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+      for (const match of source.matchAll(/font-size\s*:\s*([^;]+);/gu)) {
+        const value = match[1]?.trim() ?? '';
+        if (!value.includes('var(--mm-text-') && !value.includes('var(--mm-icon-size-'))
+          unTokenized.push(`${relative(REPO, file)}: font-size: ${value}`);
+      }
+    }
+
+    expect(unTokenized).toEqual([]);
+  });
+
+  it('keeps authored font weights on named tokens', () => {
+    const unTokenized: string[] = [];
+    for (const file of sourceFiles) {
+      const source = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+      for (const match of source.matchAll(/font-weight\s*:\s*([^;]+);/gu)) {
+        const value = match[1]?.trim() ?? '';
+        // Variable font-face declarations describe the supported range, not a text role.
+        if (
+          value !== '300 700' &&
+          !value.includes('var(--mm-weight-') &&
+          !value.includes('var(--mm-text-')
+        )
+          unTokenized.push(`${relative(REPO, file)}: font-weight: ${value}`);
+      }
+    }
+
+    expect(unTokenized).toEqual([]);
+  });
+
+  it('sets documented section and caption sizes, weights, and icon sizes', () => {
+    const sectionRole = tableRows(typography).find(
+      (cells) => cells[0] === 'Section headings / key metrics',
+    );
+    const sectionSize = Number(/(\d+) px/u.exec(sectionRole?.[2] ?? '')?.[1]);
+    const captionRole = tableRows(typography).find(
+      (cells) => cells[0] === 'Supporting text / captions',
+    );
+    const [smallCaption, largeCaption] = [...(captionRole?.[2] ?? '').matchAll(/(\d+)/gu)].map(
+      (match) => Number(match[1]),
+    );
+    expect(sectionSize).toBe(18);
+    expect(fonts.get('--mm-text-section')).toBe(`${String(sectionSize)}px`);
+    expect(fonts.get('--mm-weight-bold')).toBe('600');
+    expect([smallCaption, largeCaption]).toEqual([12, 13]);
+    expect(fonts.get('--mm-text-caption-compact')).toBe(`${String(smallCaption)}px`);
+    expect(fonts.get('--mm-text-caption')).toBe(`${String(largeCaption)}px`);
+
+    const tokenCss = readFileSync(resolve(import.meta.dirname, '../src/styles/tokens.css'), 'utf8');
+    expect(tokenCss).toMatch(/--mm-icon-size-20:\s*20px/u);
+    expect(tokenCss).toMatch(/--mm-icon-size-24:\s*24px/u);
+  });
 
   it('sets the display size inside the documented range, at the documented weight', () => {
     const row = tableRows(typography).find((cells) => cells[0] === 'Display (page titles)');

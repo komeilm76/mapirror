@@ -79,9 +79,14 @@ module" true of the theme and not merely of the source files.
 | Role | Font | Size / weight |
 |---|---|---|
 | Display (page titles) | **Space Grotesk** (variable, self-hosted, Latin subset, 22 288 B) | 24–28 px / 600 |
+| Section headings / key metrics | display face / system stack | 18 px / 600 |
 | UI / body | **System stack** — `-apple-system, "Segoe UI", Roboto, sans-serif` | 14 px / 400, 16 px public body |
+| Supporting text / captions | system stack | 12–13 px / 400 |
 | Numeric (sizes, dates) | the UI face with `font-variant-numeric: tabular-nums` | — |
 | Code / checksums | `ui-monospace, "JetBrains Mono", monospace` | 12–13 px |
+
+The shared weight tokens are 400 regular, 500 medium and 600 semibold. Styles use named typography, spacing and weight
+custom properties rather than duplicating numeric values; dense 12 px copy is reserved for metadata and chart labels.
 
 **The budget rule was applied, not just written.** It said: both fonts are variable, subset to Latin, self-hosted woff2
 with `font-display: swap`, preloaded only on the public landing page, and **if either adds > 40 kB total or hurts LCP,
@@ -99,7 +104,7 @@ fails above 40 kB, so the exemption stays earned.
 
 | Token | Value |
 |---|---|
-| Spacing scale | 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64 |
+| Spacing scale | 4 / 8 / 12 / 16 / 20 / 24 / 32 / 48 / 64 / 80 |
 | Radius | `sm 8`, `md 12`, `lg 16`, `pill 999` |
 | Border | 1 px `border` token; shadows only for overlays (`0 8px 24px rgba(0,0,0,.16)`) |
 | Motion | 150 ms ease-out for hover/focus, 200 ms for dialogs; **respects `prefers-reduced-motion`** |
@@ -140,7 +145,7 @@ fails above 40 kB, so the exemption stays earned.
   the reader navigates between admin pages. **No theme toggle**: §1
   fixes the admin area to the dark theme, so a toggle there could only do nothing — the per-visitor override §1 allows is
   the public shell's (`P3-WEB-01`). The menu button says "Menu" / "Hide menu" rather than wearing a hamburger icon,
-  because the icon set is not installed yet (§5). The trail is `<nav aria-label="Breadcrumb">` with `aria-current="page"`
+  because an explicit action label is clearer than a bare glyph. The trail is `<nav aria-label="Breadcrumb">` with `aria-current="page"`
   on the last step, and it is hidden below 600 px where the topbar has no room for it; the page's own `h1` says the same
   thing a line lower. The first focusable element on every admin page is a skip link to `#mm-main` (§7).
 
@@ -190,7 +195,7 @@ The admin detail URL carries the local country UUID because the cache detail/ver
 | **Error states** | What failed, why (if known), what to do. Retry button. Request id in small mono text for support. `apps/web/src/api/error-copy.ts` maps every documented HTTP, browser, job and operational code to human copy plus a next step; inline errors, login refusals and job failure details use that map. |
 | **Toasts** | Bottom-right (admin), success 3 s, error persists with a close button; one toast at a time per action. `notifyApiError()` uses the same code map and carries the request id in small monospace text. |
 | **Skeletons** | Match final layout (same heights) to avoid shift; no spinners for tables. Intervals reserves schedule-card structure, while Jobs preserves the semantic table header and uses matching desktop rows/mobile cards. Skeletons are decorative (`aria-hidden`) beside a separate loading announcement and busy region; their pulse stops for reduced motion. |
-| **Icons** | Material Design Icons only, 20/24 px, consistent stroke; **never emoji** as UI icons. **Not installed yet** (`P1-WEB-07`/`P5-UX-05` choose and add the set): the built CSS has no `.mdi` rule, so an icon name renders an empty `<i>` — an invisible control, or a gap where a glyph should be. Until then, controls that would wear an icon carry a visible text label ("Dismiss", "Show"/"Hide"), Vuetify's default icons are turned off (`:icon="false"`), and a `.mdi` element in the DOM is a **defect** — `tests/login-page.spec.ts` asserts its page renders none (pass 35). |
+| **Icons** | Material Design Icons from the self-hosted `@mdi/font` 7.4.47 set only; 20/24 px via `--mm-icon-size-20` / `--mm-icon-size-24`; **never emoji** as UI icons. The toast dismiss and password visibility controls use named MDI glyphs; custom artwork is semantic-free SVG, and country identity is shown as ISO text rather than platform-specific flag emoji. Decorative Vuetify defaults stay disabled when they add no information. `tests/icon-audit.spec.ts` rejects emoji code points in Vue/CSS UI and verifies the installed MDI font, size tokens, and control sizing. |
 
 ## 6. Interaction standards
 

@@ -140,7 +140,8 @@ describe('public country detail', () => {
     );
 
     expect(container.querySelector('h1')?.textContent).toBe('Finland');
-    expect(container.querySelector('.mm-public-flag')?.textContent).toBe('🇫🇮');
+    expect(container.querySelector('.mm-public-flag')).toBeNull();
+    expect(container.querySelector('.mm-public-iso-list')?.textContent).toContain('FI');
     expect(container.querySelector('.mm-public-iso-list')?.getAttribute('role')).toBe('group');
     expect(container.querySelector('.mm-public-iso-list')?.getAttribute('aria-label')).toBe(
       'ISO country codes',

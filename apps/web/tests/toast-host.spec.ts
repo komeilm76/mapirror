@@ -93,7 +93,7 @@ describe('a toast on screen', () => {
     expect(text).toContain('The update could not be queued.');
     expect(text).toContain('Try again, or check the jobs page.');
     expect(text).toContain('Request 9f1c2d1e');
-    expect(document.body.querySelector('.v-snackbar .mm-mono')?.textContent).toContain(
+    expect(document.body.querySelector('.v-snackbar .mm-mono-small')?.textContent).toContain(
       'Request 9f1c2d1e',
     );
   });
@@ -214,10 +214,9 @@ describe('a toast on screen', () => {
     await mountWith(pinia);
     await waitForSnackbars(1);
 
-    const dismiss = [...document.body.querySelectorAll('button')].find(
-      (button) => button.textContent?.trim() === 'Dismiss',
-    );
-    expect(dismiss).toBeDefined();
+    const dismiss = document.body.querySelector<HTMLButtonElement>('button[aria-label="Dismiss"]');
+    expect(dismiss).not.toBeNull();
+    expect(dismiss?.querySelector('.mdi.mdi-close')).not.toBeNull();
 
     dismiss?.click();
     await nextTick();

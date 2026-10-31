@@ -45,7 +45,6 @@ const latestVersion = computed(
     null,
 );
 const pageCount = computed(() => Math.max(1, versions.value?.meta.totalPages ?? 1));
-const countryFlag = computed(() => flagForIso(country.value?.iso ?? []));
 const curlCommand = computed(() => {
   const version = latestVersion.value;
   const currentCountry = country.value;
@@ -228,15 +227,6 @@ function formatTimestamp(value: string | null): string {
   }).format(new Date(value))} UTC`;
 }
 
-/** Converts a two-letter ISO alpha-2 code to its Unicode regional-indicator flag when supported. */
-function flagForIso(codes: readonly string[]): string {
-  const alpha2 = codes.find((code) => /^[A-Z]{2}$/u.test(code));
-  if (alpha2 === undefined) return '';
-  return [...alpha2]
-    .map((letter) => String.fromCodePoint(0x1f1e6 + letter.charCodeAt(0) - 65))
-    .join('');
-}
-
 /** Builds a same-origin version download path from the validated route fields. */
 function downloadPath(version: PublicCountryVersion): string {
   return `/_public/api/countries/${encodeURIComponent(country.value?.slug ?? '')}/download?version=${encodeURIComponent(version.version)}`;
@@ -280,9 +270,6 @@ function setUnreadableResponse(resource: string): void {
           <h1 id="public-country-title" class="mm-display">{{ country.name }}</h1>
         </div>
         <div class="mm-public-iso-list" role="group" aria-label="ISO country codes">
-          <span v-if="countryFlag" class="mm-public-flag" aria-hidden="true">{{
-            countryFlag
-          }}</span>
           <span v-for="code in country.iso" :key="code" class="mm-public-iso-code">{{ code }}</span>
           <span v-if="country.iso.length === 0" class="mm-public-iso-code">ISO unavailable</span>
         </div>

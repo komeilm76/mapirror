@@ -21,6 +21,7 @@
 
 import './styles/tokens.css';
 import './styles/typography.css';
+import '@mdi/font/css/materialdesignicons.css';
 import './styles/shell.css';
 import './styles/catalog.css';
 import './styles/cache.css';

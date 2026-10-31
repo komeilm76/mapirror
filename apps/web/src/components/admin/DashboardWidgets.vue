@@ -424,13 +424,13 @@ onUnmounted(() => {
 
 .mm-dashboard-overview-title {
   margin: 0;
-  font-size: var(--mm-text-lg);
-  font-weight: var(--mm-weight-semibold);
+  font-size: var(--mm-text-section);
+  font-weight: var(--mm-weight-bold);
 }
 
 .mm-dashboard-overview-description {
   margin: var(--mm-space-1) 0 0;
-  font-size: var(--mm-text-sm);
+  font-size: var(--mm-text-ui);
 }
 
 .mm-dashboard-errors {
@@ -446,7 +446,7 @@ onUnmounted(() => {
 }
 
 .mm-dashboard-errors li {
-  font-size: var(--mm-text-sm);
+  font-size: var(--mm-text-ui);
 }
 
 .mm-dashboard-grid,
@@ -463,21 +463,21 @@ onUnmounted(() => {
 
 .mm-dashboard-value {
   margin: 0;
-  font-size: var(--mm-text-lg);
+  font-size: var(--mm-text-section);
   font-variant-numeric: tabular-nums;
-  font-weight: var(--mm-weight-semibold);
+  font-weight: var(--mm-weight-bold);
   overflow-wrap: anywhere;
 }
 
 .mm-dashboard-detail,
 .mm-dashboard-footnote {
   margin: var(--mm-space-2) 0 0;
-  font-size: var(--mm-text-sm);
+  font-size: var(--mm-text-ui);
   overflow-wrap: anywhere;
 }
 
 .mm-dashboard-footnote {
-  font-size: var(--mm-text-xs);
+  font-size: var(--mm-text-caption-compact);
 }
 
 .mm-dashboard-skeleton {

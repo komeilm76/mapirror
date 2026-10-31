@@ -349,13 +349,13 @@ function toggleDetails(event: Event): void {
 
 .mm-metric-chart-title {
   margin: 0;
-  font-size: var(--mm-text-md);
-  font-weight: var(--mm-weight-semibold);
+  font-size: var(--mm-text-public-body);
+  font-weight: var(--mm-weight-bold);
 }
 
 .mm-metric-chart-window {
   margin: 0;
-  font-size: var(--mm-text-xs);
+  font-size: var(--mm-text-caption-compact);
 }
 
 .mm-metric-chart-empty {
@@ -383,7 +383,7 @@ function toggleDetails(event: Event): void {
 .mm-metric-chart-axis {
   fill: currentColor;
   font-family: var(--mm-font-ui);
-  font-size: var(--mm-text-xs);
+  font-size: var(--mm-text-caption-compact);
 }
 
 .mm-metric-chart-area {
@@ -430,7 +430,7 @@ function toggleDetails(event: Event): void {
   grid-template-columns: 1.5rem minmax(4rem, 0.6fr) minmax(0, 1fr);
   align-items: baseline;
   gap: var(--mm-space-2);
-  font-size: var(--mm-text-xs);
+  font-size: var(--mm-text-caption-compact);
 }
 
 .mm-metric-chart-swatch {
@@ -450,8 +450,8 @@ function toggleDetails(event: Event): void {
   min-height: var(--mm-touch-target);
   padding-block: var(--mm-space-2);
   cursor: pointer;
-  font-size: var(--mm-text-sm);
-  font-weight: var(--mm-weight-semibold);
+  font-size: var(--mm-text-ui);
+  font-weight: var(--mm-weight-bold);
 }
 
 .mm-metric-chart-table-scroll {
@@ -469,7 +469,7 @@ function toggleDetails(event: Event): void {
 .mm-metric-chart-table th,
 .mm-metric-chart-table td {
   padding: var(--mm-space-2);
-  font-size: var(--mm-text-xs);
+  font-size: var(--mm-text-caption-compact);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

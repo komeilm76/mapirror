@@ -6,6 +6,7 @@
   "description": "MapMirror web app: Vue 3 + Vuetify SPA for the public site and the admin panel.",
   "dependencies": {
     "@mapirror/shared": "workspace:*",
+    "@mdi/font": "7.4.47",
     "@vueuse/core": "13.9.0",
     "pinia": "3.0.4",
     "vue": "3.5.44",

@@ -340,13 +340,13 @@ onUnmounted(() => {
 
 .mm-metrics-title {
   margin: 0;
-  font-size: var(--mm-text-lg);
-  font-weight: var(--mm-weight-semibold);
+  font-size: var(--mm-text-section);
+  font-weight: var(--mm-weight-bold);
 }
 
 .mm-metrics-description {
   margin: var(--mm-space-1) 0 0;
-  font-size: var(--mm-text-sm);
+  font-size: var(--mm-text-ui);
 }
 
 .mm-metrics-controls {
@@ -382,7 +382,7 @@ onUnmounted(() => {
 }
 
 .mm-metrics-error p {
-  font-size: var(--mm-text-sm);
+  font-size: var(--mm-text-ui);
 }
 
 .mm-metrics-skeletons {

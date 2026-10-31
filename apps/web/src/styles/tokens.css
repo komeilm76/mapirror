@@ -17,10 +17,12 @@
   --mm-space-2: 8px;
   --mm-space-3: 12px;
   --mm-space-4: 16px;
+  --mm-space-5: 20px;
   --mm-space-6: 24px;
   --mm-space-8: 32px;
   --mm-space-12: 48px;
   --mm-space-16: 64px;
+  --mm-space-20: 80px;
 
   /* ---------- Radius: sm 8, md 12, lg 16, pill 999 (§2) ---------- */
   --mm-radius-sm: 8px;
@@ -41,6 +43,8 @@
   --mm-focus-ring-width: 2px;
   --mm-focus-ring-offset: 2px;
   --mm-touch-target: 44px;
+  --mm-icon-size-20: 20px;
+  --mm-icon-size-24: 24px;
 
   /* ---------- Container widths (§2) ---------- */
   --mm-container-admin: 1440px;

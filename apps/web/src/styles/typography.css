@@ -46,9 +46,11 @@
   --mm-text-display-weight: 600;
   --mm-text-title: 24px;
   --mm-text-title-weight: 600;
+  --mm-text-section: 18px;
   --mm-text-public-body: 16px;
   --mm-text-ui: 14px;
   --mm-text-caption: 13px;
+  --mm-text-caption-compact: 12px;
   --mm-text-mono: 13px;
   --mm-text-mono-small: 12px;
 
@@ -111,4 +113,18 @@ html:root {
   font-family: var(--mm-font-mono);
   font-size: var(--mm-text-mono-small);
   font-variant-numeric: tabular-nums;
+}
+
+/* Material Design Icons use only the two documented glyph sizes; the custom class wins over Vuetify's size preset. */
+.v-icon.mm-icon-20 {
+  font-size: var(--mm-icon-size-20);
+}
+
+.v-icon.mm-icon-24 {
+  font-size: var(--mm-icon-size-24);
+}
+
+.v-btn.mm-icon-control {
+  min-width: var(--mm-touch-target);
+  min-height: var(--mm-touch-target);
 }

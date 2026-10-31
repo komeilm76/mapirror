@@ -46,6 +46,7 @@ export function createAppVuetify(): AppVuetify {
     // call a 1100 px laptop a phone — and the drawer, the topbar and any screen that asks `useDisplay()` would all be
     // answering a question the document never asked. One number, in `layouts/adminShell.ts`, used by both.
     display: { mobileBreakpoint: MOBILE_BREAKPOINT },
+    icons: { defaultSet: 'mdi' },
     theme: {
       defaultTheme: LIGHT_THEME_NAME,
       themes: {

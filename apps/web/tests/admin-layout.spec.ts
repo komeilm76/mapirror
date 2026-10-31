@@ -499,13 +499,15 @@ describe('the shell is reachable and honest', () => {
     expect(mobile).not.toMatch(/\.mm-admin-topbar/u);
   });
 
-  it('renders no icon the app cannot draw', async () => {
-    // The icon font is not installed (pass 35): a `.mdi` element is an empty box. Vuetify's own defaults supply some —
-    // `v-app-bar-nav-icon`'s menu glyph, the breadcrumb divider, the user menu — so this asserts the shell's, not one
-    // component's, and it is the reason every control here is labelled text.
+  it('keeps the shell actions explicitly labeled and emits no stray icon glyphs', async () => {
+    // MDI is available globally, but the shell deliberately uses text for Menu and the breadcrumb divider; adding a
+    // glyph without a documented affordance would be decoration, not clarity.
     const { container } = await mountAdmin({ at: adminPagePaths.dashboard() });
 
     expect(container.querySelectorAll('.mdi')).toHaveLength(0);
+    expect(container.querySelector('button[aria-controls="mm-admin-drawer"]')?.textContent).toMatch(
+      /^(?:Menu|Hide menu)$/u,
+    );
   });
 
   it('uses the measurements the document states', async () => {

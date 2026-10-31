@@ -22,9 +22,8 @@
  * (measured in pass 32 — the store's first version said `0` and errors vanished as they appeared). The store keeps no
  * timers, so this is the only place a dismissal can be timed.
  *
- * **Icons are text here on purpose.** The Material Design icon set is not installed yet (`01`/`P1-WEB-07` chooses it),
- * so `icon="mdi-close"` would render nothing at all — a close button that cannot be seen but can be tabbed to. The
- * button says "Dismiss"; `P5-UX-05`'s icon audit replaces the label with the set's icon and an `aria-label`.
+ * The dismiss control uses Material Design Icons' close glyph at 20 px and retains an explicit accessible name. Its
+ * package stylesheet is loaded once by `main.ts`; no icon may depend on an unloaded font or an unlabeled glyph.
  */
 import { useNotifications } from '@/stores/notifications';
 
@@ -59,13 +58,20 @@ function colorFor(kind: 'success' | 'info' | 'error'): string {
       @update:model-value="notifications.dismiss(item.id)"
     >
       <div>{{ item.message }}</div>
-      <div v-if="item.detail" class="text-body-2 mt-1">{{ item.detail }}</div>
-      <div v-if="item.requestId" class="mm-mono text-caption mt-1">
-        Request {{ item.requestId }}
-      </div>
+      <div v-if="item.detail" class="mm-caption mt-1">{{ item.detail }}</div>
+      <div v-if="item.requestId" class="mm-mono-small mt-1">Request {{ item.requestId }}</div>
 
       <template #actions>
-        <v-btn variant="text" size="small" @click="notifications.dismiss(item.id)">Dismiss</v-btn>
+        <v-btn
+          aria-label="Dismiss"
+          class="mm-icon-control"
+          icon
+          variant="text"
+          size="small"
+          @click="notifications.dismiss(item.id)"
+        >
+          <v-icon class="mm-icon-20" icon="$close" aria-hidden="true" />
+        </v-btn>
       </template>
     </v-snackbar>
   </div>

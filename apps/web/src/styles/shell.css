@@ -23,7 +23,7 @@
   border-radius: var(--mm-radius-sm);
   background: rgb(var(--v-theme-primary));
   color: rgb(var(--v-theme-on-primary));
-  font-size: 0.875rem;
+  font-size: var(--mm-text-ui);
   text-decoration: none;
   /* Off-screen but focusable: the element keeps its box, so Tab reaches it and :focus-visible still applies. */
   clip-path: inset(50%);
@@ -41,9 +41,8 @@
 }
 
 /*
- * The breadcrumb trail (§3). `v-breadcrumbs` would render Vuetify's own list with an icon divider — and the icon font is
- * not installed, so the divider would be an empty element. An `<ol>` with a text chevron is the whole component, and it
- * is a list because that is what a screen reader announces it as.
+ * The breadcrumb trail (§3). An `<ol>` keeps the trail's hierarchy clear to a screen reader, and the text chevron is a
+ * quiet, decorative divider that does not repeat the navigation labels or depend on a glyph.
  */
 .mm-breadcrumbs {
   display: flex;
@@ -53,7 +52,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 0.875rem;
+  font-size: var(--mm-text-ui);
 }
 
 .mm-breadcrumbs li {
@@ -75,7 +74,7 @@
 /* The current page is written plainly: it is a label, not a control. */
 .mm-breadcrumbs [aria-current='page'] {
   color: rgb(var(--v-theme-text-primary));
-  font-weight: 600;
+  font-weight: var(--mm-weight-bold);
 }
 
 .mm-breadcrumb-divider {

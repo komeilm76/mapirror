@@ -17,8 +17,8 @@
  * not carry a second, stale copy of the queue count. The update-availability count is shown on the dashboard and comes
  * from the cache API's persisted-state total.
  *
- * **Icons.** The Material Design set is not installed (see `ToastHost.vue` and pass 35): an `icon` here would render an
- * empty element. Entries are labelled text.
+ * **Icons.** Navigation entries stay as labelled text; the installed MDI set is reserved for controls whose action is
+ * clearer with a glyph. A second decorative icon beside each label would add no information.
  *
  * @module router/nav
  */
