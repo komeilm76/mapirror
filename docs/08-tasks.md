@@ -224,7 +224,7 @@ prove L1–L3.
 | P4-INT-06 | `only_if_changed` skip logic | INT-2 | P4-INT-05 | ✅ | For `only_if_changed=true`, unchanged resolved `latest` identity with an intact ready artifact records a skipped item and avoids both MD5-sidecar and PBF GETs; missing identity metadata safely falls through to normal handling. `false` bypasses the early skip |
 | P4-INT-07 | Retention prune after successful update | D-7 | P2-API-07 | ✅ | Interval download jobs snapshot `keep_versions`; successful downloaded items enqueue a separate audited prune job. It removes older ready rows/files only after keeping at least one newest valid ready artifact, recomputes cache totals transactionally, and cleans files after commit; unchanged skips do not prune |
 | P4-INT-08 | Intervals UI: list, form (frequency + multi-country), preview | INT-1, UX-3 | P4-INT-04 | ✅ | Schedule list/create/edit/pause/delete; multi-country selection; next five UTC runs match scheduler recurrence |
-| P4-INT-09 | Run history UI + manual trigger | INT-3 | P4-INT-05 | ⬜ | Statuses + failure details readable |
+| P4-INT-09 | Run history UI + manual trigger | INT-3 | P4-INT-05 | ✅ | S9 adds a confirmed manual trigger (including paused schedules), paginated run history, polling for active runs, distinct running/succeeded/partial/failed labels, and safe aggregate + country failure details; active interval and country-download conflicts are explained |
 
 ### Update detection
 

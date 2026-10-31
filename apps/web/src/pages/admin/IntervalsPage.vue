@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Interval schedule list and editor (`P4-INT-08`, `13-ui-ux.md` §4 S9).
+ * Interval schedule list, editor, run history and manual trigger (`P4-INT-08/09`, `13-ui-ux.md` §4 S9).
  *
  * The five-run preview calls the same UTC recurrence helper as the API scheduler. Country names are loaded from the
  * authenticated catalog and retained for selected countries while the user searches other results.
@@ -13,12 +13,14 @@ import {
   INTERVAL_FREQUENCIES,
   IntervalListResponseSchema,
   IntervalMutationResponseSchema,
+  IntervalRunNowResponseSchema,
   MAX_INTERVAL_COUNTRIES,
   type IntervalFrequency,
   type IntervalView,
 } from '@mapirror/shared';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
+import IntervalRunsPanel from '@/components/admin/IntervalRunsPanel.vue';
 import { ApiError } from '@/api/errors';
 import { useApi } from '@/composables/useApi';
 import { previewNextRuns } from '@/intervals/preview';
@@ -60,6 +62,12 @@ const deleting = ref(false);
 const mutationId = ref<string | null>(null);
 const togglingId = ref<string | null>(null);
 const actionError = ref<string | null>(null);
+const activeRunsIntervalId = ref<string | null>(null);
+const acceptedRunId = ref<string | null>(null);
+const runConfirmationTarget = ref<IntervalView | null>(null);
+const manualRunPending = ref(false);
+const manualRunError = ref<string | null>(null);
+const manualRunRequestId = ref<string | null>(null);
 const form = ref({
   name: '',
   frequency: 'daily' as IntervalFrequency,
@@ -80,6 +88,9 @@ let listRequestNumber = 0;
 let countryRequestNumber = 0;
 
 const isEditing = computed(() => editingId.value !== null);
+const activeRunsInterval = computed(
+  () => intervals.value.find((interval) => interval.id === activeRunsIntervalId.value) ?? null,
+);
 const countryItems = computed(() => {
   const visible = new Map(countryResults.value.map((country) => [country.countryId, country]));
   for (const id of form.value.countryIds) {
@@ -312,6 +323,57 @@ async function saveInterval(): Promise<void> {
   }
 }
 
+/** Opens or closes the selected schedule's paginated run history. */
+function toggleRunHistory(interval: IntervalView): void {
+  if (activeRunsIntervalId.value === interval.id) {
+    activeRunsIntervalId.value = null;
+    acceptedRunId.value = null;
+    return;
+  }
+  activeRunsIntervalId.value = interval.id;
+  acceptedRunId.value = null;
+}
+
+/** Opens a confirmation that names the number of country downloads this manual execution will enqueue. */
+function requestManualRun(interval: IntervalView): void {
+  runConfirmationTarget.value = interval;
+  activeRunsIntervalId.value = interval.id;
+  acceptedRunId.value = null;
+  manualRunError.value = null;
+  manualRunRequestId.value = null;
+}
+
+/** Starts one manual execution and selects its run in the history panel after the API accepts it. */
+async function startManualRun(): Promise<void> {
+  const interval = runConfirmationTarget.value;
+  if (interval === null || manualRunPending.value) return;
+  manualRunPending.value = true;
+  manualRunError.value = null;
+  manualRunRequestId.value = null;
+  try {
+    const response = await api.post<unknown>(`${INTERVALS_API}/${interval.id}/run`, {});
+    const parsed = IntervalRunNowResponseSchema.safeParse(response);
+    if (!parsed.success) {
+      manualRunError.value =
+        'The run was accepted but its response could not be verified. Open history to check its status.';
+      runConfirmationTarget.value = null;
+      return;
+    }
+    runConfirmationTarget.value = null;
+    activeRunsIntervalId.value = interval.id;
+    acceptedRunId.value = parsed.data.runId;
+    await loadIntervals();
+  } catch (cause) {
+    manualRunError.value =
+      cause instanceof ApiError
+        ? cause.message
+        : 'The manual run could not be started. Check the connection.';
+    manualRunRequestId.value = cause instanceof ApiError ? cause.requestId : null;
+  } finally {
+    manualRunPending.value = false;
+  }
+}
+
 /** Enables or pauses one schedule; the response is followed by a fresh validated list. */
 async function toggleInterval(interval: IntervalView): Promise<void> {
   actionError.value = null;
@@ -344,6 +406,8 @@ async function confirmDelete(): Promise<void> {
   try {
     await api.delete<unknown>(`${INTERVALS_API}/${target.id}`);
     deleteTarget.value = null;
+    runConfirmationTarget.value = null;
+    if (activeRunsIntervalId.value === target.id) activeRunsIntervalId.value = null;
     await loadIntervals();
   } catch (cause) {
     actionError.value =
@@ -365,6 +429,10 @@ function formatUtc(value: string): string {
 
 function frequencyLabel(frequency: IntervalFrequency): string {
   return frequency[0]!.toUpperCase() + frequency.slice(1);
+}
+
+function runStatusLabel(status: NonNullable<IntervalView['lastRun']>['status']): string {
+  return status === 'partial' ? 'Partially completed' : status[0]!.toUpperCase() + status.slice(1);
 }
 
 function scheduleDescription(interval: IntervalView): string {
@@ -453,6 +521,28 @@ onUnmounted(() => {
             <button
               class="mm-intervals-secondary"
               type="button"
+              :disabled="manualRunPending || interval.lastRun?.status === 'running'"
+              :aria-label="
+                interval.lastRun?.status === 'running'
+                  ? `${interval.name} run is in progress`
+                  : `Run ${interval.name} now`
+              "
+              @click="requestManualRun(interval)"
+            >
+              {{ interval.lastRun?.status === 'running' ? 'Run in progress' : 'Run now' }}
+            </button>
+            <button
+              class="mm-intervals-secondary"
+              type="button"
+              :aria-expanded="activeRunsIntervalId === interval.id"
+              :aria-label="`${activeRunsIntervalId === interval.id ? 'Hide' : 'Show'} run history for ${interval.name}`"
+              @click="toggleRunHistory(interval)"
+            >
+              {{ activeRunsIntervalId === interval.id ? 'Hide history' : 'Run history' }}
+            </button>
+            <button
+              class="mm-intervals-secondary"
+              type="button"
               :disabled="togglingId === interval.id"
               @click="toggleInterval(interval)"
             >
@@ -477,7 +567,12 @@ onUnmounted(() => {
           </div>
           <div>
             <dt>Last status</dt>
-            <dd>{{ interval.lastRun?.status ?? 'No runs yet' }}</dd>
+            <dd v-if="interval.lastRun">
+              <span class="mm-run-status" :class="`mm-run-status--${interval.lastRun.status}`">
+                {{ runStatusLabel(interval.lastRun.status) }}
+              </span>
+            </dd>
+            <dd v-else>No runs yet</dd>
           </div>
           <div>
             <dt>Retention</dt>
@@ -486,6 +581,53 @@ onUnmounted(() => {
         </dl>
       </article>
     </div>
+
+    <section
+      v-if="runConfirmationTarget"
+      class="mm-interval-run-confirm"
+      role="region"
+      aria-labelledby="mm-interval-run-confirm-title"
+    >
+      <h2 id="mm-interval-run-confirm-title">Run {{ runConfirmationTarget.name }} now?</h2>
+      <p>
+        This queues the latest map download for
+        {{ runConfirmationTarget.countries.length }}
+        {{ runConfirmationTarget.countries.length === 1 ? 'country' : 'countries' }} using this
+        schedule's change-detection and retention settings. A paused schedule can still be run
+        manually.
+      </p>
+      <div v-if="manualRunError" class="mm-intervals-alert" role="alert">
+        <p>{{ manualRunError }}</p>
+        <p v-if="manualRunRequestId" class="mm-mono">Request {{ manualRunRequestId }}</p>
+      </div>
+      <div class="mm-interval-form-actions">
+        <button
+          class="mm-intervals-secondary"
+          type="button"
+          :disabled="manualRunPending"
+          @click="runConfirmationTarget = null"
+        >
+          Cancel
+        </button>
+        <button
+          class="mm-intervals-primary"
+          type="button"
+          :disabled="manualRunPending"
+          @click="startManualRun"
+        >
+          {{ manualRunPending ? 'Starting…' : 'Start run' }}
+        </button>
+      </div>
+    </section>
+
+    <IntervalRunsPanel
+      v-if="activeRunsInterval"
+      :key="activeRunsInterval.id"
+      :interval="activeRunsInterval"
+      :run-id="acceptedRunId"
+      @refresh-intervals="loadIntervals"
+      @close="toggleRunHistory(activeRunsInterval)"
+    />
 
     <section v-if="formOpen" class="mm-interval-editor" aria-labelledby="mm-interval-form-title">
       <header class="mm-interval-editor-heading">

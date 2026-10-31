@@ -164,7 +164,7 @@ fails above 40 kB, so the exemption stays earned.
 | S6 | `/_site/admin/catalog` | Search Geofabrik | search, continent, cache filter, table with Download | "No country matches" |
 | S7 | `/_site/admin/cache` | Cached countries | search/update filter; sortable, paginated table: name, ready versions, local size, public/private state, update badge, catalog sync/source-download times | "Nothing cached yet — browse catalog" |
 | S8 | `/_site/admin/cache/:countryId` | Cached-country detail | cache summary, active work, paginated version table with download/delete, delete-country action | "No versions stored" |
-| S9 | `/_site/admin/intervals` | Schedules | list + create/edit form, frequency and multi-country selection, pause/delete actions, next run, last status, next-five UTC preview | "No intervals yet" |
+| S9 | `/_site/admin/intervals` | Schedules and run history | list + create/edit form, frequency and multi-country selection, pause/delete actions, next run, readable last status, next-five UTC preview, confirmed manual run (works while paused), paginated run history with active-run polling, per-country outcomes and safe failure details | "No intervals yet" / "No runs yet" |
 | S10 | `/_site/admin/import` | Upload | dropzone, country select, version, submit, progress | — |
 | S11 | `/_site/admin/jobs` | Job queue | URL-backed status/type filters, paginated progress rows/cards; persistent detail drawer with phase, speed/ETA, cooperative cancel and safe error detail | "No jobs" |
 | S12 | `/_site/admin/system` | Status | disk, counts, source freshness, orphan report | — |

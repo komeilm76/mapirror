@@ -23,6 +23,8 @@ passes. Patch releases (`0.1.1`, …) are corrections to an already-tagged phase
 ## [Unreleased] — 0.2.0-dev (Phase 1)
 
 ### Added
+
+- **P4-INT-09 — interval run history and manual trigger:** extended S9 with a confirmation-gated manual run action that remains available for paused schedules; paginated run history and validated run details; active-run polling; distinct `running`, `succeeded`, `partial`, and `failed` labels; country outcome counts, safe aggregate/country failure details, and separate active-interval versus conflicting-download guidance. Extended the interval UI and run-history tests. Verified by `bun run check` (1,332 passed; 326 skipped, including PostgreSQL-backed integration cases without a fresh test database) and `bun run build:web`. The interval UI suite covers paused-schedule triggers, all four statuses, polling through terminal state, pagination, safe country failures, and distinct run/download conflicts.
 - **P4-INT-08 intervals screen:** authenticated interval list and create/edit form with searchable multi-country selection, frequency-specific UTC timing, pause/delete controls, last-run status, and a live next-five preview. The browser preview and API scheduler now use the same shared recurrence helper.
 - **P4-INT-08 verification:** `bun run check` passes (1,327 tests passed; 326 skipped, including PostgreSQL-backed cases without a fresh test database). `bun run build:web` passes and emits the lazy-loaded Intervals screen chunk (16.63 kB; 5.33 kB gzip).
 

@@ -80,8 +80,9 @@ export const ERROR_COPY = {
     action: 'Refresh the cache details to see the stored version.',
   },
   JOB_ALREADY_RUNNING: {
-    message: 'Work for this country is already in progress.',
-    action: 'Follow the active job before starting another.',
+    message: 'A run or country download is already in progress.',
+    action:
+      'Open run history to follow an active interval, or wait for the conflicting country download to finish.',
   },
   CONFIRMATION_REQUIRED: {
     message: 'Confirm this change before continuing.',
