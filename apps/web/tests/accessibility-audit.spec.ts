@@ -29,6 +29,18 @@ async function mountAuditRoute(path: string): Promise<HTMLElement> {
           ? input
           : new URL(typeof input === 'string' ? input : input.url, window.location.origin);
       if (url.pathname === '/_auth/api/me') return Promise.resolve(jsonResponse(ME));
+      if (url.pathname === '/_admin/api/settings') {
+        return Promise.resolve(
+          jsonResponse({
+            settings: {
+              branding: { displayName: 'MapMirror' },
+              cache: { keepVersions: 3, diskReserveBytes: 2_147_483_648 },
+              public: { downloadsPerMinute: 10 },
+              source: { catalogTtlMinutes: 360 },
+            },
+          }),
+        );
+      }
       return Promise.resolve(
         jsonResponse(
           {
@@ -125,7 +137,6 @@ describe('accessibility audit', () => {
 
   it.each([
     ['System', '/_site/admin/system'],
-    ['Settings', '/_site/admin/settings'],
     ['Audit log', '/_site/admin/audit'],
   ])(
     'keeps the %s placeholder free of internal identifiers and offers a dashboard action',
@@ -153,7 +164,7 @@ describe('accessibility audit', () => {
     ['admin intervals', '/_site/admin/intervals'],
     ['admin import', '/_site/admin/import'],
     ['admin jobs', '/_site/admin/jobs'],
-    ['admin settings placeholder', '/_site/admin/settings'],
+    ['admin settings', '/_site/admin/settings'],
     ['admin audit placeholder', '/_site/admin/audit'],
     ['admin system placeholder', '/_site/admin/system'],
     ['not found', '/_site/not-a-route'],

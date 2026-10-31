@@ -16,9 +16,10 @@
  * The public catalog, country detail and API documentation render `HomePage.vue` (`P3-WEB-01`),
  * `CountryDetailPage.vue` (`P3-WEB-02/03`) and `ApiDocsPage.vue` (`P3-WEB-04`); admin dashboard/catalog/cache/import/
  * intervals/jobs render their task-owned pages (`P5-MON-04`, `P2-WEB-01/03/04`, `P4-IMP-05`, `P4-INT-08`,
- * `P2-WEB-06`); the login page renders `LoginPage.vue` (`P1-WEB-06`), and the not-found catch-all renders
- * `NotFoundPage.vue`. System, Settings and Audit remain `PlaceholderPage` routes, which name the task that replaces
- * them. A router tree full of invented screens would be worse than one that names its own gaps.
+ * `P2-WEB-06`); the login page renders `LoginPage.vue` (`P1-WEB-06`), Settings renders `SettingsPage.vue`
+ * (`P5-ADM-02`), and the not-found catch-all renders `NotFoundPage.vue`. System and Audit remain `PlaceholderPage`
+ * routes, which name the task that replaces them. A router tree full of invented screens would be worse than one that
+ * names its own gaps.
  *
  * ## The two records that are not pages
  *
@@ -142,13 +143,12 @@ export const APP_ROUTES: readonly RouteRecordRaw[] = [
     screen: 'S12',
     owner: 'P5-MON-02',
   }),
-  pending({
+  {
     path: adminPagePaths.settings(),
     name: 'admin-settings',
-    title: 'Settings',
-    screen: 'S13',
-    owner: 'P5-ADM-02',
-  }),
+    component: () => import('@/pages/admin/SettingsPage.vue'),
+    meta: { title: 'Settings', screen: 'S13', owner: 'P5-ADM-02' },
+  },
   pending({
     path: adminPagePaths.audit(),
     name: 'admin-audit',

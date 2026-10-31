@@ -40,7 +40,7 @@ open http://localhost:8080/_auth/login # admin login
 > `http://localhost:5173` with the theme, the route tree, the admin guard, the login page (`/_auth/login`, real sign-in
 > against the API), the admin shell and a working proxy to `:3000` — so a signed-in reader can walk the shell and read
 > live API answers. The Dashboard (S5), Catalog, Cache, cached-country detail, Import, Intervals and Jobs screens render
-> their task-owned pages; System, Settings and Audit remain honest `PlaceholderPage` routes naming their §4 row and owner.
+> their task-owned pages; Settings has its validated settings form, while System and Audit remain honest `PlaceholderPage` routes naming their §4 row and owner.
 
 ## 3. First run (local dev, hot reload)
 

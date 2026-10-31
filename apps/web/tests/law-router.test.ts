@@ -248,11 +248,11 @@ describe('every route says what it is and who builds it', () => {
   });
 
   it('marks exactly the routes that still render a placeholder', () => {
-    // The dashboard now joins the public catalog/detail/API pages and the task-built admin screens as a real component.
-    // Only System, Settings and Audit remain placeholders; metadata is explicit, so this list is checked rather than
+    // The dashboard and Settings now join the public catalog/detail/API pages and task-built admin screens as real
+    // components. Only System and Audit remain placeholders; metadata is explicit, so this list is checked rather than
     // inferred from the components.
     const placeholders = PAGES.filter((route) => route.meta.placeholder === true);
-    expect(placeholders.map((route) => route.meta.screen).sort()).toEqual(['S12', 'S13', 'S14']);
+    expect(placeholders.map((route) => route.meta.screen).sort()).toEqual(['S12', 'S14']);
     expect(PAGES.find((route) => route.meta.screen === 'S15')?.meta.placeholder).toBeUndefined();
   });
 });

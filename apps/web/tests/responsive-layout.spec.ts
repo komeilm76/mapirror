@@ -74,6 +74,16 @@ describe('responsive layout contracts', () => {
     }
   });
 
+  it('keeps settings fields in a two-column grid on desktop and one column on phones', () => {
+    const settings = styles('settings.css');
+    expect(settings).toMatch(
+      /\.mm-settings-grid\s*,\s*\.mm-settings-skeleton-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,/u,
+    );
+    expect(mediaRule(settings, '(max-width: 767px)')).toMatch(
+      /\.mm-settings-grid\s*,\s*\.mm-settings-skeleton-grid\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/u,
+    );
+  });
+
   it('keeps mobile facts and public version rows readable without page-level table overflow', () => {
     expect(mediaRule(styles('catalog.css'), '(max-width: 420px)')).toMatch(
       /\.mm-catalog-card dl\s*\{\s*grid-template-columns: 1fr/u,

@@ -1,0 +1,245 @@
+/* Settings editor (`P5-ADM-02`); the page uses the shared theme and spacing tokens. */
+
+.mm-settings-page {
+  display: grid;
+  gap: var(--mm-space-5);
+}
+
+.mm-settings-heading,
+.mm-settings-actions,
+.mm-settings-action-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mm-space-4);
+}
+
+.mm-settings-heading {
+  align-items: flex-end;
+}
+
+.mm-settings-heading h1,
+.mm-settings-card h2,
+.mm-settings-state h2 {
+  margin: 0;
+}
+
+.mm-settings-intro {
+  max-width: 52rem;
+  margin: var(--mm-space-2) 0 0;
+  color: rgb(var(--v-theme-text-secondary));
+}
+
+.mm-settings-unsaved {
+  flex: 0 0 auto;
+  padding: var(--mm-space-1) var(--mm-space-3);
+  border: var(--mm-border-width) solid rgb(var(--v-theme-border));
+  border-radius: var(--mm-radius-pill);
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: var(--mm-text-caption);
+  font-weight: var(--mm-weight-bold);
+}
+
+.mm-settings-grid,
+.mm-settings-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--mm-space-4);
+}
+
+.mm-settings-card,
+.mm-settings-state,
+.mm-settings-alert {
+  min-width: 0;
+  padding: clamp(var(--mm-space-4), 3vw, var(--mm-space-6));
+  border: var(--mm-border-width) solid rgb(var(--v-theme-border));
+  border-radius: var(--mm-radius-lg);
+  background: rgb(var(--v-theme-surface));
+}
+
+.mm-settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mm-space-4);
+}
+
+.mm-settings-card-heading p,
+.mm-settings-state p,
+.mm-settings-alert p {
+  margin: var(--mm-space-2) 0 0;
+  color: rgb(var(--v-theme-text-secondary));
+}
+
+.mm-settings-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--mm-space-2);
+  color: rgb(var(--v-theme-text-primary));
+  font-size: var(--mm-text-ui);
+  font-weight: var(--mm-weight-bold);
+}
+
+.mm-settings-field input {
+  width: 100%;
+  min-height: var(--mm-touch-target);
+  padding: var(--mm-space-2) var(--mm-space-3);
+  border: var(--mm-border-width) solid rgb(var(--v-theme-border-strong));
+  border-radius: var(--mm-radius-sm);
+  color: rgb(var(--v-theme-text-primary));
+  background: rgb(var(--v-theme-surface));
+  font: inherit;
+}
+
+.mm-settings-field input:disabled {
+  opacity: 0.7;
+}
+
+.mm-settings-field input[aria-invalid='true'] {
+  border-color: rgb(var(--v-theme-error));
+}
+
+.mm-settings-field small,
+.mm-settings-help {
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: var(--mm-text-caption);
+  font-weight: var(--mm-weight-regular);
+}
+
+.mm-settings-field-error {
+  color: rgb(var(--v-theme-error)) !important;
+}
+
+.mm-settings-form {
+  display: grid;
+  gap: var(--mm-space-4);
+}
+
+.mm-settings-alert {
+  border-color: rgb(var(--v-theme-error));
+}
+
+.mm-settings-alert > p:first-child,
+.mm-settings-state h2 {
+  color: rgb(var(--v-theme-text-primary));
+  font-weight: var(--mm-weight-bold);
+}
+
+.mm-settings-state {
+  display: grid;
+  justify-items: start;
+  gap: var(--mm-space-2);
+}
+
+.mm-settings-actions {
+  flex-wrap: wrap;
+  padding-top: var(--mm-space-2);
+}
+
+.mm-settings-help {
+  max-width: 42rem;
+  margin: 0;
+}
+
+.mm-settings-action-buttons {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.mm-settings-button {
+  display: inline-flex;
+  min-height: var(--mm-touch-target);
+  align-items: center;
+  justify-content: center;
+  padding: var(--mm-space-2) var(--mm-space-4);
+  border: var(--mm-border-width) solid transparent;
+  border-radius: var(--mm-radius-sm);
+  font: inherit;
+  font-weight: var(--mm-weight-bold);
+  cursor: pointer;
+}
+
+.mm-settings-button--primary {
+  color: rgb(var(--v-theme-on-primary));
+  background: rgb(var(--v-theme-primary));
+}
+
+.mm-settings-button--secondary {
+  border-color: rgb(var(--v-theme-border-strong));
+  color: rgb(var(--v-theme-text-primary));
+  background: rgb(var(--v-theme-surface));
+}
+
+.mm-settings-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.mm-settings-status {
+  margin: 0;
+  color: rgb(var(--v-theme-success));
+  font-weight: var(--mm-weight-bold);
+}
+
+.mm-settings-skeleton-card {
+  display: grid;
+  min-height: 14rem;
+  align-content: start;
+  gap: var(--mm-space-4);
+}
+
+.mm-settings-skeleton {
+  display: block;
+  border-radius: var(--mm-radius-sm);
+  background: rgb(var(--v-theme-surface-variant));
+  animation: mm-settings-skeleton-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.mm-settings-skeleton-title {
+  width: min(14rem, 60vw);
+  height: 1.5rem;
+}
+
+.mm-settings-skeleton-copy {
+  width: min(22rem, 80vw);
+  height: 1rem;
+}
+
+.mm-settings-skeleton-field {
+  width: 100%;
+  height: var(--mm-touch-target);
+}
+
+@keyframes mm-settings-skeleton-pulse {
+  to {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-settings-skeleton {
+    animation: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .mm-settings-heading,
+  .mm-settings-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .mm-settings-grid,
+  .mm-settings-skeleton-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mm-settings-action-buttons {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .mm-settings-button {
+    flex: 1 1 auto;
+  }
+}
