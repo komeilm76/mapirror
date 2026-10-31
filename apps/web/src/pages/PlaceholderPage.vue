@@ -11,7 +11,7 @@ const title = computed(() => route.meta.title);
 </script>
 
 <template>
-  <v-container class="py-12" max-width="var(--mm-container-public)">
+  <v-container class="mm-page-container py-12" max-width="var(--mm-container-public)">
     <v-row justify="center">
       <v-col cols="12" md="9" lg="7">
         <h1 class="mm-display mb-4">{{ title }}</h1>

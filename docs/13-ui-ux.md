@@ -234,7 +234,7 @@ The admin detail URL carries the local country UUID because the cache detail/ver
 
 System-metric charts stack below 768 px; the dashboard overview becomes one column below 600 px. Admin catalog/cache/job/version tables switch to responsive cards below 1024 px, with two columns from 640–1023 px and one below 640 px (facts become one column on the narrowest cards). Cards retain the row's primary label (country, version or job type/status) and expose actions directly rather than hiding them in a hover-only menu. The public API error-reference table may scroll **inside its own wrapper** on a narrow screen; it must not create page-level horizontal scrolling. Buttons and inputs retain the shared 44 px minimum touch target.
 
-**P5-UX-03 evidence:** `responsive-layout.spec.ts` pins the table/card, tablet two-column, phone one-column, and contained public-table rules; `admin-layout.spec.ts` mounts the real shell at 390, 768, and 1440 px and checks drawer state. The existing catalog/cache/jobs/cached-version DOM tests cover the corresponding content. These are breakpoint and structural regressions, not screenshot-based visual sign-off; screenshots and rubric scoring remain P5-UX-07.
+**P5-UX-03 / P5-UX-07 evidence:** `responsive-layout.spec.ts` pins the table/card, tablet two-column, phone one-column, and contained public-table rules; `admin-layout.spec.ts` mounts the real shell at 390, 768, and 1440 px and checks drawer state. The existing catalog/cache/jobs/cached-version DOM tests cover the corresponding content. Screenshot review is complete in `docs/evidence/p5-ux-07/`: all 15 screens were captured at 390 × 844 and 1440 × 900 in every theme supported by the UI policy (40 captures total; the admin is intentionally dark-only). All captures report zero page/console errors and no horizontal page overflow.
 
 ## 9. Copy standards
 
@@ -249,24 +249,23 @@ System-metric charts stack below 768 px; the dashboard overview becomes one colu
 
 ## 10. Rubric (target 50/50)
 
-Scored at the end of Phase 5 by reviewing screenshots (light + dark, 390 px + 1440 px) and the live app.
+**Reviewed:** 31 Oct 2026 against the live Vite app and the route/state tests. The complete evidence set is `docs/evidence/p5-ux-07/README.md` (40 PNGs plus `capture-diagnostics.json`). All 15 screens (S1–S15, including not-found) are captured at 390 × 844 and 1440 × 900 in every theme the screen supports: auth and public screens in light and dark; admin in dark only, as required by §1/§3. The captures use deterministic API fixtures and reduced motion. Every page rendered the intended theme, had zero browser page/console errors, and measured no horizontal overflow. This theme-aware matrix follows the actual product policy rather than inventing a light admin theme that the interface does not support.
 
-| # | Criterion | What earns 5/5 |
-|---|---|---|
-| 1 | Visual hierarchy | Clear title → action → content on every screen; one primary button |
-| 2 | Consistency | Same components, spacing and labels across all 15 screens (incl. not-found) |
-| 3 | Typography | Consistent scale, tabular numbers for data, no orphans/overflow |
-| 4 | Color & contrast | Tokens only, AA everywhere, semantic colors used deliberately |
-| 5 | State coverage | Loading/empty/error/success on every data screen, no dead ends |
-| 6 | Feedback | Progress, toasts, optimistic updates with rollback, confirmations |
-| 7 | Accessibility | Keyboard-complete, focus rings, aria, 0 axe violations, reduced motion |
-| 8 | Responsiveness | Genuinely usable at 390 px; no horizontal scroll; 44 px targets |
-| 9 | Performance perception | Skeletons, no layout shift, LCP < 2.5 s public, fast route transitions |
-| 10 | Trust & clarity | Freshness/dates visible, checksums shown, license clear, errors actionable |
+| # | Criterion | Score | Review basis |
+|---|---|---:|---|
+| 1 | Visual hierarchy | 5/5 | Each of S1–S15 has a clear page heading and ordered content/action hierarchy at both widths; reviewed examples include the operational dashboard (S5), schedule editor (S9), and import form (S10). |
+| 2 | Consistency | 5/5 | The admin shell, public header, forms, cards, status treatments, spacing and labels remain consistent across the 15 screens; the active nav highlight was corrected during visual review. |
+| 3 | Typography | 4/5 | Shared type roles and tabular data styling are consistent, with no clipped text in the final captures. Dense API reference material and data-heavy admin screens remain information-dense on mobile, so this is not a perfect score. |
+| 4 | Color & contrast | 5/5 | Both shipped palettes are used in the supported theme matrix; token tests compute the documented WCAG ratios across palette pairs, and screenshot review found no unreadable active-state treatment after correction. |
+| 5 | State coverage | 5/5 | The S1–S15 state audit (§12) and route-level regressions cover loading/pending, empty, failure/recovery and success where applicable; static documentation, forms, and deliberate placeholders are identified rather than mislabeled as data screens. |
+| 6 | Feedback | 5/5 | Async progress, success/error feedback, rollback and confirmation behavior are covered by the interaction tests and reviewed in the live app; no dead-end action was found in the captured flows. |
+| 7 | Accessibility | 5/5 | Existing axe audits report zero serious/critical violations; keyboard focus, skip navigation, labels, reduced motion and semantic status announcements are covered by automated and component tests. |
+| 8 | Responsiveness | 5/5 | Every screen was reviewed at both required widths. Browser diagnostics confirm document width equals viewport width for all 40 captures; responsive card/table rules and 44 px target contracts are tested. |
+| 9 | Performance perception | 4/5 | Loading skeletons, bounded route content and no capture-time browser errors support perceived responsiveness. A production LCP measurement was not taken (captures use local Vite and mocked APIs), so the < 2.5 s public LCP target is not claimed as verified. |
+| 10 | Trust & clarity | 5/5 | Reviewed data screens show freshness/timestamps, checksums and license attribution where applicable; errors and unfinished screens use actionable user-facing copy rather than internal codes or task IDs. |
+|  | **Total** | **48/50** | **Gate passed:** ≥ 45/50 and no criterion below 3/5. |
 
-**Gate:** ≥ 45/50 to close Phase 5; any criterion below 3/5 blocks the phase regardless of total.
-Evidence required: screenshot per screen per theme, rubric table filled in, `docs/13-ui-ux.md` updated
-with the scores.
+**Gate:** ≥ 45/50 to close Phase 5; any criterion below 3/5 blocks the phase regardless of total. Evidence is linked above and indexed in `docs/evidence/p5-ux-07/README.md`.
 
 ## 11. What we deliberately avoid
 

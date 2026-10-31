@@ -60,6 +60,20 @@ describe('responsive layout contracts', () => {
     );
   });
 
+  it('keeps auth and placeholder containers within their mobile content width', () => {
+    const publicCss = styles('public.css');
+    expect(publicCss).toMatch(
+      /\.mm-page-container\s*\{\s*box-sizing:\s*border-box;\s*width:\s*100%;/u,
+    );
+    expect(publicCss).toMatch(
+      /\.mm-page-container\s*>\s*\.v-row\s*>\s*\[class\*='v-col-'\]\s*\{\s*box-sizing:\s*border-box;/u,
+    );
+    for (const page of ['auth/LoginPage.vue', 'PlaceholderPage.vue']) {
+      const source = readFileSync(resolve(import.meta.dirname, `../src/pages/${page}`), 'utf8');
+      expect(source).toMatch(/<v-container class="mm-page-container/u);
+    }
+  });
+
   it('keeps mobile facts and public version rows readable without page-level table overflow', () => {
     expect(mediaRule(styles('catalog.css'), '(max-width: 420px)')).toMatch(
       /\.mm-catalog-card dl\s*\{\s*grid-template-columns: 1fr/u,
@@ -70,6 +84,10 @@ describe('responsive layout contracts', () => {
 
     const publicCss = styles('public.css');
     const phone = mediaRule(publicCss, '(max-width: 639px)', 1);
+    const notFoundPhone = mediaRule(publicCss, '(max-width: 639px)', 3);
+    expect(notFoundPhone).toMatch(
+      /\.mm-public-not-found-action\s*\{[^}]*box-sizing:\s*border-box;[^}]*width:\s*100%/u,
+    );
     expect(phone).toMatch(/\.mm-public-versions-table\s*,[\s\S]*?display: block/u);
     expect(publicCss).toMatch(/\.mm-public-api-code\s*\{[^}]*white-space: pre-wrap/u);
     expect(publicCss).toMatch(/\.mm-public-api-table-wrap\s*\{[^}]*overflow-x: auto/u);

@@ -1,0 +1,482 @@
+[
+  {
+    "filename": "S01-login-light-390x844.png",
+    "heading": "Sign in",
+    "themeClass": "v-application v-theme--light v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 374
+    },
+    "size": 22393,
+    "errors": []
+  },
+  {
+    "filename": "S01-login-light-1440x900.png",
+    "heading": "Sign in",
+    "themeClass": "v-application v-theme--light v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 27723,
+    "errors": []
+  },
+  {
+    "filename": "S01-login-dark-390x844.png",
+    "heading": "Sign in",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 374
+    },
+    "size": 22936,
+    "errors": []
+  },
+  {
+    "filename": "S01-login-dark-1440x900.png",
+    "heading": "Sign in",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 27819,
+    "errors": []
+  },
+  {
+    "filename": "S02-public-catalog-light-390x844.png",
+    "heading": "Browse published maps",
+    "themeClass": "v-application v-theme--light v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 374
+    },
+    "size": 79498,
+    "errors": []
+  },
+  {
+    "filename": "S02-public-catalog-light-1440x900.png",
+    "heading": "Browse published maps",
+    "themeClass": "v-application v-theme--light v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 80320,
+    "errors": []
+  },
+  {
+    "filename": "S02-public-catalog-dark-390x844.png",
+    "heading": "Browse published maps",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 374
+    },
+    "size": 79293,
+    "errors": []
+  },
+  {
+    "filename": "S02-public-catalog-dark-1440x900.png",
+    "heading": "Browse published maps",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 79863,
+    "errors": []
+  },
+  {
+    "filename": "S03-country-detail-light-390x844.png",
+    "heading": "Finland",
+    "themeClass": "v-application v-theme--light v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 375
+    },
+    "size": 98175,
+    "errors": []
+  },
+  {
+    "filename": "S03-country-detail-light-1440x900.png",
+    "heading": "Finland",
+    "themeClass": "v-application v-theme--light v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 96529,
+    "errors": []
+  },
+  {
+    "filename": "S03-country-detail-dark-390x844.png",
+    "heading": "Finland",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 375
+    },
+    "size": 99160,
+    "errors": []
+  },
+  {
+    "filename": "S03-country-detail-dark-1440x900.png",
+    "heading": "Finland",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 97059,
+    "errors": []
+  },
+  {
+    "filename": "S04-api-docs-light-390x844.png",
+    "heading": "API documentation",
+    "themeClass": "v-application v-theme--light v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 374
+    },
+    "size": 653464,
+    "errors": []
+  },
+  {
+    "filename": "S04-api-docs-light-1440x900.png",
+    "heading": "API documentation",
+    "themeClass": "v-application v-theme--light v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 671555,
+    "errors": []
+  },
+  {
+    "filename": "S04-api-docs-dark-390x844.png",
+    "heading": "API documentation",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 374
+    },
+    "size": 653843,
+    "errors": []
+  },
+  {
+    "filename": "S04-api-docs-dark-1440x900.png",
+    "heading": "API documentation",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 672782,
+    "errors": []
+  },
+  {
+    "filename": "S05-dashboard-dark-390x844.png",
+    "heading": "Dashboard",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 382
+    },
+    "size": 173558,
+    "errors": []
+  },
+  {
+    "filename": "S05-dashboard-dark-1440x900.png",
+    "heading": "Dashboard",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1432
+    },
+    "size": 187523,
+    "errors": []
+  },
+  {
+    "filename": "S06-admin-catalog-dark-390x844.png",
+    "heading": "Catalog",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 374
+    },
+    "size": 78047,
+    "errors": []
+  },
+  {
+    "filename": "S06-admin-catalog-dark-1440x900.png",
+    "heading": "Catalog",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 88438,
+    "errors": []
+  },
+  {
+    "filename": "S07-cache-dark-390x844.png",
+    "heading": "Cached countries",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 374
+    },
+    "size": 66555,
+    "errors": []
+  },
+  {
+    "filename": "S07-cache-dark-1440x900.png",
+    "heading": "Cached countries",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 82543,
+    "errors": []
+  },
+  {
+    "filename": "S08-cache-country-dark-390x844.png",
+    "heading": "Finland",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 374
+    },
+    "size": 101888,
+    "errors": []
+  },
+  {
+    "filename": "S08-cache-country-dark-1440x900.png",
+    "heading": "Finland",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 110797,
+    "errors": []
+  },
+  {
+    "filename": "S09-intervals-dark-390x844.png",
+    "heading": "Intervals",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 374
+    },
+    "size": 45951,
+    "errors": []
+  },
+  {
+    "filename": "S09-intervals-dark-1440x900.png",
+    "heading": "Intervals",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 63439,
+    "errors": []
+  },
+  {
+    "filename": "S10-import-dark-390x844.png",
+    "heading": "Import a map",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 374
+    },
+    "size": 52439,
+    "errors": []
+  },
+  {
+    "filename": "S10-import-dark-1440x900.png",
+    "heading": "Import a map",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 71476,
+    "errors": []
+  },
+  {
+    "filename": "S11-jobs-dark-390x844.png",
+    "heading": "Jobs",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 374
+    },
+    "size": 49731,
+    "errors": []
+  },
+  {
+    "filename": "S11-jobs-dark-1440x900.png",
+    "heading": "Jobs",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 66729,
+    "errors": []
+  },
+  {
+    "filename": "S12-system-placeholder-dark-390x844.png",
+    "heading": "System",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 374
+    },
+    "size": 19653,
+    "errors": []
+  },
+  {
+    "filename": "S12-system-placeholder-dark-1440x900.png",
+    "heading": "System",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 36290,
+    "errors": []
+  },
+  {
+    "filename": "S13-settings-placeholder-dark-390x844.png",
+    "heading": "Settings",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 374
+    },
+    "size": 20066,
+    "errors": []
+  },
+  {
+    "filename": "S13-settings-placeholder-dark-1440x900.png",
+    "heading": "Settings",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 37086,
+    "errors": []
+  },
+  {
+    "filename": "S14-audit-placeholder-dark-390x844.png",
+    "heading": "Audit log",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 374
+    },
+    "size": 19885,
+    "errors": []
+  },
+  {
+    "filename": "S14-audit-placeholder-dark-1440x900.png",
+    "heading": "Audit log",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 36305,
+    "errors": []
+  },
+  {
+    "filename": "S15-not-found-light-390x844.png",
+    "heading": "Page not found",
+    "themeClass": "v-application v-theme--light v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 379
+    },
+    "size": 32671,
+    "errors": []
+  },
+  {
+    "filename": "S15-not-found-light-1440x900.png",
+    "heading": "Page not found",
+    "themeClass": "v-application v-theme--light v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 40414,
+    "errors": []
+  },
+  {
+    "filename": "S15-not-found-dark-390x844.png",
+    "heading": "Page not found",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "bodyWidth": 379
+    },
+    "size": 32916,
+    "errors": []
+  },
+  {
+    "filename": "S15-not-found-dark-1440x900.png",
+    "heading": "Page not found",
+    "themeClass": "v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr",
+    "dimensions": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1424
+    },
+    "size": 40736,
+    "errors": []
+  }
+]

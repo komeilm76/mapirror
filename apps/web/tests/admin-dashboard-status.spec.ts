@@ -104,6 +104,7 @@ describe('admin dashboard overview states', () => {
     expect(container.textContent).toContain('2 failed jobs');
     expect(container.textContent).toContain('Some dashboard data could not be refreshed');
     expect(container.textContent).toContain('System status: The server could not be reached.');
+    expect(container.textContent).not.toMatch(/Screen S5|13-ui-ux\.md §4/u);
     const refreshButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
       (button) => button.textContent?.includes('Refresh overview'),
     );

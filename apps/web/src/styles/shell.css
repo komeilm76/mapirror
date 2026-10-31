@@ -82,7 +82,10 @@
 }
 
 .mm-admin-search {
+  width: 260px;
   max-width: 260px;
+  min-width: 0;
+  flex: 0 1 260px;
 }
 
 /*
@@ -101,8 +104,20 @@
   }
 
   .mm-admin-search {
+    width: 120px;
     max-width: 120px;
+    flex-basis: 120px;
   }
+}
+
+/*
+ * The selected item is tinted with the activated token and the primary label, not painted over with a solid block.
+ * Vuetify's text-variant active rule multiplies by `--v-theme-overlay-multiplier`, which is only set by its background
+ * utility classes; the drawer has no background utility, so the missing variable made `opacity: calc(...)` invalid and
+ * the browser fell back to 1. The targeted opacity keeps the active row legible in the dark shell.
+ */
+.mm-admin-navigation .v-list-item--active > .v-list-item__overlay {
+  opacity: var(--v-activated-opacity);
 }
 
 /* The admin content keeps the page's own padding off the drawer's edge. */

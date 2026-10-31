@@ -175,6 +175,7 @@ describe('the navigation is the router', () => {
       (link) => link.getAttribute('aria-current') === 'page',
     );
     expect(current.map((link) => link.textContent?.trim())).toEqual(['Intervals']);
+    expect(current[0]?.classList.contains('text-primary')).toBe(true);
   });
 
   it('keeps a parent entry marked for a child screen', async () => {
@@ -464,6 +465,20 @@ describe('the shell is reachable and honest', () => {
     const css = readFileSync(resolve(import.meta.dirname, '../src/styles/shell.css'), 'utf8');
     expect(css).toMatch(/\.mm-skip-link\s*\{[^}]*clip-path:\s*inset\(50%\)/u);
     expect(css).toMatch(/\.mm-skip-link:focus-visible\s*\{[^}]*clip-path:\s*none/u);
+  });
+
+  it('gives the global search a readable width on desktop and phone layouts', () => {
+    const css = readFileSync(resolve(import.meta.dirname, '../src/styles/shell.css'), 'utf8');
+    expect(css).toMatch(/\.mm-admin-search\s*\{[^}]*width:\s*260px;[^}]*flex:\s*0 1 260px/u);
+    const mobile = /@media \(max-width: 599px\) \{([\s\S]*?)\n\}/u.exec(css)?.[1] ?? '';
+    expect(mobile).toMatch(/\.mm-admin-search\s*\{[^}]*width:\s*120px;[^}]*flex-basis:\s*120px/u);
+  });
+
+  it('keeps the active navigation highlight readable instead of covering its label', () => {
+    const css = readFileSync(resolve(import.meta.dirname, '../src/styles/shell.css'), 'utf8');
+    expect(css).toMatch(
+      /\.mm-admin-navigation \.v-list-item--active\s*>\s*\.v-list-item__overlay\s*\{\s*opacity:\s*var\(--v-activated-opacity\)/u,
+    );
   });
 
   it('styles only classes the shell actually renders', async () => {

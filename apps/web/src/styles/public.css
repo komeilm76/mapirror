@@ -1082,6 +1082,16 @@
   }
 }
 
+/* Keep Vuetify's container and grid gutters inside auth/placeholder content at phone widths. */
+.mm-page-container {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.mm-page-container > .v-row > [class*='v-col-'] {
+  box-sizing: border-box;
+}
+
 .mm-public-not-found {
   display: grid;
   width: min(calc(100% - var(--mm-space-8)), var(--mm-container-public));
@@ -1211,6 +1221,7 @@
   }
 
   .mm-public-not-found-action {
+    box-sizing: border-box;
     width: 100%;
   }
 }

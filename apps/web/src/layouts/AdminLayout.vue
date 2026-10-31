@@ -218,12 +218,13 @@ onMounted(() => {
 
     <v-divider />
 
-    <v-list aria-label="Administration" density="compact" nav>
+    <v-list aria-label="Administration" class="mm-admin-navigation" density="compact" nav>
       <v-list-item
         v-for="item in ADMIN_NAV"
         :key="item.name"
         :active="isNavItemActive(item, route.path)"
         :aria-current="isNavItemActive(item, route.path) ? 'page' : undefined"
+        :color="isNavItemActive(item, route.path) ? 'primary' : undefined"
         :title="item.label"
         :aria-label="
           item.name === 'admin-jobs' && jobProgress.activeCount > 0

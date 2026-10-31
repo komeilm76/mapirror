@@ -297,7 +297,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <v-container class="py-12" max-width="var(--mm-container-public)">
+  <v-container class="mm-page-container py-12" max-width="var(--mm-container-public)">
     <v-row justify="center">
       <v-col cols="12" sm="10" md="6">
         <p class="mm-caption mb-2">MapMirror</p>
