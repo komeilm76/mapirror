@@ -1,9 +1,9 @@
 /**
- * The non-colour design tokens, as CSS custom properties (`P1-WEB-02`).
+ * Spacing, typography, motion and layout tokens, plus approved theme-color utility classes (`P1-WEB-02`).
  *
- * Colours are **not** here: they live in `tokens.ts` (as Vuetify themes) and Vuetify publishes each one as
- * `--v-theme-<name>` at runtime, so a component writes `rgb(var(--v-theme-border))` and never a hex. Everything in
- * this file is a number `13-ui-ux.md` §2 specifies and nothing in TypeScript computes with.
+ * Palette values are **not duplicated** here: they live in `tokens.ts` (as Vuetify themes), and Vuetify publishes each
+ * one as `--v-theme-<name>` at runtime. Shared utilities reference those variables; component SFCs use the utilities and
+ * never embed a literal or direct RGB color.
  *
  * `tests/tokens.spec.ts` parses §2 and compares every value below with the document, so the two cannot drift.
  *
@@ -91,6 +91,48 @@
 
 .mm-text-secondary {
   color: rgb(var(--v-theme-text-secondary));
+}
+
+/* Surfaces and semantic boundaries used by component-specific layouts. */
+.mm-bg-surface {
+  background: rgb(var(--v-theme-surface));
+}
+
+.mm-bg-surface-variant {
+  background: rgb(var(--v-theme-surface-variant));
+}
+
+.mm-bg-error-subtle {
+  background: rgb(var(--v-theme-error) / 0.08);
+}
+
+.mm-border-error {
+  border-color: rgb(var(--v-theme-error));
+}
+
+/* Chart-only ink utilities; SVG shapes use currentColor so series remain labelled as well as coloured. */
+.mm-chart-grid-color {
+  color: rgb(var(--v-theme-border));
+}
+
+.mm-chart-series-primary {
+  color: rgb(var(--v-theme-primary));
+}
+
+.mm-chart-series-secondary {
+  color: rgb(var(--v-theme-secondary));
+}
+
+.mm-chart-series-success {
+  color: rgb(var(--v-theme-success));
+}
+
+.mm-chart-point-outline {
+  --mm-chart-point-outline: rgb(var(--v-theme-surface));
+}
+
+.mm-chart-table-rule {
+  border-bottom: var(--mm-border-width) solid rgb(var(--v-theme-border));
 }
 
 /* Boundaries a user must see to operate something (WGAG 1.4.11, 3:1) — inputs, switch tracks, focus-adjacent edges. */
