@@ -11,6 +11,7 @@
  * | Module | Contract it pins |
  * |---|---|
  * | `routes` | L1/D-18/D-19 — which namespace every path belongs to |
+ * | `system` | `P5-MON-02` — status and downsampled metrics request/response contracts |
  * | `errors` | `04-api.md` §0.2 — error codes, their HTTP status, the envelope |
  * | `pagination` | D-16 — `{ data, meta }`, defaults and the `limit` ceiling |
  * | `license` | ODbL attribution that must appear on every public surface |
@@ -51,3 +52,4 @@ export * from './public-country';
 export * from './public-download';
 export * from './public-stats';
 export * from './routes';
+export * from './system';

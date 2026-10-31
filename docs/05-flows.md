@@ -501,8 +501,12 @@ sequenceDiagram
 ```
 
 **Rules:** charts show real samples or an explicit "no data yet" state; sampling failure never crashes
-the API; retention 7 days.
-**Tests:** sampler writes rows, window downsampling shape, empty-window response, retention cleanup.
+the API; retention 7 days. The metrics endpoint averages epoch-aligned PostgreSQL buckets at 10 s / 30 s /
+5 min / 30 min for the 5 m / 1 h / 24 h / 7 d windows. Status reports database-backed counts, configured
+worker capacity, measured cache-filesystem headroom, and last-known catalog-sync outcome; orphan statistics
+remain null until P5-MON-05.
+**Tests:** sampler writes rows, all window-step mappings, byte-safe downsampled shape, empty-window response,
+status count/storage/source projections, retention cleanup.
 
 ---
 

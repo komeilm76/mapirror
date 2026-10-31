@@ -637,23 +637,32 @@ A sibling route (`/intervals/runs/:runId`) would be ambiguous with `/intervals/:
 
 ```json
 {
-  "version": "0.1.0", "uptimeSeconds": 84213, "worker": { "enabled": true, "concurrency": 2, "running": 1 },
+  "version": "0.2.0-dev", "uptimeSeconds": 84213, "worker": { "enabled": true, "concurrency": 2, "running": 1 },
   "storage": { "cacheDir": "/data/cache", "usedBytes": 2319000000, "freeBytes": 48000000000,
-               "reserveBytes": 2147483648, "state": "ok",
-               "orphans": { "count": 0, "bytes": 0 } },
+               "reserveBytes": 2147483648, "state": "ok", "orphans": null },
   "counts": { "countries": 389, "cachedCountries": 12, "publicCountries": 5,
               "versions": 31, "updatesAvailable": 2, "jobsRunning": 1, "jobsQueued": 0 },
-  "source": { "id": "geofabrik", "lastSyncAt": "…", "reachable": true },
+  "source": { "id": "geofabrik", "lastSyncAt": "2026-10-24T08:00:00.000Z", "reachable": true },
   "branding": { "displayName": "MapMirror" }
 }
 ```
 
+`worker.running` and the job counts are database-backed. `source.reachable` reflects the most recent completed
+catalog-sync outcome (or the durable last-success marker when sync-job history is absent); the endpoint does not
+probe the upstream. `storage.orphans` is `null` until P5-MON-05 adds its read-only report. Disk state is `full` when
+no bytes are available, `low` when available bytes are at or below `DISK_RESERVE_BYTES`, and `ok` otherwise.
+
 #### `GET /_admin/api/system/metrics?window=5m|1h|24h|7d`
+
+The `window` query is optional and defaults to `1h`; unknown query keys are rejected. Each response point is a
+server-side `date_bin` average over the interval, with byte averages rounded to whole bytes. Empty windows return an
+empty `samples` array.
 
 ```json
 {
-  "window": "1h", "stepSeconds": 10,
-  "samples": [ { "t": "2026-10-24T08:00:00Z", "cpuPercent": 12.4, "load1": 0.6,
+  "window": "1h", "stepSeconds": 30,
+  "samples": [ { "t": "2026-10-24T08:00:00.000Z", "cpuPercent": 12.4, "load1": 0.6,
+                 "load5": 0.5, "load15": 0.4,
                  "memUsedBytes": 512000000, "memTotalBytes": 2048000000,
                  "diskUsedBytes": 12300000000, "diskTotalBytes": 50000000000,
                  "cacheSizeBytes": 2319000000 } ],

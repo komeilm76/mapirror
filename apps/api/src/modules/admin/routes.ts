@@ -33,6 +33,7 @@ import { createImportHandler } from './import-route';
 import { getImportStatus } from './import-status-route';
 import { deleteInterval, getIntervals, patchInterval, postInterval } from './intervals-route';
 import { getIntervalRun, getIntervalRuns, postIntervalRun } from './interval-runs-route';
+import { getSystemMetrics, getSystemStatus } from './system-routes';
 
 /** The validated settings required to configure admin source reads. */
 export interface AdminRouteOptions {
@@ -98,5 +99,7 @@ export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, op
   app.get('/interval-runs/:runId', getIntervalRun);
   app.get('/jobs', getJobs);
   app.get('/jobs/:jobId', getJob);
+  app.get('/system/status', (request) => getSystemStatus(request, options.config));
+  app.get('/system/metrics', (request) => getSystemMetrics(request));
   app.post('/jobs/:jobId/cancel', cancelJob);
 };

@@ -392,7 +392,7 @@ CREATE TABLE metrics_samples (
 - One row / 10 s (≈ 60 k rows / week). Retention 7 days; older rows deleted hourly.
 - The sampler writes with `INSERT … ON CONFLICT (sampled_at) DO NOTHING`: immediate restarts in the same
   second and periodic replicas on the same epoch-aligned sampling slot must not fail or duplicate samples.
-- A downsample to 1-minute buckets can be added later without API changes.
+- The metrics API averages epoch-aligned buckets in PostgreSQL: 5 m→10 s, 1 h→30 s, 24 h→5 min, and 7 d→30 min. Retention and these presentation steps are independent.
 - Scope: process/container metrics from `node:os` + `fs.statfs` on `CACHE_DIR`, documented in the UI.
 - No host-level cAdvisor in v1 (keeps deployment to three containers).
 
