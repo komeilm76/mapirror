@@ -244,7 +244,7 @@ prove L1–L3.
 
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
-| P5-MON-01 | Sampler (CPU/load/RAM/disk/cache size) every 10 s | MON-1 | P2-DB-01 | ✅ | Migration 0007 and typed `metrics_samples`; starts after listen, samples immediately and every 10 s without overlap, stores timestamp-deduplicated CPU/load/memory/disk/cache readings, logs partial measurement/write failures without taking down the API, and drains before DB shutdown. CPU baseline state is one snapshot; DB retention/orphan sweep remains P5-MON-05. Unit/schema parity checks pass; PostgreSQL persistence/migration tests are collected but skipped without a fresh test database. |
+| P5-MON-01 | Sampler (CPU/load/RAM/disk/cache size) every 10 s | MON-1 | P2-DB-01 | ✅ | Migration 0007 and typed `metrics_samples`; starts after listen, samples immediately and on epoch-aligned 10 s boundaries without overlap, stores timestamp-deduplicated CPU/load/memory/disk/cache readings, logs partial measurement/write failures without taking down the API, and drains before DB shutdown. CPU baseline state is one snapshot; DB retention/orphan sweep remains P5-MON-05. Unit/schema parity checks pass; PostgreSQL persistence/migration tests are collected but skipped without a fresh test database. |
 | P5-MON-02 | `/system/metrics` with downsampling + `/system/status` | MON-1/2 | P5-MON-01 | ⬜ | Windows 5m/1h/24h/7d |
 | P5-MON-03 | Charts: CPU, memory, disk, cache growth + window selector | MON-1 | P5-MON-02 | ⬜ | No-data state; accessible colors |
 | P5-MON-04 | Dashboard widgets (counts, updates, jobs, disk headroom) | MON-2 | P5-MON-02 | ⬜ | Each widget links to its page |

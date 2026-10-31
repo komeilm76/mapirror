@@ -390,8 +390,8 @@ CREATE TABLE metrics_samples (
 ```
 
 - One row / 10 s (≈ 60 k rows / week). Retention 7 days; older rows deleted hourly.
-- The sampler writes with `INSERT … ON CONFLICT (sampled_at) DO NOTHING`: a restart inside the same
-  second, or two API replicas, must not fail or duplicate samples.
+- The sampler writes with `INSERT … ON CONFLICT (sampled_at) DO NOTHING`: immediate restarts in the same
+  second and periodic replicas on the same epoch-aligned sampling slot must not fail or duplicate samples.
 - A downsample to 1-minute buckets can be added later without API changes.
 - Scope: process/container metrics from `node:os` + `fs.statfs` on `CACHE_DIR`, documented in the UI.
 - No host-level cAdvisor in v1 (keeps deployment to three containers).

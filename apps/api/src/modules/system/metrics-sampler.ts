@@ -1,8 +1,9 @@
 /**
  * Periodic process/container metrics collection (`P5-MON-01`).
  *
- * The sampler writes at a fixed ten-second cadence, deduplicates restarts in the same second, and treats a failed
- * measurement or write as a warning rather than a server-fatal error. The database stores samples; query windows,
+ * The sampler writes immediately, then on epoch-aligned ten-second boundaries so replicas share scheduled slots.
+ * It deduplicates same-second restarts and treats failed measurements/writes as warnings rather than server-fatal
+ * errors. The database stores samples; query windows,
  * retention and orphan reporting are separate monitoring tasks.
  *
  * @module modules/system/metrics-sampler
@@ -141,9 +142,16 @@ export function startMetricsSampler(
   let stopped = false;
   let active: Promise<void> | undefined;
 
-  const run = (): void => {
+  const run = (scheduledAt?: Date): void => {
     if (stopped || active !== undefined) return;
-    const pending = sampleAndPersist(database, cacheDirectory, readers, now, previousCpu)
+    const pending = sampleAndPersist(
+      database,
+      cacheDirectory,
+      readers,
+      now,
+      previousCpu,
+      scheduledAt,
+    )
       .then(({ cpuCounters, failedReadings }) => {
         previousCpu = cpuCounters;
         if (failedReadings.length > 0) {
@@ -162,13 +170,25 @@ export function startMetricsSampler(
     active = pending;
   };
 
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleNext = (): void => {
+    if (stopped) return;
+    const nowMs = Date.now();
+    const delayMs = intervalMs - (nowMs % intervalMs);
+    const scheduledAt = new Date(nowMs + delayMs);
+    timer = setTimeout(() => {
+      run(scheduledAt);
+      scheduleNext();
+    }, delayMs);
+    timer.unref();
+  };
+
   run();
-  const timer = setInterval(run, intervalMs);
-  timer.unref();
+  scheduleNext();
   return {
     stop: async () => {
       stopped = true;
-      clearInterval(timer);
+      if (timer !== undefined) clearTimeout(timer);
       await active;
     },
   };
@@ -180,6 +200,7 @@ async function sampleAndPersist(
   readers: MetricsReaders,
   now: () => Date,
   previousCpu: CpuCounters | null,
+  scheduledAt?: Date,
 ): Promise<{ cpuCounters: CpuCounters | null; failedReadings: string[] }> {
   const failedReadings: string[] = [];
   let cpuCounters: CpuCounters | null = null;
@@ -265,7 +286,7 @@ async function sampleAndPersist(
     failedReadings.push('cache');
   }
 
-  const sampledAtRaw = now();
+  const sampledAtRaw = scheduledAt ?? now();
   if (!(sampledAtRaw instanceof Date) || !Number.isFinite(sampledAtRaw.getTime())) {
     throw new TypeError('metrics sampler clock must return a valid Date');
   }

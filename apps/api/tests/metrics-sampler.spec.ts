@@ -160,6 +160,29 @@ describe('startMetricsSampler', () => {
     expect(writes).toHaveLength(1);
   });
 
+  it('aligns periodic samples across instances started at different times', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-31T12:34:55.000Z'));
+    const { database, writes } = fakeDatabase();
+    const first = startMetricsSampler(database, '/cache', log, {
+      intervalMs: 10_000,
+      readers: readers(),
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    const second = startMetricsSampler(database, '/cache', log, {
+      intervalMs: 10_000,
+      readers: readers(),
+    });
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    expect(writes).toHaveLength(4);
+    expect(writes[2]).toMatchObject({ sampled_at: new Date('2026-10-31T12:35:00.000Z') });
+    expect(writes[3]).toMatchObject({ sampled_at: new Date('2026-10-31T12:35:00.000Z') });
+    await Promise.all([first.stop(), second.stop()]);
+  });
+
   it('rejects a zero or fractional sampling interval', () => {
     const { database } = fakeDatabase();
     expect(() => startMetricsSampler(database, '/cache', log, { intervalMs: 0 })).toThrow(
