@@ -485,14 +485,38 @@ onUnmounted(() => {
       <button class="mm-intervals-secondary" type="button" @click="loadIntervals">Retry</button>
     </section>
 
-    <section
-      v-if="listLoading && intervals.length === 0"
-      class="mm-intervals-state"
-      aria-live="polite"
-    >
-      <h2>Loading schedules</h2>
-      <p>Reading the current interval list…</p>
-    </section>
+    <div v-if="listLoading && intervals.length === 0" class="mm-intervals-loading">
+      <p class="sr-only" role="status">Loading schedules…</p>
+      <section
+        class="mm-intervals-list mm-intervals-skeleton-list"
+        aria-busy="true"
+        aria-hidden="true"
+      >
+        <article v-for="index in 2" :key="index" class="mm-interval-card mm-interval-skeleton-card">
+          <div class="mm-interval-card-heading">
+            <div class="mm-interval-skeleton-heading">
+              <div class="mm-interval-title-row">
+                <span class="mm-interval-skeleton mm-interval-skeleton-title" />
+                <span class="mm-interval-skeleton mm-interval-skeleton-status" />
+              </div>
+              <span class="mm-interval-skeleton mm-interval-skeleton-description" />
+            </div>
+            <div class="mm-interval-actions">
+              <span class="mm-interval-skeleton mm-interval-skeleton-action" />
+              <span class="mm-interval-skeleton mm-interval-skeleton-action" />
+              <span class="mm-interval-skeleton mm-interval-skeleton-action" />
+            </div>
+          </div>
+          <div class="mm-interval-facts">
+            <span
+              v-for="fact in 4"
+              :key="fact"
+              class="mm-interval-skeleton mm-interval-skeleton-fact"
+            />
+          </div>
+        </article>
+      </section>
+    </div>
     <section v-else-if="!listError && intervals.length === 0" class="mm-intervals-state">
       <h2>No intervals yet</h2>
       <p>Create a schedule to refresh one or more countries automatically.</p>

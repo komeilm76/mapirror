@@ -41,6 +41,61 @@
   gap: var(--mm-space-4);
 }
 
+.mm-interval-skeleton-card {
+  min-height: 12rem;
+}
+
+.mm-interval-skeleton-heading {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: var(--mm-space-3);
+}
+
+.mm-interval-skeleton {
+  display: block;
+  border-radius: var(--mm-radius-sm);
+  background: rgb(var(--v-theme-surface-variant));
+  animation: mm-interval-skeleton-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.mm-interval-skeleton-title {
+  width: min(16rem, 55vw);
+  height: 1.5rem;
+}
+
+.mm-interval-skeleton-status {
+  width: 5rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+}
+
+.mm-interval-skeleton-description {
+  width: min(24rem, 75vw);
+  height: 1rem;
+}
+
+.mm-interval-skeleton-action {
+  width: 5rem;
+  height: var(--mm-touch-target);
+}
+
+.mm-interval-skeleton-fact {
+  height: 2.75rem;
+}
+
+@keyframes mm-interval-skeleton-pulse {
+  to {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-interval-skeleton {
+    animation: none;
+  }
+}
+
 .mm-interval-card,
 .mm-intervals-state,
 .mm-interval-editor,

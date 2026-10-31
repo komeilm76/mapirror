@@ -203,14 +203,56 @@ onUnmounted(() => {
           </option>
         </select>
       </div>
-      <span class="mm-caption" aria-live="polite">{{
+      <span class="mm-caption" :aria-live="result ? 'polite' : 'off'">{{
         result ? `${result.meta.total} jobs` : 'Loading jobs…'
       }}</span>
     </section>
 
-    <div v-if="loading && result === null" class="mm-jobs-state" role="status">
-      <v-progress-linear color="primary" indeterminate rounded />
-      <p class="mm-body-public mt-4">Loading jobs…</p>
+    <div v-if="loading && result === null" class="mm-jobs-loading">
+      <p class="sr-only" role="status">Loading jobs…</p>
+      <div class="mm-jobs-skeleton-layout" aria-busy="true" aria-hidden="true">
+        <div class="mm-jobs-table-wrap mm-jobs-skeleton-table">
+          <table class="mm-jobs-table">
+            <thead>
+              <tr>
+                <th scope="col">Job</th>
+                <th scope="col">Status / phase</th>
+                <th scope="col">Progress</th>
+                <th scope="col">Speed</th>
+                <th scope="col">ETA</th>
+                <th scope="col">Created</th>
+                <th scope="col">Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in 5" :key="row" class="mm-jobs-skeleton-row">
+                <td><span class="mm-jobs-skeleton mm-jobs-skeleton-job" /></td>
+                <td><span class="mm-jobs-skeleton mm-jobs-skeleton-status" /></td>
+                <td><span class="mm-jobs-skeleton mm-jobs-skeleton-progress" /></td>
+                <td><span class="mm-jobs-skeleton mm-jobs-skeleton-short" /></td>
+                <td><span class="mm-jobs-skeleton mm-jobs-skeleton-short" /></td>
+                <td><span class="mm-jobs-skeleton mm-jobs-skeleton-date" /></td>
+                <td><span class="mm-jobs-skeleton mm-jobs-skeleton-action" /></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="mm-jobs-mobile-list mm-jobs-skeleton-mobile">
+          <article v-for="card in 3" :key="card" class="mm-jobs-mobile-card mm-jobs-skeleton-card">
+            <span class="mm-jobs-skeleton mm-jobs-skeleton-mobile-title" />
+            <span class="mm-jobs-skeleton mm-jobs-skeleton-mobile-id" />
+            <span class="mm-jobs-skeleton mm-jobs-skeleton-mobile-progress" />
+            <div class="mm-jobs-skeleton-mobile-meta">
+              <span
+                v-for="item in 4"
+                :key="item"
+                class="mm-jobs-skeleton mm-jobs-skeleton-mobile-fact"
+              />
+            </div>
+            <span class="mm-jobs-skeleton mm-jobs-skeleton-mobile-button" />
+          </article>
+        </div>
+      </div>
     </div>
 
     <section v-else-if="errorMessage && result === null" class="mm-jobs-state" role="alert">

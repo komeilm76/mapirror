@@ -117,6 +117,23 @@ afterEach(() => {
 });
 
 describe('admin job queue and persistent progress drawer', () => {
+  it('shows layout-matched table and mobile skeletons while the initial list is pending', async () => {
+    const fetchImpl = vi.fn<typeof fetch>((input) => {
+      const url = requestUrl(input);
+      if (url.pathname === '/_auth/api/me') return Promise.resolve(jsonResponse(ME));
+      if (url.pathname === '/_admin/api/jobs') return new Promise<Response>(() => undefined);
+      return Promise.resolve(jsonResponse({ data: [] }));
+    });
+
+    const { container } = await mountJobs(fetchImpl);
+
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(container.querySelectorAll('.mm-jobs-skeleton-row')).toHaveLength(5);
+    expect(container.querySelectorAll('.mm-jobs-skeleton-card')).toHaveLength(3);
+    expect(container.textContent).toContain('Loading jobs…');
+    expect(container.querySelector('.mm-jobs-loading .v-progress-linear')).toBeNull();
+  });
+
   it('loads URL-backed filters and shows the job list', async () => {
     const calls = vi.fn<typeof fetch>();
     const { container } = await mountJobs(

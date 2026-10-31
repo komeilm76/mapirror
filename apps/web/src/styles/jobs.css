@@ -64,6 +64,85 @@
   background: rgb(var(--v-theme-surface));
 }
 
+.mm-jobs-skeleton {
+  display: block;
+  min-height: 0.85rem;
+  border-radius: var(--mm-radius-sm);
+  background: rgb(var(--v-theme-surface-variant));
+  animation: mm-jobs-skeleton-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.mm-jobs-skeleton-row td {
+  height: 4.25rem;
+}
+
+.mm-jobs-skeleton-job {
+  width: 7rem;
+}
+
+.mm-jobs-skeleton-status {
+  width: 6rem;
+  height: 1.5rem;
+}
+
+.mm-jobs-skeleton-progress {
+  width: 9rem;
+}
+
+.mm-jobs-skeleton-short {
+  width: 4rem;
+}
+
+.mm-jobs-skeleton-date {
+  width: 6rem;
+}
+
+.mm-jobs-skeleton-action {
+  width: 6rem;
+  height: var(--mm-touch-target);
+}
+
+.mm-jobs-skeleton-mobile-title {
+  width: 70%;
+  height: 1.25rem;
+}
+
+.mm-jobs-skeleton-mobile-id {
+  width: 55%;
+}
+
+.mm-jobs-skeleton-mobile-progress {
+  width: 100%;
+  margin-top: var(--mm-space-3);
+}
+
+.mm-jobs-skeleton-mobile-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--mm-space-3);
+  margin: var(--mm-space-3) 0;
+}
+
+.mm-jobs-skeleton-mobile-fact {
+  min-height: 2rem;
+}
+
+.mm-jobs-skeleton-mobile-button {
+  height: var(--mm-touch-target);
+}
+
+@keyframes mm-jobs-skeleton-pulse {
+  to {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-jobs-skeleton {
+    animation: none;
+  }
+}
+
 .mm-jobs-table {
   width: 100%;
   border-collapse: collapse;
@@ -243,6 +322,12 @@
 
 .mm-jobs-mobile-list {
   display: none;
+}
+
+.mm-jobs-skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mm-space-2);
 }
 
 @media (max-width: 760px) {

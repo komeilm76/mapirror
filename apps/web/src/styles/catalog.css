@@ -508,7 +508,8 @@
   grid-template-columns: 1fr;
 }
 
-.mm-sr-only {
+.mm-sr-only,
+.sr-only {
   position: absolute;
   width: 1px;
   height: 1px;

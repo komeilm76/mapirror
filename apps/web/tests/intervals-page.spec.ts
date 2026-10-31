@@ -173,7 +173,10 @@ describe('admin intervals screen', () => {
     });
 
     const { container } = await mountIntervals(fetchImpl);
-    expect(container.textContent).toContain('Loading schedules');
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(container.querySelectorAll('.mm-interval-skeleton-card')).toHaveLength(2);
+    expect(container.textContent).toContain('Loading schedules…');
+    expect(container.textContent).not.toContain('Reading the current interval list');
 
     rejectInitial(new TypeError('network unavailable'));
     await flushPromises();
