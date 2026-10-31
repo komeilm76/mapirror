@@ -185,6 +185,114 @@ describe('admin cache page', () => {
     expect(new Headers(request?.init?.headers).get('authorization')).toBe('Bearer mm_cache_test');
   });
 
+  it('checks a cached country, reloads its persisted badge, and confirms a pinned update download', async () => {
+    const countryId = cacheItem(1).countryId;
+    const jobId = '00000000-0000-4000-8000-000000000099';
+    const checkedAt = '2026-10-31T08:00:00.000Z';
+    const updatedRow: CacheListItem = {
+      ...cacheItem(1),
+      lastCheckedAt: checkedAt,
+      cache: {
+        ...cacheItem(1).cache,
+        updateState: 'update_available',
+        availableVersion: '261031',
+        availableSizeBytes: 2_097_152,
+      },
+    };
+    let serverRows = TWO_ROWS;
+    const calls: { url: URL; init: RequestInit | undefined }[] = [];
+    const fetchMock = vi.fn<typeof fetch>((input, init) =>
+      Promise.resolve().then(() => {
+        const rawUrl =
+          typeof input === 'string' || input instanceof URL ? input.toString() : input.url;
+        const url = new URL(rawUrl, 'http://mapirror.test');
+        calls.push({ url, init });
+        if (url.pathname === '/_auth/api/me') return jsonResponse(ME);
+        if (url.pathname === '/_admin/api/cache' && init?.method !== 'POST')
+          return jsonResponse(serverRows);
+        if (url.pathname === `/_admin/api/cache/${countryId}/check-update`) {
+          serverRows = { ...TWO_ROWS, data: [cacheItem(0), updatedRow] };
+          return jsonResponse({
+            state: 'update_available',
+            cached: {
+              version: '261030',
+              dataTimestamp: '2026-10-30T00:00:00.000Z',
+              sizeBytes: 1_234_567,
+            },
+            source: {
+              version: '261031',
+              dataTimestamp: checkedAt,
+              sizeBytes: 2_097_152,
+            },
+            checkedAt,
+            reason: null,
+          });
+        }
+        if (url.pathname === '/_admin/api/cache/downloads') {
+          return jsonResponse({ jobId, resolvedVersion: '261031' }, 202);
+        }
+        if (url.pathname === `/_admin/api/jobs/${jobId}`) {
+          return jsonResponse({
+            id: jobId,
+            type: 'download',
+            status: 'queued',
+            phase: null,
+            progressBytes: 0,
+            totalBytes: null,
+            speedBps: null,
+            etaSeconds: null,
+            payload: { countryId, version: '261031' },
+            updateCheckResult: null,
+            cancelRequested: false,
+            attempts: 0,
+            maxAttempts: 3,
+            createdAt: checkedAt,
+            startedAt: null,
+            finishedAt: null,
+            error: null,
+          });
+        }
+        if (url.pathname === '/_admin/api/jobs') {
+          return jsonResponse({ data: [], meta: { page: 1, limit: 1, total: 0, totalPages: 0 } });
+        }
+        return jsonResponse({});
+      }),
+    );
+
+    const { container, router } = await mountCache(fetchMock);
+    await vi.waitFor(() => expect(container.textContent).toContain('Sweden'));
+    container
+      .querySelector<HTMLButtonElement>(`button[aria-label="Check for update for Sweden"]`)
+      ?.click();
+    await vi.waitFor(() => expect(container.textContent).toContain('Update available · 261031'));
+    expect(
+      container
+        .querySelectorAll('.mm-cache-cards .mm-cache-card')[1]
+        ?.querySelector('.mm-cache-pill-update')?.textContent,
+    ).toContain('Update available · 261031');
+    expect(
+      calls.some((call) => call.url.pathname === `/_admin/api/cache/${countryId}/check-update`),
+    ).toBe(true);
+
+    await router.replace(adminPagePaths.jobs());
+    await router.replace(adminPagePaths.cache());
+    await vi.waitFor(() => expect(container.textContent).toContain('Update available · 261031'));
+    expect(container.textContent).toContain('31 Oct 2026');
+
+    container.querySelector<HTMLButtonElement>('button[aria-label="Update Sweden"]')?.click();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Version retention'));
+    expect(document.body.textContent).toContain('About 2.0 MiB');
+    expect(document.body.textContent).toContain('About 3.2 MiB');
+    expect(document.body.textContent).toContain('Existing ready versions are kept');
+    [...document.body.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.includes('Queue update'))
+      ?.click();
+    await vi.waitFor(() => expect(container.textContent).toContain(`Update queued. Job ${jobId}`));
+    const downloadCall = calls.find((call) => call.url.pathname === '/_admin/api/cache/downloads');
+    expect(downloadCall?.init?.method).toBe('POST');
+    expect(downloadCall?.init?.body).toBe(JSON.stringify({ countryId, version: '261031' }));
+  });
+
   it('keeps search, update filter, supported sorting and pagination bookmarkable', async () => {
     const requested: URL[] = [];
     const fetchMock = makeFetch((url) => {

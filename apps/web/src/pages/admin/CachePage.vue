@@ -3,27 +3,33 @@
  * The paginated admin cache table (`P2-WEB-03`, `13-ui-ux.md` §4 S7).
  *
  * Search, update filter, sort and pagination are kept in the route query. Every request goes through the shared API
- * client and its strict response is parsed against the shared cache contract. The public value is deliberately a status
- * badge here; the publication switch belongs to P3-WEB-06, while per-country actions belong to P2-WEB-04/05.
+ * client and its strict response is parsed against the shared cache contract. Update checks use the inline admin
+ * endpoint so badges are persisted independently of local page state; dated update downloads are confirmed and then
+ * tracked by the shell-level job drawer.
  *
  * @module pages/admin/CachePage
  */
 
 import {
+  CacheDownloadRequestSchema,
+  CacheDownloadResponseSchema,
   CacheListResponseSchema,
   CacheQuerySchema,
+  CacheCountryParamsSchema,
+  CacheUpdateCheckResponseSchema,
   SORT_FIELDS,
   type CacheListItem,
   type CacheListResponse,
   type CacheQuery,
 } from '@mapirror/shared';
 import { useDebounceFn } from '@vueuse/core';
-import { computed, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { ApiError } from '@/api/errors';
 import { useApi } from '@/composables/useApi';
 import { adminPagePaths } from '@/router/paths';
+import { useJobProgress } from '@/stores/jobProgress';
 
 const CACHE_API = '/_admin/api/cache';
 const PAGE_SIZE = 50;
@@ -39,6 +45,19 @@ const errorMessage = ref<string | null>(null);
 const errorRequestId = ref<string | null>(null);
 const retryNumber = ref(0);
 const searchInput = ref(queryText(route.query.q) ?? '');
+const jobProgress = useJobProgress();
+const checkingCountryIds = ref<Record<string, boolean>>({});
+const checkErrors = ref<Record<string, { message: string; requestId: string | null }>>({});
+const queuedUpdateJobs = ref<Record<string, string>>({});
+const updateTarget = ref<CacheListItem | null>(null);
+const queueingUpdate = ref(false);
+const updateErrorMessage = ref<string | null>(null);
+const updateErrorRequestId = ref<string | null>(null);
+let pageMounted = true;
+
+onUnmounted(() => {
+  pageMounted = false;
+});
 
 /** The query sent to the cached-only endpoint, normalized from untrusted URL values. */
 const cacheQuery = computed<CacheQuery>(() => {
@@ -203,6 +222,157 @@ function retry(): void {
   retryNumber.value += 1;
 }
 
+/** Checks one cached country inline and applies the persisted response to the visible row. */
+async function checkForUpdate(item: CacheListItem): Promise<void> {
+  if (checkingCountryIds.value[item.countryId] === true) return;
+  const params = CacheCountryParamsSchema.safeParse({ countryId: item.countryId });
+  if (!params.success) return;
+
+  checkingCountryIds.value = { ...checkingCountryIds.value, [item.countryId]: true };
+  const nextErrors = { ...checkErrors.value };
+  delete nextErrors[item.countryId];
+  checkErrors.value = nextErrors;
+  try {
+    const response = await api.post<unknown>(
+      `${CACHE_API}/${encodeURIComponent(params.data.countryId)}/check-update`,
+      {},
+    );
+    if (!pageMounted) return;
+    const parsed = CacheUpdateCheckResponseSchema.safeParse(response);
+    if (!parsed.success) {
+      setCheckError(
+        item.countryId,
+        'The update-check response could not be read. Try again.',
+        null,
+      );
+      return;
+    }
+    if (cacheQuery.value.update === 'available' && parsed.data.state !== 'update_available') {
+      retryNumber.value += 1;
+      return;
+    }
+    const current = result.value;
+    if (current === null || !current.data.some(({ countryId }) => countryId === item.countryId))
+      return;
+    result.value = {
+      ...current,
+      data: current.data.map((row) =>
+        row.countryId !== item.countryId
+          ? row
+          : {
+              ...row,
+              lastCheckedAt: parsed.data.checkedAt,
+              cache: {
+                ...row.cache,
+                updateState: parsed.data.state,
+                availableVersion:
+                  parsed.data.state === 'update_available'
+                    ? (parsed.data.source?.version ?? null)
+                    : null,
+                availableSizeBytes:
+                  parsed.data.state === 'update_available'
+                    ? (parsed.data.source?.sizeBytes ?? null)
+                    : null,
+              },
+            },
+      ),
+    };
+  } catch (cause) {
+    if (!pageMounted) return;
+    if (cause instanceof ApiError) {
+      setCheckError(item.countryId, cause.message, cause.requestId);
+    } else {
+      setCheckError(
+        item.countryId,
+        'The update check could not be completed. Check your connection and try again.',
+        null,
+      );
+    }
+  } finally {
+    if (pageMounted) {
+      const nextChecking = { ...checkingCountryIds.value };
+      delete nextChecking[item.countryId];
+      checkingCountryIds.value = nextChecking;
+    }
+  }
+}
+
+function setCheckError(countryId: string, message: string, requestId: string | null): void {
+  checkErrors.value = { ...checkErrors.value, [countryId]: { message, requestId } };
+}
+
+/** Opens a confirmation with the source-size increase and version-retention effect. */
+function openUpdateConfirmation(item: CacheListItem): void {
+  if (
+    item.cache.updateState !== 'update_available' ||
+    queuedUpdateJobs.value[item.countryId] !== undefined ||
+    updateTarget.value !== null
+  )
+    return;
+  updateTarget.value = item;
+  updateErrorMessage.value = null;
+  updateErrorRequestId.value = null;
+}
+
+function closeUpdateConfirmation(): void {
+  if (queueingUpdate.value) return;
+  updateTarget.value = null;
+  updateErrorMessage.value = null;
+  updateErrorRequestId.value = null;
+}
+
+const projectedCacheSize = computed<number | string | null>(() => {
+  const item = updateTarget.value;
+  const added = item?.cache.availableSizeBytes;
+  if (item === null || added === null || added === undefined) return null;
+  const total = BigInt(item.cache.totalSizeBytes) + BigInt(added);
+  return total <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(total) : total.toString();
+});
+
+/** Queues the identified source snapshot and tracks it in the persistent job drawer. */
+async function queueUpdate(): Promise<void> {
+  const item = updateTarget.value;
+  if (item === null || queueingUpdate.value) return;
+  const request = CacheDownloadRequestSchema.safeParse({
+    countryId: item.countryId,
+    version: item.cache.availableVersion ?? 'latest',
+  });
+  if (!request.success) {
+    updateErrorMessage.value =
+      'The available source version is not valid. Check for updates again.';
+    return;
+  }
+
+  queueingUpdate.value = true;
+  updateErrorMessage.value = null;
+  updateErrorRequestId.value = null;
+  try {
+    const response = await api.post<unknown>(`${CACHE_API}/downloads`, request.data);
+    if (!pageMounted) return;
+    const parsed = CacheDownloadResponseSchema.safeParse(response);
+    if (!parsed.success) {
+      updateErrorMessage.value =
+        'The server accepted the request, but its response could not be read. Check the jobs page before retrying.';
+      return;
+    }
+    if (!pageMounted) return;
+    queuedUpdateJobs.value = { ...queuedUpdateJobs.value, [item.countryId]: parsed.data.jobId };
+    jobProgress.track(parsed.data.jobId);
+    updateTarget.value = null;
+  } catch (cause) {
+    if (!pageMounted) return;
+    if (cause instanceof ApiError) {
+      updateErrorMessage.value = cause.message;
+      updateErrorRequestId.value = cause.requestId;
+    } else {
+      updateErrorMessage.value =
+        'The update could not be queued. Check your connection and try again.';
+    }
+  } finally {
+    if (pageMounted) queueingUpdate.value = false;
+  }
+}
+
 /** Formats exact byte counts without rounding a decimal string through Number. */
 function formatBytes(value: number | string): string {
   const bytes = BigInt(value);
@@ -240,7 +410,7 @@ function updateLabel(item: CacheListItem): string {
       : `Update available · ${item.cache.availableVersion}`;
   }
   if (item.cache.updateState === 'up_to_date') return 'Up to date';
-  return 'Not checked';
+  return item.lastCheckedAt === null ? 'Not checked' : 'Unknown';
 }
 
 /** Query values accept a single non-blank URL value only; duplicated keys are intentionally absent. */
@@ -445,6 +615,7 @@ function isoLabel(item: CacheListItem): string {
                   }}</span>
                 </button>
               </th>
+              <th scope="col">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -489,6 +660,42 @@ function isoLabel(item: CacheListItem): string {
                   >Source download {{ formatUtcDate(item.mostRecentDownloadAt) }}</span
                 >
               </td>
+              <td class="mm-cache-actions-cell">
+                <div class="mm-cache-row-actions">
+                  <button
+                    class="mm-cache-button"
+                    type="button"
+                    :disabled="loading || checkingCountryIds[item.countryId] === true"
+                    :aria-label="`Check for update for ${item.name}`"
+                    @click="checkForUpdate(item)"
+                  >
+                    {{ checkingCountryIds[item.countryId] ? 'Checking…' : 'Check for update' }}
+                  </button>
+                  <button
+                    v-if="item.cache.updateState === 'update_available'"
+                    class="mm-cache-button mm-cache-button-primary"
+                    type="button"
+                    :disabled="queuedUpdateJobs[item.countryId] !== undefined"
+                    :aria-label="`Update ${item.name}`"
+                    @click="openUpdateConfirmation(item)"
+                  >
+                    {{ queuedUpdateJobs[item.countryId] ? 'Update queued' : 'Update' }}
+                  </button>
+                </div>
+                <p v-if="checkErrors[item.countryId]" class="mm-cache-row-error" role="alert">
+                  {{ checkErrors[item.countryId]?.message }}
+                  <span v-if="checkErrors[item.countryId]?.requestId" class="mm-mono-small">
+                    Request id: {{ checkErrors[item.countryId]?.requestId }}
+                  </span>
+                </p>
+                <p
+                  v-if="queuedUpdateJobs[item.countryId]"
+                  class="mm-cache-row-status"
+                  role="status"
+                >
+                  Update queued. Job {{ queuedUpdateJobs[item.countryId] }}
+                </p>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -520,7 +727,20 @@ function isoLabel(item: CacheListItem): string {
             </div>
             <div>
               <dt>Update</dt>
-              <dd>{{ updateLabel(item) }}</dd>
+              <dd>
+                <span
+                  :class="
+                    item.cache.updateState === 'update_available'
+                      ? 'mm-cache-pill mm-cache-pill-update'
+                      : 'mm-cache-update-text'
+                  "
+                >
+                  {{ updateLabel(item) }}
+                </span>
+                <span class="mm-cache-secondary"
+                  >Checked {{ formatUtcDate(item.lastCheckedAt) }}</span
+                >
+              </dd>
             </div>
             <div>
               <dt>Catalog synced</dt>
@@ -531,6 +751,36 @@ function isoLabel(item: CacheListItem): string {
               <dd>{{ formatUtcDate(item.mostRecentDownloadAt) }}</dd>
             </div>
           </dl>
+          <div class="mm-cache-row-actions">
+            <button
+              class="mm-cache-button"
+              type="button"
+              :disabled="loading || checkingCountryIds[item.countryId] === true"
+              :aria-label="`Check for update for ${item.name}`"
+              @click="checkForUpdate(item)"
+            >
+              {{ checkingCountryIds[item.countryId] ? 'Checking…' : 'Check for update' }}
+            </button>
+            <button
+              v-if="item.cache.updateState === 'update_available'"
+              class="mm-cache-button mm-cache-button-primary"
+              type="button"
+              :disabled="queuedUpdateJobs[item.countryId] !== undefined"
+              :aria-label="`Update ${item.name}`"
+              @click="openUpdateConfirmation(item)"
+            >
+              {{ queuedUpdateJobs[item.countryId] ? 'Update queued' : 'Update' }}
+            </button>
+          </div>
+          <p v-if="checkErrors[item.countryId]" class="mm-cache-row-error" role="alert">
+            {{ checkErrors[item.countryId]?.message }}
+            <span v-if="checkErrors[item.countryId]?.requestId" class="mm-mono-small">
+              Request id: {{ checkErrors[item.countryId]?.requestId }}
+            </span>
+          </p>
+          <p v-if="queuedUpdateJobs[item.countryId]" class="mm-cache-row-status" role="status">
+            Update queued. Job {{ queuedUpdateJobs[item.countryId] }}
+          </p>
         </article>
       </div>
 
@@ -558,5 +808,60 @@ function isoLabel(item: CacheListItem): string {
         </button>
       </nav>
     </template>
+
+    <v-dialog
+      :model-value="updateTarget !== null"
+      max-width="36rem"
+      aria-labelledby="mm-cache-update-title"
+      @update:model-value="(open) => !open && closeUpdateConfirmation()"
+    >
+      <v-card v-if="updateTarget !== null">
+        <v-card-title id="mm-cache-update-title">Update {{ updateTarget.name }}?</v-card-title>
+        <v-card-text>
+          <p>
+            Queue the Geofabrik snapshot
+            <strong>{{ updateTarget.cache.availableVersion ?? 'currently available' }}</strong
+            >.
+          </p>
+          <dl class="mm-cache-update-impact">
+            <div>
+              <dt>Additional cache space</dt>
+              <dd>
+                {{
+                  updateTarget.cache.availableSizeBytes === null
+                    ? 'Unknown; disk space is checked before queueing.'
+                    : `About ${formatBytes(updateTarget.cache.availableSizeBytes)}`
+                }}
+              </dd>
+            </div>
+            <div v-if="projectedCacheSize !== null">
+              <dt>Estimated cache total</dt>
+              <dd>About {{ formatBytes(projectedCacheSize) }}</dd>
+            </div>
+            <div>
+              <dt>Version retention</dt>
+              <dd>Existing ready versions are kept; this action does not remove older files.</dd>
+            </div>
+          </dl>
+          <div v-if="updateErrorMessage !== null" class="mm-cache-inline-error" role="alert">
+            <div>
+              <p class="mm-cache-state-copy">{{ updateErrorMessage }}</p>
+              <p v-if="updateErrorRequestId" class="mm-mono-small mm-cache-request-id">
+                Request id: {{ updateErrorRequestId }}
+              </p>
+            </div>
+          </div>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" :disabled="queueingUpdate" @click="closeUpdateConfirmation">
+            Cancel
+          </v-btn>
+          <v-btn color="primary" variant="tonal" :loading="queueingUpdate" @click="queueUpdate">
+            Queue update
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </section>
 </template>

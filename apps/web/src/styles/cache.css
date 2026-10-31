@@ -244,6 +244,54 @@
   font-weight: var(--mm-weight-medium);
 }
 
+.mm-cache-actions-cell {
+  min-width: 12rem;
+}
+
+.mm-cache-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mm-space-2);
+}
+
+.mm-cache-row-actions .mm-cache-button {
+  padding-inline: var(--mm-space-3);
+  font-size: var(--mm-text-caption);
+}
+
+.mm-cache-row-error,
+.mm-cache-row-status {
+  margin: var(--mm-space-2) 0 0;
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: var(--mm-text-caption);
+  overflow-wrap: anywhere;
+}
+
+.mm-cache-row-error {
+  color: rgb(var(--v-theme-error));
+}
+
+.mm-cache-update-impact {
+  display: grid;
+  gap: var(--mm-space-3);
+  margin: var(--mm-space-4) 0 0;
+}
+
+.mm-cache-update-impact > div {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.8fr) minmax(0, 1.2fr);
+  gap: var(--mm-space-3);
+}
+
+.mm-cache-update-impact dt {
+  color: rgb(var(--v-theme-text-secondary));
+}
+
+.mm-cache-update-impact dd {
+  margin: 0;
+  color: rgb(var(--v-theme-text-primary));
+}
+
 .mm-cache-cards {
   display: none;
   flex-direction: column;
