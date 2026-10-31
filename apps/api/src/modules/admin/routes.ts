@@ -13,6 +13,7 @@ import type { FastifyPluginAsync } from 'fastify';
 
 import type { AppConfig } from '../../config/env';
 import { createGeofabrikMapSource } from '../geofabrik/map-source';
+import { createUpdateChecker, UPDATE_CHECK_SOURCE_TIMEOUT_MS } from '../updates/update-check';
 import {
   createCacheDownloadHandler,
   createCacheSpecificVersionHandler,
@@ -27,6 +28,7 @@ import { getCacheVersions } from './cache-versions-route';
 import { createCatalogRegionHandlers } from './catalog-region-route';
 import { getCatalog } from './catalog-route';
 import { postCatalogSync } from './catalog-sync-route';
+import { postCacheUpdateCheck, postCacheUpdateChecks } from './cache-update-check-route';
 import { createImportHandler } from './import-route';
 import { getImportStatus } from './import-status-route';
 import { deleteInterval, getIntervals, patchInterval, postInterval } from './intervals-route';
@@ -52,6 +54,13 @@ export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, op
   const importHandler = createImportHandler({ config: options.config });
   const cancelJob = createCancelJobHandler(options.config);
   const source = createGeofabrikMapSource(options.config.geofabrikBaseUrl);
+  const updateChecker = createUpdateChecker({
+    database: app.db.db,
+    source: createGeofabrikMapSource(options.config.geofabrikBaseUrl, {
+      pageTimeoutMs: UPDATE_CHECK_SOURCE_TIMEOUT_MS,
+    }),
+    log: app.log,
+  });
   const regionHandlers = createCatalogRegionHandlers(source);
   const cacheDownload = createCacheDownloadHandler({ config: options.config, source });
   const cacheSpecificVersion = createCacheSpecificVersionHandler({
@@ -67,6 +76,10 @@ export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, op
   app.get('/catalog/regions/:slug/snapshots', regionHandlers.getSnapshots);
   app.get('/cache', getCacheList);
   app.get('/cache/:countryId', getCacheDetail);
+  app.post('/cache/:countryId/check-update', (request) =>
+    postCacheUpdateCheck(request, updateChecker),
+  );
+  app.post('/cache/check-updates', postCacheUpdateChecks);
   app.post('/cache/:countryId/public', postCachePublic);
   app.get('/cache/:countryId/versions', getCacheVersions);
   app.post('/cache/:countryId/versions', cacheSpecificVersion);

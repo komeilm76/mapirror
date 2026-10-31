@@ -26,6 +26,11 @@ import { createCatalogSyncHandler } from './modules/jobs/catalog-sync-handler';
 import { createDownloadHandler } from './modules/jobs/download-handler';
 import { createImportHandler } from './modules/jobs/import-handler';
 import { createPruneHandler } from './modules/jobs/prune-handler';
+import { createUpdateCheckHandler } from './modules/jobs/update-check-handler';
+import {
+  createUpdateChecker,
+  UPDATE_CHECK_SOURCE_TIMEOUT_MS,
+} from './modules/updates/update-check';
 import { startIntervalScheduler } from './modules/intervals/scheduler';
 import { createUploadStorage } from './modules/storage/upload-storage';
 import { startJobReaper } from './modules/jobs/reaper';
@@ -144,8 +149,16 @@ export async function start(
   if (config.workerEnabled) {
     // One concrete provider composition serves catalog synchronization and source-backed PBF downloads.
     const source = createGeofabrikMapSource(config.geofabrikBaseUrl);
+    const updateChecker = createUpdateChecker({
+      database: app.db.db,
+      source: createGeofabrikMapSource(config.geofabrikBaseUrl, {
+        pageTimeoutMs: UPDATE_CHECK_SOURCE_TIMEOUT_MS,
+      }),
+      log: app.log,
+    });
     const handlers: JobHandlers = {
       catalog_sync: createCatalogSyncHandler({ source }),
+      update_check: createUpdateCheckHandler({ checker: updateChecker }),
       download: createDownloadHandler({ source, cacheDirectory: config.cacheDir }),
       import: createImportHandler({ config }),
       prune: createPruneHandler({ cacheDirectory: config.cacheDir }),

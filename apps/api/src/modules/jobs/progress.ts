@@ -1,7 +1,8 @@
 /**
  * Monotonic, throttled job progress reporting and safe ETA estimates (`P2-JOB-03`).
  *
- * `eta_seconds` is derived from the durable byte counters and recent speed; it is intentionally not stored as a second
+ * The legacy `*_bytes` counters contain bytes for transfer jobs and country counts for `update_check` jobs; rates and
+ * ETA use the same unit. `eta_seconds` is derived from the durable counters and recent speed; it is not stored as a second
  * clock-sensitive value in the jobs table.
  *
  * @module modules/jobs/progress
@@ -26,9 +27,9 @@ export type JobProgressPhase = (typeof JOB_PHASES)[number];
 
 /** A progress snapshot. Byte counts use `bigint` to match PostgreSQL's int8 range without rounding. */
 export interface JobProgressUpdate {
-  /** Bytes received/processed so far. Regressions are ignored. */
+  /** Work units received/processed so far (bytes, except country counts for update checks). Regressions are ignored. */
   readonly progressBytes: bigint;
-  /** Known job size; `null` explicitly means unknown, while `undefined` keeps the previous value. */
+  /** Known total work units; `null` explicitly means unknown, while `undefined` keeps the previous value. */
   readonly totalBytes?: bigint | null;
   /** Current user-facing phase; `null` clears the phase. */
   readonly phase?: JobProgressPhase | null;

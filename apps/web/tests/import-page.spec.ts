@@ -46,6 +46,7 @@ const JOB: JobView = {
   speedBps: null,
   etaSeconds: null,
   payload: { countryId: COUNTRY_ID, version: '261030', uploadId: UPLOAD_ID, replace: false },
+  updateCheckResult: null,
   cancelRequested: false,
   attempts: 0,
   maxAttempts: 3,

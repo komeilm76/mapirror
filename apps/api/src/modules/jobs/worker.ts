@@ -27,7 +27,7 @@ export interface JobHandlerContext {
   readonly database: Kysely<Database>;
   /** Aborted when cancellation is requested or worker ownership is lost. */
   readonly signal: AbortSignal;
-  /** Reports monotonic byte progress, phase and total-size metadata (writes are throttled). */
+  /** Reports monotonic work progress (bytes for transfers, country counts for `update_check`); writes are throttled. */
   readonly reportProgress: (update: JobProgressUpdate) => Promise<void>;
   /** Worker logger for handler-owned best-effort cleanup. */
   readonly log?: WorkerLog;

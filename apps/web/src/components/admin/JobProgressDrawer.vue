@@ -22,14 +22,15 @@ import { errorCopyFor } from '@/api/error-copy';
 import { ApiError } from '@/api/errors';
 import { useApi } from '@/composables/useApi';
 import {
-  formatBytes,
   formatEta,
   formatJobDate,
-  formatSpeed,
   isJobActive,
-  jobPhaseLabel,
+  jobActivityLabel,
+  jobProgressLabel,
+  jobRateLabel,
   jobTypeLabel,
   progressPercent,
+  updateCheckResultLabel,
 } from '@/jobs/presentation';
 import { adminPagePaths } from '@/router/paths';
 import { useJobProgress } from '@/stores/jobProgress';
@@ -281,7 +282,7 @@ onUnmounted(() => {
           <div class="mm-job-card-heading">
             <div>
               <p class="mm-caption ma-0">{{ jobTypeLabel(job.type) }} · {{ job.status }}</p>
-              <h3 class="mm-heading mt-1 mb-0">{{ jobPhaseLabel(job.phase) }}</h3>
+              <h3 class="mm-heading mt-1 mb-0">{{ jobActivityLabel(job) }}</h3>
             </div>
             <v-btn
               v-if="!isJobActive(job.status)"
@@ -305,8 +306,7 @@ onUnmounted(() => {
               rounded
             />
             <p class="mm-job-progress-label mm-caption mb-0">
-              {{ formatBytes(job.progressBytes) }} of {{ formatBytes(job.totalBytes) }}
-              <span v-if="progressPercent(job) !== null"> · {{ progressPercent(job) }}%</span>
+              {{ jobProgressLabel(job) }}
             </p>
           </template>
           <template v-else>
@@ -319,14 +319,21 @@ onUnmounted(() => {
               rounded
             />
             <p class="mm-job-progress-label mm-caption mb-0">
-              {{ formatBytes(job.progressBytes) }} transferred
+              {{ jobProgressLabel(job) }}
             </p>
           </template>
+
+          <p
+            v-if="updateCheckResultLabel(job.updateCheckResult) !== null"
+            class="mm-job-progress-label mm-caption mb-0"
+          >
+            {{ updateCheckResultLabel(job.updateCheckResult) }}
+          </p>
 
           <dl class="mm-job-metrics">
             <div>
               <dt>Speed</dt>
-              <dd>{{ formatSpeed(job.speedBps) }}</dd>
+              <dd>{{ jobRateLabel(job) }}</dd>
             </div>
             <div>
               <dt>ETA</dt>

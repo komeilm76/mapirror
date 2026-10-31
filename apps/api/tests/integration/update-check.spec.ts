@@ -86,6 +86,12 @@ describe.skipIf(skipReason !== null)('persisted update checks', () => {
         availableVersion: '261024',
         availableSizeBytes: 1200,
         availableAt: sourceDetail.dataTimestamp,
+        cached: {
+          version: '261023',
+          dataTimestamp: new Date('2026-10-23T20:20:51.000Z'),
+          sizeBytes: '1000',
+        },
+        source: { version: '261024', dataTimestamp: sourceDetail.dataTimestamp, sizeBytes: 1200 },
         checkedAt: CHECKED_AT,
       });
       expect(

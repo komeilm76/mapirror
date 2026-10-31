@@ -18,6 +18,7 @@ import {
   JOB_PHASES,
   PruneJobPayloadSchema,
   UpdateCheckJobPayloadSchema,
+  UpdateCheckJobResultSchema,
   parsePagination,
   type JobListQuery,
   type JobPayload,
@@ -56,6 +57,7 @@ const JOB_VIEW_COLUMNS = [
   'started_at',
   'finished_at',
   'error_code',
+  'result',
 ] as const;
 
 type JobViewRow = Pick<Job, (typeof JOB_VIEW_COLUMNS)[number]>;
@@ -208,6 +210,7 @@ function toJobView(row: JobViewRow): JobView {
         ? estimateJobEtaSeconds(row.progress_bytes, row.total_bytes, row.speed_bps)
         : null,
     payload: safeJobPayload(row.type, row.payload),
+    updateCheckResult: safeUpdateCheckResult(row.type, row.result),
     cancelRequested: row.cancel_requested,
     attempts: row.attempts,
     maxAttempts: row.max_attempts,
@@ -242,6 +245,12 @@ function safeJobPayload(type: JobType, payload: JsonValue): JobPayload | null {
     case 'prune':
       return projectPayload(PruneJobPayloadSchema, payload, ['countryId', 'keep']);
   }
+}
+
+function safeUpdateCheckResult(type: JobType, result: JsonValue | null) {
+  if (type !== 'update_check' || result === null) return null;
+  const parsed = UpdateCheckJobResultSchema.safeParse(result);
+  return parsed.success ? parsed.data : null;
 }
 
 function projectPayload<T extends JobPayload>(

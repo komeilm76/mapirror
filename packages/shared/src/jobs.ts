@@ -45,8 +45,32 @@ export const ImportJobPayloadSchema = z
   .strict();
 
 export const UpdateCheckJobPayloadSchema = z
-  .object({ countryIds: z.array(z.uuid()).max(10_000).optional() })
+  .object({
+    countryIds: z
+      .array(z.uuid())
+      .max(10_000)
+      .refine((ids) => new Set(ids).size === ids.length, 'Country ids must be unique')
+      .optional(),
+  })
   .strict();
+
+/** Safe aggregate persisted as the result of a bulk update-check job. */
+export const UpdateCheckJobResultSchema = z
+  .object({
+    total: z.int().nonnegative(),
+    checked: z.int().nonnegative(),
+    updateAvailable: z.int().nonnegative(),
+    upToDate: z.int().nonnegative(),
+    unknown: z.int().nonnegative(),
+    skipped: z.int().nonnegative(),
+  })
+  .strict()
+  .refine(
+    (result) =>
+      result.checked === result.updateAvailable + result.upToDate + result.unknown &&
+      result.total === result.checked + result.skipped,
+    'Update-check aggregate counts must add up',
+  );
 
 export const PruneJobPayloadSchema = z
   .object({ countryId: z.uuid().optional(), keep: z.int().min(1).max(10_000).optional() })
@@ -85,6 +109,7 @@ export const JobViewSchema = z
       .max(30 * 24 * 60 * 60)
       .nullable(),
     payload: JobPayloadSchema.nullable(),
+    updateCheckResult: UpdateCheckJobResultSchema.nullable(),
     cancelRequested: z.boolean(),
     attempts: z.int().nonnegative(),
     maxAttempts: z.int().min(1),
@@ -128,6 +153,7 @@ export const JobCancelResponseSchema = z
 
 export type JobListQuery = z.infer<typeof JobListQuerySchema>;
 export type JobPayload = z.infer<typeof JobPayloadSchema>;
+export type UpdateCheckJobResult = z.infer<typeof UpdateCheckJobResultSchema>;
 export type JobView = z.infer<typeof JobViewSchema>;
 export type JobListResponse = z.infer<typeof JobListResponseSchema>;
 export type JobDetailResponse = z.infer<typeof JobDetailResponseSchema>;

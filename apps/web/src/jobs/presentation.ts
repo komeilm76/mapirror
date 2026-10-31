@@ -31,6 +31,16 @@ export function jobPhaseLabel(phase: JobView['phase']): string {
   return phase === null ? 'Waiting for worker' : PHASE_LABELS[phase];
 }
 
+/** Label update-check work and terminal states without calling country counts bytes. */
+export function jobActivityLabel(job: Pick<JobView, 'type' | 'status' | 'phase'>): string {
+  if (job.type !== 'update_check') return jobPhaseLabel(job.phase);
+  if (job.status === 'queued') return 'Waiting for worker';
+  if (job.status === 'running') return 'Checking updates';
+  if (job.status === 'succeeded') return 'Update check complete';
+  if (job.status === 'failed') return 'Update check failed';
+  return 'Update check canceled';
+}
+
 /** Whether the job is still eligible for cancellation. */
 export function isJobActive(status: JobView['status']): boolean {
   return status === 'queued' || status === 'running';
@@ -87,6 +97,37 @@ export function progressPercent(job: Pick<JobView, 'progressBytes' | 'totalBytes
   const total = BigInt(job.totalBytes);
   const scaled = Number((current * 10_000n) / total) / 100;
   return Math.min(100, Math.max(0, scaled));
+}
+
+/** Human progress text, using country counts for update-check jobs and bytes for transfers. */
+export function jobProgressLabel(
+  job: Pick<JobView, 'type' | 'progressBytes' | 'totalBytes'>,
+): string {
+  if (job.type === 'update_check') {
+    const checked = BigInt(job.progressBytes).toLocaleString();
+    if (job.totalBytes === null) return `${checked} countries checked`;
+    const total = BigInt(job.totalBytes).toLocaleString();
+    const percent = progressPercent(job);
+    return `${checked} of ${total} countries checked${percent === null ? '' : ` · ${percent}%`}`;
+  }
+  if (job.totalBytes === null) return `${formatBytes(job.progressBytes)} transferred`;
+  const percent = progressPercent(job);
+  return `${formatBytes(job.progressBytes)} / ${formatBytes(job.totalBytes)}${percent === null ? '' : ` · ${percent}%`}`;
+}
+
+/** Rate text for count-based update checks; transfer jobs retain byte units. */
+export function jobRateLabel(job: Pick<JobView, 'type' | 'speedBps'>): string {
+  if (job.speedBps === null) return '—';
+  if (job.type !== 'update_check') return formatSpeed(job.speedBps);
+  const count = BigInt(job.speedBps);
+  return `${count.toLocaleString()} ${count === 1n ? 'country' : 'countries'}/s`;
+}
+
+/** Compact safe aggregate of a completed bulk check. */
+export function updateCheckResultLabel(result: JobView['updateCheckResult']): string | null {
+  if (result === null) return null;
+  const updates = `${result.updateAvailable} update${result.updateAvailable === 1 ? '' : 's'}`;
+  return `${result.checked} checked · ${updates} · ${result.upToDate} current · ${result.unknown} unknown · ${result.skipped} skipped`;
 }
 
 /** Friendly date in the administrator's current locale. */

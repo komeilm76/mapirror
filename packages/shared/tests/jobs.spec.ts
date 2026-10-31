@@ -23,6 +23,7 @@ const view = {
   speedBps: 512,
   etaSeconds: 2,
   payload: { countryId, version: '261023' },
+  updateCheckResult: null,
   cancelRequested: false,
   attempts: 1,
   maxAttempts: 3,

@@ -20,12 +20,12 @@ import { useRoute, useRouter } from 'vue-router';
 import { ApiError } from '@/api/errors';
 import { useApi } from '@/composables/useApi';
 import {
-  formatBytes,
   formatEta,
   formatJobDate,
-  formatSpeed,
   isJobActive,
-  jobPhaseLabel,
+  jobActivityLabel,
+  jobProgressLabel,
+  jobRateLabel,
   jobTypeLabel,
   progressPercent,
 } from '@/jobs/presentation';
@@ -151,12 +151,6 @@ async function setPage(nextPage: number): Promise<void> {
   await router.replace({ name: 'admin-jobs', query: { ...route.query, page: String(bounded) } });
 }
 
-function progressLabel(job: JobListResponse['data'][number]): string {
-  if (job.totalBytes === null) return `${formatBytes(job.progressBytes)} transferred`;
-  const percent = progressPercent(job);
-  return `${formatBytes(job.progressBytes)} / ${formatBytes(job.totalBytes)}${percent === null ? '' : ` · ${percent}%`}`;
-}
-
 function retry(): void {
   retryNumber.value += 1;
 }
@@ -267,7 +261,7 @@ onUnmounted(() => {
                 </td>
                 <td>
                   <span class="mm-job-status" :data-status="job.status">{{ job.status }}</span
-                  ><span class="mm-job-phase">{{ jobPhaseLabel(job.phase) }}</span>
+                  ><span class="mm-job-phase">{{ jobActivityLabel(job) }}</span>
                 </td>
                 <td class="mm-jobs-progress">
                   <template v-if="job.totalBytes !== null">
@@ -278,12 +272,7 @@ onUnmounted(() => {
                       height="6"
                       rounded
                     />
-                    <span
-                      >{{ formatBytes(job.progressBytes) }} / {{ formatBytes(job.totalBytes)
-                      }}<template v-if="progressPercent(job) !== null">
-                        · {{ progressPercent(job) }}%</template
-                      ></span
-                    >
+                    <span>{{ jobProgressLabel(job) }}</span>
                   </template>
                   <template v-else>
                     <v-progress-linear
@@ -294,10 +283,10 @@ onUnmounted(() => {
                       height="6"
                       rounded
                     />
-                    <span>{{ formatBytes(job.progressBytes) }} transferred</span>
+                    <span>{{ jobProgressLabel(job) }}</span>
                   </template>
                 </td>
-                <td>{{ formatSpeed(job.speedBps) }}</td>
+                <td>{{ jobRateLabel(job) }}</td>
                 <td>{{ isJobActive(job.status) ? formatEta(job.etaSeconds) : '—' }}</td>
                 <td>{{ formatJobDate(job.createdAt) }}</td>
                 <td>
@@ -315,7 +304,7 @@ onUnmounted(() => {
             <div class="mm-job-card-heading">
               <div>
                 <strong>{{ jobTypeLabel(job.type) }}</strong>
-                <span class="mm-job-phase">{{ jobPhaseLabel(job.phase) }}</span>
+                <span class="mm-job-phase">{{ jobActivityLabel(job) }}</span>
               </div>
               <span class="mm-job-status" :data-status="job.status">{{ job.status }}</span>
             </div>
@@ -337,12 +326,12 @@ onUnmounted(() => {
                 height="6"
                 rounded
               />
-              <span class="mm-caption">{{ progressLabel(job) }}</span>
+              <span class="mm-caption">{{ jobProgressLabel(job) }}</span>
             </div>
             <dl class="mm-jobs-mobile-meta">
               <div>
                 <dt>Speed</dt>
-                <dd>{{ formatSpeed(job.speedBps) }}</dd>
+                <dd>{{ jobRateLabel(job) }}</dd>
               </div>
               <div>
                 <dt>ETA</dt>

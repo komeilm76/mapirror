@@ -25,6 +25,7 @@ const JOB: JobView = {
   speedBps: 512,
   etaSeconds: 30,
   payload: { countryId: COUNTRY_ID, version: '261023', origin: 'geofabrik_snapshot' },
+  updateCheckResult: null,
   cancelRequested: false,
   attempts: 1,
   maxAttempts: 3,

@@ -392,22 +392,32 @@ or version data. The route remains covered by the global admin Bearer guard.
 
 #### `POST /_admin/api/cache/:countryId/check-update`
 
-Runs **inline** with a 5 s budget and always answers `200` — a slow or unreachable source returns
-`state: "unknown"` rather than a job handle (ADR-020). Bulk checks (§ below) are the asynchronous path.
+Runs **inline** with a 5 s upstream page-read budget and always answers `200` for a cached country — a slow,
+unreachable, or incomparable source returns `state: "unknown"`, never `up_to_date` and never a job handle (ADR-020).
+The empty body may be omitted. A successful comparison is returned and persisted:
 
 ```json
 200 {
   "state": "update_available",
-  "cached": { "newestVersion": "261023", "dataTimestamp": "2026-10-22T20:19:04.000Z" },
-  "source":  { "version": "261024", "dataTimestamp": "2026-10-23T20:20:51.000Z", "sizeBytes": 774000000 },
-  "checkedAt": "2026-10-24T09:15:00.000Z"
+  "cached": { "version": "261023", "dataTimestamp": "2026-10-22T20:19:04.000Z", "sizeBytes": 773465008 },
+  "source": { "version": "261024", "dataTimestamp": "2026-10-23T20:20:51.000Z", "sizeBytes": 774000000 },
+  "checkedAt": "2026-10-24T09:15:00.000Z",
+  "reason": null
 }
 ```
-`state: "unknown"` + `reason` when the source is unreachable (L11).
+`cached` is the newest ready Geofabrik version; either identity or its facts may be null when unavailable. On source
+failure, `source` is `null` and the response includes a safe `reason` with `state: "unknown"`. A cached-country miss is
+`404 NOT_FOUND`; malformed params/body or extra body keys are `400 VALIDATION_ERROR`.
 
 #### `POST /_admin/api/cache/check-updates`
 
-Body: `{ "countryIds": ["…"] }` (omit ⇒ all cached). `202 { "jobId": "…" }`, progress in the job.
+Body: `{ "countryIds": ["…"] }` (omit ⇒ all countries cached when the worker starts). Explicit ids must be unique,
+nonempty, at most 10,000, and all currently cached at admission; otherwise the request is `400 VALIDATION_ERROR` or
+`404 NOT_FOUND`. The durable job checks countries sequentially, persists each outcome, and reports count-based progress.
+It completes with safe aggregate counts (`total`, `checked`, `updateAvailable`, `upToDate`, `unknown`, `skipped`) in
+`GET /_admin/api/jobs/:jobId` as `updateCheckResult`; deleted cache rows are counted as skipped. Source failures count
+as `unknown` and do not fail the bulk job. The generic job progress fields are country counts for `type: "update_check"`
+(they remain byte counts for transfer jobs). Response: `202 { "jobId": "…" }`.
 
 #### `GET /_admin/api/cache/:countryId/versions`
 
@@ -531,13 +541,16 @@ Bearer-authenticated. Returns the durable upload-session state and a safe projec
 
 The list returns `{data, meta}` with page 1/limit 25 by default and a maximum limit of 100; values clamp using the
 shared pagination law. Unknown query keys and invalid `status`/`type` values are `400 VALIDATION_ERROR`. Results sort by
-`createdAt DESC, id DESC`; rows and total come from one repeatable-read snapshot. Progress bytes are monotonic and
-writes are throttled to one database write per second. When known, `phase` is `fetching_index`, `downloading`,
-`verifying`, or `installing`. Progress byte fields preserve large PostgreSQL integers as decimal strings instead of rounding.
-`etaSeconds` is derived from progress and speed, only shown
-for a running job that is not canceling, and is `null` when unknown, stale on queued work, or beyond 30 days. `payload`
-is a type-specific allow-list (unknown fields are omitted), `error` contains only the safe `JOB_HANDLER_FAILED` or
-`WORKER_LOST` message, and worker ownership or raw exception text is never returned. A missing detail id returns `404` with `NOT_FOUND`.
+`createdAt DESC, id DESC`; rows and total come from one repeatable-read snapshot. Progress is monotonic and writes are
+throttled to one database write per second. For transfer jobs, `progressBytes`, `totalBytes`, and `speedBps` are bytes;
+for `type: "update_check"` these legacy-named fields represent countries checked, total countries, and countries per
+second, respectively. When known, `phase` is `fetching_index`, `downloading`, `verifying`, or `installing`;
+update-check clients use the job type/status label. Progress fields preserve large PostgreSQL integers as decimal
+strings instead of rounding. `etaSeconds` is derived from progress and speed, only shown for a running job that is not
+canceling, and is `null` when unknown, stale on queued work, or beyond 30 days. `payload` is a type-specific allow-list
+(unknown fields are omitted), and `updateCheckResult` is either `null` or a schema-validated safe aggregate for bulk
+update checks. `error` contains only the safe `JOB_HANDLER_FAILED` or `WORKER_LOST` message, and worker ownership or
+raw exception text is never returned. A missing detail id returns `404` with `NOT_FOUND`.
 
 Cancellation accepts an empty JSON body (or no body). `202 {jobId,status,accepted:true,cancelRequested:true}` means
 the request was accepted, not that running cleanup has finished. For queued work the row becomes `canceled` immediately;
@@ -552,7 +565,7 @@ without changing it. An unknown job returns `404 NOT_FOUND`.
   "id": "…", "type": "download", "status": "running",
   "phase": "downloading", "progressBytes": 402653184, "totalBytes": 774000000,
   "speedBps": 10485760, "etaSeconds": 35,
-  "payload": { "countryId": "…", "version": "261024" },
+  "payload": { "countryId": "…", "version": "261024" }, "updateCheckResult": null,
   "cancelRequested": false, "attempts": 1, "maxAttempts": 3,
   "createdAt": "…", "startedAt": "…", "finishedAt": null, "error": null
 }

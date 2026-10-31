@@ -350,6 +350,7 @@ describe('admin catalog page', () => {
           speedBps: null,
           etaSeconds: null,
           payload: { countryId: catalogItem(0).countryId, version: '261023' },
+          updateCheckResult: null,
           cancelRequested: false,
           attempts: 0,
           maxAttempts: 3,

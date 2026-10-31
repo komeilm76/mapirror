@@ -90,6 +90,49 @@ export const CacheActiveJobSchema = z
 /** Params accepted by `GET`, `DELETE` and `POST /_admin/api/cache/:countryId/*`. */
 export const CacheCountryParamsSchema = z.object({ countryId: z.uuid() }).strict();
 
+/** Body accepted by `POST /_admin/api/cache/:countryId/check-update`. */
+export const CacheUpdateCheckRequestSchema = z.object({}).strict();
+
+/** One source identity included in a single-country update-check response. */
+export const CacheUpdateCheckIdentitySchema = z
+  .object({
+    version: z.string().min(1).nullable(),
+    dataTimestamp: z.iso.datetime().nullable(),
+    sizeBytes: JsonIntegerSchema.nullable(),
+  })
+  .strict();
+
+/** Result of an inline check; an unavailable source is represented as `unknown`, never as current. */
+export const CacheUpdateCheckResponseSchema = z
+  .object({
+    state: z.enum(UPDATE_STATES),
+    cached: CacheUpdateCheckIdentitySchema,
+    source: CacheUpdateCheckIdentitySchema.nullable(),
+    checkedAt: z.iso.datetime(),
+    reason: z.string().min(1).nullable(),
+  })
+  .strict();
+
+/** Body accepted by `POST /_admin/api/cache/check-updates`. */
+export const CacheBulkUpdateCheckRequestSchema = z
+  .object({
+    countryIds: z
+      .array(z.uuid())
+      .min(1)
+      .max(10_000)
+      .refine((ids) => new Set(ids).size === ids.length, 'Country ids must be unique')
+      .optional(),
+  })
+  .strict();
+
+/** Successful asynchronous bulk update-check response. */
+export const CacheBulkUpdateCheckResponseSchema = z.object({ jobId: z.uuid() }).strict();
+
+export type CacheUpdateCheckRequest = z.infer<typeof CacheUpdateCheckRequestSchema>;
+export type CacheUpdateCheckResponse = z.infer<typeof CacheUpdateCheckResponseSchema>;
+export type CacheBulkUpdateCheckRequest = z.infer<typeof CacheBulkUpdateCheckRequestSchema>;
+export type CacheBulkUpdateCheckResponse = z.infer<typeof CacheBulkUpdateCheckResponseSchema>;
+
 /** Body accepted by `POST /_admin/api/cache/:countryId/public`. */
 export const CachePublicToggleBodySchema = z.object({ isPublic: z.boolean() }).strict();
 

@@ -47,6 +47,7 @@ async function insertJob(
     readonly type?: 'download' | 'import' | 'update_check' | 'catalog_sync' | 'prune';
     readonly status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
     readonly payload?: JsonValue;
+    readonly result?: JsonValue | null;
     readonly createdAt?: Date;
     readonly progressBytes?: bigint;
     readonly totalBytes?: bigint | null;
@@ -66,6 +67,7 @@ async function insertJob(
       type: input.type ?? 'prune',
       status: input.status ?? 'queued',
       payload: input.payload ?? {},
+      result: input.result ?? null,
       created_at: input.createdAt ?? new Date('2026-10-28T00:00:00.000Z'),
       progress_bytes: input.progressBytes ?? 0n,
       total_bytes: input.totalBytes ?? null,
@@ -166,6 +168,52 @@ describe.skipIf(skipReason !== null)('admin jobs API', () => {
         headers: auth(token),
       });
       expect(unknownKey.statusCode).toBe(400);
+    });
+  });
+
+  it('projects only a validated aggregate from update-check job results', async () => {
+    await withJobsApp(async ({ app, database, token }) => {
+      const valid = await insertJob(database, {
+        type: 'update_check',
+        status: 'succeeded',
+        result: {
+          total: 3,
+          checked: 2,
+          updateAvailable: 1,
+          upToDate: 1,
+          unknown: 0,
+          skipped: 1,
+          privatePath: '/srv/private',
+        },
+      });
+      const invalid = await insertJob(database, {
+        type: 'update_check',
+        status: 'succeeded',
+        result: { privatePath: '/srv/private' },
+      });
+      const validResponse = await app.inject({
+        method: 'GET',
+        url: jobUrl(valid),
+        headers: auth(token),
+      });
+      expect(validResponse.json()).toMatchObject({
+        updateCheckResult: {
+          total: 3,
+          checked: 2,
+          updateAvailable: 1,
+          upToDate: 1,
+          unknown: 0,
+          skipped: 1,
+        },
+      });
+      expect(validResponse.body).not.toContain('/srv/private');
+      const invalidResponse = await app.inject({
+        method: 'GET',
+        url: jobUrl(invalid),
+        headers: auth(token),
+      });
+      expect(invalidResponse.json()).toMatchObject({ updateCheckResult: null });
+      expect(invalidResponse.body).not.toContain('/srv/private');
     });
   });
 

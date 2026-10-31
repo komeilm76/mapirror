@@ -39,6 +39,18 @@ export interface UpdateCheckResult {
   readonly availableAt: Date | null;
   /** Safe explanation when the state is unknown; never contains raw exception text. */
   readonly reason: string | null;
+  /** Newest ready cached Geofabrik version used in the comparison. */
+  readonly cached: {
+    readonly version: string | null;
+    readonly dataTimestamp: Date | null;
+    readonly sizeBytes: string | number | bigint | null;
+  };
+  /** Current source facts when safely available; null after a source failure. */
+  readonly source: {
+    readonly version: string | null;
+    readonly dataTimestamp: Date | null;
+    readonly sizeBytes: number | null;
+  } | null;
   /** Time the state was persisted. */
   readonly checkedAt: Date;
 }
@@ -50,6 +62,11 @@ export interface UpdateCheckLog {
 }
 
 /** Dependencies and bounded in-memory source-detail cache for one API process. */
+export interface UpdateChecker {
+  /** Check one cached country; workers may supply their pinned database session. */
+  check(countryId: string, database?: Kysely<Database>): Promise<UpdateCheckResult>;
+}
+
 export interface UpdateCheckerOptions {
   /** Database used to read countries/ready versions and persist cache state. */
   readonly database: Kysely<Database>;
@@ -63,6 +80,8 @@ export interface UpdateCheckerOptions {
   readonly log?: UpdateCheckLog;
 }
 
+/** Per-country source-page HTTP budget shared by inline and bulk update checks. */
+export const UPDATE_CHECK_SOURCE_TIMEOUT_MS = 5_000;
 /** One in-memory Geofabrik page identity is shared across row and bulk checks for ten minutes. */
 const DEFAULT_SOURCE_DETAIL_TTL_MS = 10 * 60 * 1_000;
 const MAX_SOURCE_DETAIL_TTL_MS = DEFAULT_SOURCE_DETAIL_TTL_MS;
@@ -83,7 +102,7 @@ export class UpdateCheckNotCachedError extends Error {
 }
 
 /** Create a reusable checker; source reads are memoized, but cached versions and state are read on every check. */
-export function createUpdateChecker(options: UpdateCheckerOptions) {
+export function createUpdateChecker(options: UpdateCheckerOptions): UpdateChecker {
   const now = options.now ?? (() => new Date());
   const sourceDetailTtlMs = options.sourceDetailTtlMs ?? DEFAULT_SOURCE_DETAIL_TTL_MS;
   if (
@@ -101,8 +120,11 @@ export function createUpdateChecker(options: UpdateCheckerOptions) {
 
   return {
     /** Check one cached country and persist its update state; source failures persist `unknown`. */
-    async check(countryId: string): Promise<UpdateCheckResult> {
-      const identity = await options.database
+    async check(
+      countryId: string,
+      database: Kysely<Database> = options.database,
+    ): Promise<UpdateCheckResult> {
+      const identity = await database
         .selectFrom('countries')
         .innerJoin('country_cache', 'country_cache.country_id', 'countries.id')
         .select(['countries.source', 'countries.source_id'])
@@ -131,7 +153,7 @@ export function createUpdateChecker(options: UpdateCheckerOptions) {
       }
 
       const checkedAt = validClockDate(now());
-      return withTransaction(options.database, async (trx) => {
+      return withTransaction(database, async (trx) => {
         const cache = await trx
           .selectFrom('country_cache')
           .select('country_id')
@@ -174,7 +196,17 @@ export function createUpdateChecker(options: UpdateCheckerOptions) {
           .where('country_id', '=', countryId)
           .execute();
 
-        return { ...compared, checkedAt };
+        const newestCached = cachedVersions[0];
+        return {
+          ...compared,
+          cached: {
+            version: newestCached?.version ?? null,
+            dataTimestamp: newestCached?.data_timestamp ?? null,
+            sizeBytes: newestCached?.file_size_bytes ?? null,
+          },
+          source: safeSourceIdentity(sourceFailure ? null : sourceDetail),
+          checkedAt,
+        };
       });
     },
   };
@@ -206,10 +238,28 @@ export function createUpdateChecker(options: UpdateCheckerOptions) {
 }
 
 /** Compare the current source facts with versions ordered newest data timestamp first. */
+function safeSourceIdentity(source: SourceRegionDetail | null): UpdateCheckResult['source'] {
+  if (source === null) return null;
+  return {
+    version:
+      source.version !== null && SOURCE_VERSION_PATTERN.test(source.version)
+        ? source.version
+        : null,
+    dataTimestamp:
+      source.dataTimestamp !== null && Number.isFinite(source.dataTimestamp.getTime())
+        ? source.dataTimestamp
+        : null,
+    sizeBytes:
+      source.sizeBytes !== null && Number.isSafeInteger(source.sizeBytes) && source.sizeBytes >= 0
+        ? source.sizeBytes
+        : null,
+  };
+}
+
 export function compareSourceToCache(
   source: SourceRegionDetail | null,
   cachedVersions: readonly CachedSourceIdentity[],
-): Omit<UpdateCheckResult, 'checkedAt'> {
+): Omit<UpdateCheckResult, 'checkedAt' | 'cached' | 'source'> {
   if (source === null) return unknownResult('The map source could not be checked.');
   if (
     (source.version !== null && !SOURCE_VERSION_PATTERN.test(source.version)) ||
@@ -265,7 +315,9 @@ function cloneSourceDetail(detail: SourceRegionDetail): SourceRegionDetail {
   };
 }
 
-function availableResult(source: SourceRegionDetail): Omit<UpdateCheckResult, 'checkedAt'> {
+function availableResult(
+  source: SourceRegionDetail,
+): Omit<UpdateCheckResult, 'checkedAt' | 'cached' | 'source'> {
   return {
     state: 'update_available',
     availableVersion: source.version,
@@ -277,7 +329,7 @@ function availableResult(source: SourceRegionDetail): Omit<UpdateCheckResult, 'c
 
 function stateResult(
   state: Exclude<UpdateCheckState, 'unknown'>,
-): Omit<UpdateCheckResult, 'checkedAt'> {
+): Omit<UpdateCheckResult, 'checkedAt' | 'cached' | 'source'> {
   return {
     state,
     availableVersion: null,
@@ -287,7 +339,7 @@ function stateResult(
   };
 }
 
-function unknownResult(reason: string): Omit<UpdateCheckResult, 'checkedAt'> {
+function unknownResult(reason: string): Omit<UpdateCheckResult, 'checkedAt' | 'cached' | 'source'> {
   return {
     state: 'unknown',
     availableVersion: null,

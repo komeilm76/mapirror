@@ -430,10 +430,11 @@ sequenceDiagram
   A->>A: row shows badge + "Download update" (one click → F4)
 ```
 
-**Rules:** `unknown` is never rendered as "up to date"; bulk check runs as a job; `update_checked_at`
-persisted per country; dashboard shows "N updates available".
-**Tests:** newer snapshot detected, unchanged source stays `up_to_date`, network error → `unknown`,
-bulk job result aggregation, badge persists after reload.
+**Rules:** `unknown` is never rendered as "up to date"; inline source reads are bounded to five seconds; bulk checks
+run sequentially as a cancelable job, persist each country result, and expose a safe aggregate through job detail;
+`update_checked_at` is persisted per country; dashboard shows "N updates available".
+**Tests:** newer snapshot detected, unchanged source stays `up_to_date`, network error → `unknown`, bulk job result
+aggregation and count progress, safe job-result projection, badge persists after reload.
 
 ---
 

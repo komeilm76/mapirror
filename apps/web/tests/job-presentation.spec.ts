@@ -5,9 +5,13 @@ import {
   formatEta,
   formatSpeed,
   isJobActive,
+  jobActivityLabel,
   jobPhaseLabel,
+  jobProgressLabel,
+  jobRateLabel,
   jobTypeLabel,
   progressPercent,
+  updateCheckResultLabel,
 } from '../src/jobs/presentation';
 
 describe('job progress presentation', () => {
@@ -29,6 +33,30 @@ describe('job progress presentation', () => {
     expect(jobPhaseLabel(null)).toBe('Waiting for worker');
     expect(isJobActive('queued')).toBe(true);
     expect(isJobActive('succeeded')).toBe(false);
+  });
+
+  it('presents update-check work in countries and shows only safe aggregate counts', () => {
+    const updateJob = {
+      type: 'update_check' as const,
+      status: 'running' as const,
+      phase: null,
+      progressBytes: 2,
+      totalBytes: 4,
+      speedBps: 1,
+    };
+    expect(jobActivityLabel(updateJob)).toBe('Checking updates');
+    expect(jobProgressLabel(updateJob)).toBe('2 of 4 countries checked · 50%');
+    expect(jobRateLabel(updateJob)).toBe('1 country/s');
+    expect(
+      updateCheckResultLabel({
+        total: 4,
+        checked: 3,
+        updateAvailable: 1,
+        upToDate: 1,
+        unknown: 1,
+        skipped: 1,
+      }),
+    ).toBe('3 checked · 1 update · 1 current · 1 unknown · 1 skipped');
   });
 
   it('computes determinate progress safely for large integers and clamps out-of-range values', () => {
