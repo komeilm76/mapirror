@@ -164,7 +164,7 @@ sibling are mutually exclusive, and the hygiene check counts commented declarati
 | `LOG_LEVEL` | `info` | — | Pino level |
 | `APP_VERSION` | from package | — | Shown in UI |
 | `PUBLIC_BASE_URL` | `http://localhost:8080` | — | Used in generated download links |
-| `BRANDING_DISPLAY_NAME` | `MapMirror` | — | Default display name |
+| `BRANDING_DISPLAY_NAME` | `MapMirror` | — | Default display name; trimmed, 1–100 characters |
 
 **Never** commit `.env`. In production prefer `ADMIN_PASSWORD_FILE` mounted as a Docker secret.
 

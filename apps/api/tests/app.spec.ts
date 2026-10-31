@@ -58,6 +58,18 @@ describe('the three API prefixes are registered', () => {
     expect(response.headers['content-type']).toMatch(/^application\/json/);
   });
 
+  it('registers both settings methods behind the admin bearer guard', async () => {
+    const instance = await app();
+    for (const method of ['GET', 'PATCH'] as const) {
+      const response = await instance.inject({ method, url: '/_admin/api/settings' });
+      expect(response.statusCode, method).toBe(401);
+      expect(response.json<{ error: { code: string } }>().error.code, method).toBe(
+        'UNAUTHENTICATED',
+      );
+      expect(response.headers['content-type']).toMatch(/^application\/json/u);
+    }
+  });
+
   it('registers the multipart import route inside the protected admin namespace', async () => {
     const response = await (
       await app()

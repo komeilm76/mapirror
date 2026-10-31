@@ -211,6 +211,15 @@ describe('parseEnv rejects unusable values, naming the variable', () => {
     );
   });
 
+  it('bounds the configured display name to the settings response contract', () => {
+    expect(parseEnv({ BRANDING_DISPLAY_NAME: ` ${'N'.repeat(100)} ` }).brandingDisplayName).toBe(
+      'N'.repeat(100),
+    );
+    expect(errorFrom({ BRANDING_DISPLAY_NAME: 'N'.repeat(101) }).message).toMatch(
+      /BRANDING_DISPLAY_NAME: must be at most 100 characters/u,
+    );
+  });
+
   it('trims surrounding whitespace instead of failing on it', () => {
     // Editors and `export` lines leave spaces; a port of ` 8080 ` is unambiguous.
     expect(parseEnv({ PORT: ' 8080 ', HOST: ' 127.0.0.1 ' })).toMatchObject({

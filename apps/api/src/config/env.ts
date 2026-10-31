@@ -411,7 +411,12 @@ const ENV_SCHEMA = z.object({
     .default('info'),
   APP_VERSION: z.string().trim().default(DEFAULT_APP_VERSION),
   PUBLIC_BASE_URL: httpUrl('http://localhost:8080'),
-  BRANDING_DISPLAY_NAME: z.string().trim().min(1, 'must be a display name').default('MapMirror'),
+  BRANDING_DISPLAY_NAME: z
+    .string()
+    .trim()
+    .min(1, 'must be a display name')
+    .max(100, 'must be at most 100 characters')
+    .default('MapMirror'),
 });
 
 /** Every variable the API reads, in schema order. */

@@ -675,13 +675,34 @@ empty `samples` array.
 Server-side downsampling: `5m`→10 s, `1h`→30 s, `24h`→5 min, `7d`→30 min.
 
 #### `GET /_admin/api/settings` / `PATCH /_admin/api/settings`
-Editable: `branding.displayName`, `cache.keepVersions`, `cache.diskReserveBytes`,
-`public.downloadsPerMinute`, `source.catalogTtlMinutes`. Secret-ish values (`privacy.ipHashSalt`, DB
-credentials, token settings) come from env or are write-only: they are **never** serialised in a
-response — the settings serializer projects an explicit allow-list of keys.
+
+`GET` accepts no query keys and returns the complete safe projection. Missing persisted overrides use validated environment
+values; `cache.keepVersions` defaults to 3.
+
+```json
+{
+  "settings": {
+    "branding": { "displayName": "MapMirror" },
+    "cache": { "keepVersions": 3, "diskReserveBytes": 2147483648 },
+    "public": { "downloadsPerMinute": 10 },
+    "source": { "catalogTtlMinutes": 360 }
+  }
+}
+```
+
+`PATCH` accepts a partial body with the same groups and returns the complete updated projection. At least one editable
+value is required; unknown groups or fields are rejected. `branding.displayName` is trimmed and 1–100 characters;
+`cache.keepVersions` is 1–10; `cache.diskReserveBytes` is a non-negative safe integer; the public download limit and
+catalog TTL are positive safe integers. Values persist under their dotted `settings` keys. Each successful change and
+its `settings.update` audit row commit together; the audit records changed key names only, never submitted values.
+
+The API allow-list is exactly `branding.displayName`, `cache.keepVersions`, `cache.diskReserveBytes`,
+`public.downloadsPerMinute`, and `source.catalogTtlMinutes`. Secret-ish values (`privacy.ipHashSalt`, DB credentials,
+token settings), system-owned markers (including `source.catalogSyncedAt`), and unknown database keys are never
+serialised, and cannot be written through this endpoint.
 
 #### `GET /_admin/api/audit?action=&page=`
-Paginated audit log (`auth.*`, `cache.*`, `catalog.*`, `version.*`, `interval.*`, `settings.*`), including `catalog.sync` after each successful catalog transaction and `interval.create`, `interval.update`, `interval.delete`, and manual `interval.run` in the same transaction as the corresponding action.
+Paginated audit log (`auth.*`, `cache.*`, `catalog.*`, `version.*`, `interval.*`, `settings.*`), including `catalog.sync` after each successful catalog transaction, `settings.update` with key-only metadata, and `interval.create`, `interval.update`, `interval.delete`, and manual `interval.run` in the same transaction as the corresponding action.
 
 ---
 
