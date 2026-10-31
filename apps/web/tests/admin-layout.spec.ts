@@ -376,6 +376,23 @@ describe('the way out', () => {
   });
 });
 
+describe('at responsive review widths', () => {
+  it.each([
+    { width: 390, drawerOpen: false },
+    { width: 768, drawerOpen: false },
+    { width: 1440, drawerOpen: true },
+  ])('keeps the shell usable at $width px', async ({ width, drawerOpen }) => {
+    const { container } = await mountAdmin({ at: adminPagePaths.dashboard(), width });
+
+    expect(drawerIsOpen(container)).toBe(drawerOpen);
+    const menu = container.querySelector<HTMLButtonElement>(
+      'button[aria-controls="mm-admin-drawer"]',
+    );
+    expect(menu?.textContent?.trim()).toBe(drawerOpen ? 'Hide menu' : 'Menu');
+    expect(menu?.getAttribute('aria-expanded')).toBe(String(drawerOpen));
+  });
+});
+
 describe('at 360 px', () => {
   it('starts with the drawer closed, so the page is not covered by it', async () => {
     // §3's criterion is "responsive to 360 px (drawer)". At that width the sidebar must not be sitting on top of the

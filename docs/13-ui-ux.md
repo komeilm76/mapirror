@@ -221,13 +221,14 @@ The admin detail URL carries the local country UUID because the cache detail/ver
 
 | Breakpoint | Behaviour |
 |---|---|
-| `< 640` | Single column; tables → cards; charts stack; sidebar becomes drawer; page actions move to a sticky bottom bar |
-| `640–1024` | Two-column cards; table shows 5 most important columns |
-| `1024–1440` | Full sidebar, full tables |
-| `> 1440` | Content centered, max-width caps; charts gain their own row |
+| `< 640` | Single-column content and cards; public country/version details stack with labels; filters and page actions use full-width controls where needed. |
+| `640–1023` | Catalog, cache, cached-version and job results use two-column cards rather than compressed tables; dashboard overview stays two columns. The admin sidebar remains a temporary drawer below 1024 px. |
+| `1024–1440` | Full admin sidebar and data tables; page containers stay fluid within the 1440 px admin cap. |
+| `> 1440` | Content remains centered within max-width caps; charts retain their own row. |
 
-Admin tables on mobile use a "row → card" pattern with the primary metric as the card title and actions
-in an overflow menu — never a horizontally scrolling table.
+System-metric charts stack below 768 px; the dashboard overview becomes one column below 600 px. Admin catalog/cache/job/version tables switch to responsive cards below 1024 px, with two columns from 640–1023 px and one below 640 px (facts become one column on the narrowest cards). Cards retain the row's primary label (country, version or job type/status) and expose actions directly rather than hiding them in a hover-only menu. The public API error-reference table may scroll **inside its own wrapper** on a narrow screen; it must not create page-level horizontal scrolling. Buttons and inputs retain the shared 44 px minimum touch target.
+
+**P5-UX-03 evidence:** `responsive-layout.spec.ts` pins the table/card, tablet two-column, phone one-column, and contained public-table rules; `admin-layout.spec.ts` mounts the real shell at 390, 768, and 1440 px and checks drawer state. The existing catalog/cache/jobs/cached-version DOM tests cover the corresponding content. These are breakpoint and structural regressions, not screenshot-based visual sign-off; screenshots and rubric scoring remain P5-UX-07.
 
 ## 9. Copy standards
 
