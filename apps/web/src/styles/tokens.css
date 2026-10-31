@@ -76,7 +76,19 @@
  * guarantee (a 2 px primary outline) can say so without an `!important` arms race — and a component that removes the
  * ring has to be deliberate about it, because the rule it removes is visible in review.
  */
-:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+:where(
+  a[href],
+  area[href],
+  button,
+  input,
+  select,
+  textarea,
+  summary,
+  [tabindex],
+  [contenteditable],
+  audio[controls],
+  video[controls]
+):focus-visible {
   outline: var(--mm-focus-ring-width) solid rgb(var(--v-theme-primary));
   outline-offset: var(--mm-focus-ring-offset);
 }

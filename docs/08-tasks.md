@@ -252,7 +252,7 @@ prove L1–L3.
 | P5-UX-01 | State coverage audit (loading/empty/error/success) all screens | UX-3 | P2/P3/P4 UI | ✅ | Signed S1–S15 state matrix in `docs/13-ui-ux.md` §12. Implemented data screens have loading, empty, error/recovery and success paths; added an intervals loading→error/retry→empty regression test. Static/form-only screens are marked N/A with equivalents documented. S12–S14 remain explicit placeholder gaps (System page has no owning UI task after MON-02); not misrepresented as completed UX-3 coverage. |
 | P5-UX-02 | Skeletons, spinners, optimistic updates, toasts | UX-3 | P5-UX-01 | ✅ | No layout shift on load |
 | P5-UX-03 | Responsive pass (360/768/1440), tables→cards | UX-5 | P2/P3 UI | ✅ | Admin catalog/cache/jobs/version data uses two-column cards at 640–1023 px and one column below; the admin shell and responsive CSS contracts are tested at the requested widths. Screenshot/rubric review remains P5-UX-07. |
-| P5-UX-04 | A11y pass (contrast, focus, labels, keyboard, reduced motion) | UX-2 | P5-UX-01 | ⬜ | axe: 0 serious violations |
+| P5-UX-04 | A11y pass (contrast, focus, labels, keyboard, reduced motion) | UX-2 | P5-UX-01 | ✅ | 16 axe route/theme states: 0 serious/critical; focus, skip link, form labels/errors, keyboard and reduced-motion regressions covered. Contrast palette assertions remain separate because jsdom axe cannot reliably measure rendered contrast; see §7 and changelog. |
 | P5-UX-05 | Typography/spacing consistency + icon audit (no emoji icons) | UX-1/4 | P1-WEB-02 | ⬜ | Tokens only |
 | P5-UX-06 | Copy pass (human, actionable, error guidance) | UX-6 | all UI | ⬜ | Reviewed string by string |
 | P5-UX-07 | Screenshot review + rubric scoring (light/dark × 2 sizes) | UX-7/9 | P5-UX-01…06 | ⬜ | ≥45/50 documented |

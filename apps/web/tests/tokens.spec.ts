@@ -394,6 +394,25 @@ describe('the lengths and durations in tokens.css are the ones in §2', () => {
     expect(tokens.get('--mm-container-public')).toBe('1120px');
   });
 
+  it('keeps the global focus-visible ring on native and custom keyboard controls', () => {
+    const css = readFileSync(resolve(import.meta.dirname, '../src/styles/tokens.css'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//gu, '')
+      .replace(/\s+/gu, ' ');
+    const focusMatch = /:where\(([^)]*)\):focus-visible\s*\{([^}]*)\}/u.exec(css);
+    const focusTargets = focusMatch?.[1]?.replace(/\s+/gu, ' ').trim() ?? '';
+    const focusRule = focusMatch?.[2] ?? '';
+
+    // Keyboard-operable custom controls are tabbable; native controls that are not buttons/inputs still need the same
+    // indicator. :focus-visible avoids showing the ring after ordinary pointer activation.
+    expect(focusTargets).toBe(
+      'a[href], area[href], button, input, select, textarea, summary, [tabindex], [contenteditable], audio[controls], video[controls]',
+    );
+    expect(focusRule).toContain(
+      'outline: var(--mm-focus-ring-width) solid rgb(var(--v-theme-primary))',
+    );
+    expect(focusRule).toContain('outline-offset: var(--mm-focus-ring-offset)');
+  });
+
   it('gives the overlay shadow a token, from the value §2 states', () => {
     expect(section('### Space, radius, elevation, motion')).toContain('0 8px 24px rgba(0,0,0,.16)');
     const shadow = tokens.get('--mm-shadow-overlay') ?? '';
@@ -411,7 +430,10 @@ describe('the lengths and durations in tokens.css are the ones in §2', () => {
       /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/u.exec(css)?.[1] ?? '';
     expect(block).toContain('--mm-motion-fast: 0ms');
     expect(block).toContain('--mm-motion-dialog: 0ms');
+    expect(block).toMatch(/animation-duration: 0\.01ms !important/u);
+    expect(block).toMatch(/animation-iteration-count: 1 !important/u);
     expect(block).toMatch(/transition-duration: 0\.01ms !important/u);
+    expect(block).toMatch(/scroll-behavior: auto !important/u);
   });
 });
 

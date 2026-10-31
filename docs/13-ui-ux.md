@@ -208,14 +208,15 @@ The admin detail URL carries the local country UUID because the cache detail/ver
 | Check | Requirement |
 |---|---|
 | Contrast | ≥ 4.5:1 body, ≥ 3:1 large text and meaningful boundaries — asserted, not sampled: `apps/web/tests/tokens.spec.ts` parses §2 and computes every ratio (25 pairs per theme, including the `on-` label colour Vuetify derives for each fill) |
-| Focus | Visible ring on all interactive elements; skip-to-content link in admin |
-| Semantics | One `h1` per page, landmark regions, labelled inputs, `aria-live` for toasts/progress |
-| Motion | `prefers-reduced-motion` disables transitions and chart animation |
+| Focus | `:focus-visible` ring on native and custom keyboard-focusable controls; skip-to-content link is the first admin focus target and moves focus to `main` |
+| Keyboard | Tab order follows visual order; Enter submits the login form; Escape closes dialogs; regression tests pin the skip link, password control and dialog behavior |
+| Semantics | One `h1` per page, landmark regions, labelled inputs, `aria-live` for toasts/progress; form errors are connected with `aria-describedby` |
+| Motion | `prefers-reduced-motion` reduces transitions and animations to 0.01 ms, limits animations to one iteration, zeroes motion tokens, and disables smooth scrolling |
 | Charts | Textual summary/table alternative for every chart ("CPU 12 % at 08:00 …") |
 | Forms | Errors tied with `aria-describedby`; required fields marked in text, not color only |
 | Targets | ≥ 44 px; switches have generous hit area |
 | Zoom | Usable at 200 % zoom without horizontal scroll on 1280 px |
-| Automated | `axe-core` run in component tests; zero serious violations |
+| Automated | `axe-core` checks the loaded public catalog in light/dark themes plus login, API docs, country detail, admin screens and not-found (WCAG 2.0/2.1/2.2 AA + best practices); zero serious/critical violations. API-dependent admin routes are audited in their service-error state. jsdom axe does not reliably measure rendered color contrast, so token-palette contrast assertions remain separate and are not a substitute for browser/manual visual review. |
 
 ## 8. Responsive rules
 
