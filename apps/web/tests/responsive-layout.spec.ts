@@ -84,6 +84,18 @@ describe('responsive layout contracts', () => {
     );
   });
 
+  it('switches audit log tables to cards below tablet width and stacks them on phones', () => {
+    const audit = styles('audit.css');
+    const tablet = mediaRule(audit, '(max-width: 1023px)');
+    expect(tablet).toMatch(/\.mm-audit-table-wrap\s*\{\s*display: none/u);
+    expect(tablet).toMatch(/\.mm-audit-mobile-list\s*\{[^}]*display: grid/u);
+
+    const phone = mediaRule(audit, '(max-width: 639px)');
+    expect(phone).toMatch(/\.mm-audit-toolbar\s*\{[^}]*grid-template-columns: minmax\(0, 1fr\)/u);
+    expect(phone).toMatch(/\.mm-audit-heading\s*\{[^}]*flex-direction: column/u);
+    expect(phone).toMatch(/\.mm-audit-mobile-heading\s*\{[^}]*flex-direction: column/u);
+  });
+
   it('keeps mobile facts and public version rows readable without page-level table overflow', () => {
     expect(mediaRule(styles('catalog.css'), '(max-width: 420px)')).toMatch(
       /\.mm-catalog-card dl\s*\{\s*grid-template-columns: 1fr/u,

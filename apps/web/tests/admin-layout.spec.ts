@@ -103,7 +103,19 @@ async function mountAdmin(
   window.history.replaceState({}, '', options.at ?? adminPagePaths.cache());
 
   const fetchImpl = vi.fn<typeof fetch>(
-    options.respond ?? (() => Promise.resolve(new Response(JSON.stringify(ME)))),
+    options.respond ??
+      ((input) => {
+        const url =
+          input instanceof URL
+            ? input
+            : new URL(typeof input === 'string' ? input : input.url, window.location.origin);
+        if (url.pathname === '/_admin/api/audit') {
+          return Promise.resolve(
+            jsonResponse({ data: [], meta: { page: 1, limit: 25, total: 0, totalPages: 0 } }),
+          );
+        }
+        return Promise.resolve(jsonResponse(ME));
+      }),
   );
   vi.stubGlobal('fetch', fetchImpl);
 
@@ -208,8 +220,8 @@ describe('the navigation is the router', () => {
       expect(router.currentRoute.value.path).toBe(adminPagePaths.audit());
     });
     await flushPromises();
-    expect(container.textContent).toContain("The Audit log page isn't available yet.");
-    expect(container.textContent).toContain('Go to dashboard');
+    expect(container.textContent).toContain('No audit entries yet');
+    expect(container.textContent).not.toContain('Audit log could not be loaded');
   });
 });
 

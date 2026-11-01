@@ -14,42 +14,14 @@
  * @module db/repositories/audit-logs
  */
 
+import { AUDIT_ACTIONS, type AuditAction } from '@mapirror/shared';
+
 import type { TokenExecutor } from './admin-tokens';
 import type { JsonValue } from '../schema';
 
-/**
- * The actions this codebase writes, as constants.
- *
- * Not a database enum and not a `CHECK` constraint on purpose: the audit log must be able to record an action that a
- * future version introduced, and a constraint would make *logging* the failure the thing that fails. The list is the
- * contract with the UI (the audit screen filters on `auth.*`, `cache.*`, …) and with `04-api.md`, and a test asserts
- * every action used in code appears in the docs.
- *
- * Naming: `subject.verb_in_past_tense`, where the subject is the module. A failed login is `auth.login_failed` rather
- * than `auth.login` with `metadata.success: false`, because "show me the failed logins" must be one index scan on a
- * value that exists (`audit_logs_action_idx`), not a scan plus a JSON predicate.
- */
-export const AUDIT_ACTIONS = {
-  login: 'auth.login',
-  loginFailed: 'auth.login_failed',
-  logout: 'auth.logout',
-  adminCreated: 'auth.admin_created',
-  passwordReset: 'auth.password_reset',
-  catalogSync: 'catalog.sync',
-  cacheDeleteCountry: 'cache.delete_country',
-  cachePublish: 'cache.publish',
-  cacheUnpublish: 'cache.unpublish',
-  versionDelete: 'version.delete',
-  versionPrune: 'version.prune',
-  intervalCreate: 'interval.create',
-  intervalUpdate: 'interval.update',
-  intervalDelete: 'interval.delete',
-  intervalRun: 'interval.run',
-  settingsUpdate: 'settings.update',
-} as const;
-
-/** One documented audit action. */
-export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
+/** Keep existing repository imports working while sharing the action vocabulary with the UI. */
+export { AUDIT_ACTIONS };
+export type { AuditAction };
 
 /** What a caller supplies; every nullable column gets an explicit `null` rather than being omitted. */
 export interface NewAuditLog {

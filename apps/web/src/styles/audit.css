@@ -1,0 +1,302 @@
+/* Audit log table, compact mobile cards, and export controls (`P5-ADM-04`). */
+
+.mm-audit-page {
+  display: grid;
+  gap: var(--mm-space-4);
+}
+
+.mm-audit-heading,
+.mm-audit-toolbar,
+.mm-audit-mobile-heading,
+.mm-audit-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mm-space-4);
+}
+
+.mm-audit-heading {
+  align-items: flex-end;
+}
+
+.mm-audit-heading h1 {
+  margin: 0;
+}
+
+.mm-audit-intro {
+  max-width: 48rem;
+  margin-bottom: 0;
+}
+
+.mm-audit-toolbar {
+  display: grid;
+  grid-template-columns: minmax(14rem, 0.8fr) 1fr auto;
+  align-items: end;
+  gap: var(--mm-space-4);
+  padding: var(--mm-space-4);
+  border: var(--mm-border-width) solid rgb(var(--v-theme-border));
+  border-radius: var(--mm-radius-md);
+  background: rgb(var(--v-theme-surface));
+}
+
+.mm-audit-filter {
+  display: grid;
+  gap: var(--mm-space-2);
+  color: rgb(var(--v-theme-text-primary));
+  font-size: var(--mm-text-ui);
+  font-weight: var(--mm-weight-bold);
+}
+
+.mm-audit-filter select {
+  width: 100%;
+  min-height: var(--mm-touch-target);
+  padding: var(--mm-space-2) var(--mm-space-3);
+  border: var(--mm-border-width) solid rgb(var(--v-theme-border-strong));
+  border-radius: var(--mm-radius-sm);
+  color: rgb(var(--v-theme-text-primary));
+  background: rgb(var(--v-theme-surface));
+  font: inherit;
+}
+
+.mm-audit-count {
+  align-self: center;
+}
+
+.mm-audit-state {
+  display: grid;
+  justify-items: start;
+  gap: var(--mm-space-3);
+  padding: clamp(var(--mm-space-4), 3vw, var(--mm-space-6));
+  border: var(--mm-border-width) solid rgb(var(--v-theme-border));
+  border-radius: var(--mm-radius-lg);
+  background: rgb(var(--v-theme-surface));
+}
+
+.mm-audit-state h2,
+.mm-audit-state p {
+  margin: 0;
+}
+
+.mm-audit-refresh-error {
+  padding: var(--mm-space-3);
+  border: var(--mm-border-width) solid rgb(var(--v-theme-error));
+  border-radius: var(--mm-radius-sm);
+  color: rgb(var(--v-theme-text-primary));
+  background: rgb(var(--v-theme-error) / 0.08);
+}
+
+.mm-audit-table-wrap {
+  overflow-x: auto;
+  border: var(--mm-border-width) solid rgb(var(--v-theme-border));
+  border-radius: var(--mm-radius-md);
+  background: rgb(var(--v-theme-surface));
+}
+
+.mm-audit-table {
+  width: 100%;
+  min-width: 58rem;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.mm-audit-table th,
+.mm-audit-table td {
+  padding: var(--mm-space-3);
+  border-bottom: var(--mm-border-width) solid rgb(var(--v-theme-border));
+  vertical-align: top;
+}
+
+.mm-audit-table th {
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: var(--mm-text-caption-compact);
+  font-weight: var(--mm-weight-bold);
+  white-space: nowrap;
+}
+
+.mm-audit-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.mm-audit-time {
+  min-width: 12rem;
+  white-space: nowrap;
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: var(--mm-text-caption);
+}
+
+.mm-audit-actor,
+.mm-audit-target {
+  max-width: 17rem;
+  overflow-wrap: anywhere;
+}
+
+.mm-audit-action,
+.mm-audit-action-code {
+  display: block;
+}
+
+.mm-audit-action {
+  font-weight: var(--mm-weight-bold);
+}
+
+.mm-audit-action-code {
+  margin-top: var(--mm-space-1);
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: var(--mm-text-caption-compact);
+}
+
+.mm-audit-details summary {
+  min-height: var(--mm-touch-target);
+  align-content: center;
+  color: rgb(var(--v-theme-primary));
+  cursor: pointer;
+}
+
+.mm-audit-details pre {
+  max-width: min(38rem, 72vw);
+  max-height: 22rem;
+  overflow: auto;
+  margin: var(--mm-space-2) 0 0;
+  padding: var(--mm-space-3);
+  border: var(--mm-border-width) solid rgb(var(--v-theme-border));
+  border-radius: var(--mm-radius-sm);
+  color: rgb(var(--v-theme-text-primary));
+  background: rgb(var(--v-theme-surface-variant));
+  font-family: var(--mm-font-mono);
+  font-size: var(--mm-text-caption-compact);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mm-audit-mobile-list {
+  display: none;
+}
+
+.mm-audit-mobile-card {
+  display: grid;
+  min-width: 0;
+  gap: var(--mm-space-3);
+  padding: var(--mm-space-4);
+  border: var(--mm-border-width) solid rgb(var(--v-theme-border));
+  border-radius: var(--mm-radius-md);
+  background: rgb(var(--v-theme-surface));
+}
+
+.mm-audit-mobile-heading {
+  align-items: flex-start;
+}
+
+.mm-audit-mobile-heading time {
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: var(--mm-text-caption-compact);
+  text-align: right;
+}
+
+.mm-audit-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--mm-space-3);
+  margin: 0;
+}
+
+.mm-audit-facts div {
+  min-width: 0;
+}
+
+.mm-audit-facts dt {
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: var(--mm-text-caption-compact);
+  font-weight: var(--mm-weight-bold);
+}
+
+.mm-audit-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.mm-audit-pagination {
+  flex-wrap: wrap;
+  padding: var(--mm-space-3) 0;
+}
+
+.mm-audit-page-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mm-space-2);
+}
+
+.mm-audit-skeleton {
+  display: grid;
+  gap: var(--mm-space-4);
+}
+
+.mm-audit-skeleton .mm-audit-table td {
+  height: 4rem;
+}
+
+.mm-audit-skeleton-line {
+  display: block;
+  width: 7rem;
+  min-height: 0.9rem;
+  border-radius: var(--mm-radius-sm);
+  background: rgb(var(--v-theme-surface-variant));
+  animation: mm-audit-skeleton-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.mm-audit-skeleton-line.mm-audit-skeleton-wide {
+  width: 75%;
+}
+
+.mm-audit-skeleton-line.mm-audit-skeleton-medium {
+  width: 50%;
+}
+
+.mm-audit-mobile-card .mm-audit-skeleton-line {
+  width: 100%;
+}
+
+@keyframes mm-audit-skeleton-pulse {
+  to {
+    opacity: 0.55;
+  }
+}
+
+@media (max-width: 1023px) {
+  .mm-audit-table-wrap {
+    display: none;
+  }
+
+  .mm-audit-mobile-list {
+    display: grid;
+    gap: var(--mm-space-3);
+  }
+}
+
+@media (max-width: 639px) {
+  .mm-audit-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .mm-audit-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mm-audit-count {
+    order: 3;
+  }
+
+  .mm-audit-mobile-heading {
+    flex-direction: column;
+  }
+
+  .mm-audit-mobile-heading time {
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-audit-skeleton-line {
+    animation: none;
+  }
+}

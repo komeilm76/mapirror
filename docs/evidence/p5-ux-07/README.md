@@ -28,6 +28,6 @@ All 15 screens (S1–S15, including not-found) are represented at both widths in
 - Widened the global admin search from its clipped 59 px rendering to 260 px on desktop and 120 px on mobile.
 - Measured all rendered routes at 390 px and found horizontal overflow on login, the System/Settings/Audit placeholders, and the not-found action. Contained Vuetify container/grid gutters on auth and placeholder pages and made the not-found action border-box sized. The final capture pass confirms no page-level overflow at either review width.
 
-**S13 evidence is historical:** these two Settings captures show the `PlaceholderPage` that was in place during this review. P5-ADM-02 has since replaced it with the validated settings form; the old captures are not presented as visual evidence for that new form, which is covered by its route, responsive-layout and accessibility tests.
+**S13 and S14 evidence is historical:** these Settings and Audit captures show the `PlaceholderPage` that was in place during this review. P5-ADM-02 and P5-ADM-04 have since replaced them with the validated settings form and audit log page; the old captures are not presented as visual evidence for those new screens, which are covered by route, responsive-layout and accessibility tests.
 
 The screenshots are the visual evidence; diagnostics are capture checks, not performance measurements. The §10 performance score therefore does not claim a measured production LCP.

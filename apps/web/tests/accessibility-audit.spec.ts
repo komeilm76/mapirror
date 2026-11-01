@@ -41,6 +41,11 @@ async function mountAuditRoute(path: string): Promise<HTMLElement> {
           }),
         );
       }
+      if (url.pathname === '/_admin/api/audit') {
+        return Promise.resolve(
+          jsonResponse({ data: [], meta: { page: 1, limit: 25, total: 0, totalPages: 0 } }),
+        );
+      }
       return Promise.resolve(
         jsonResponse(
           {
@@ -135,10 +140,7 @@ describe('accessibility audit', () => {
     expect(await seriousViolations(container)).toEqual([]);
   });
 
-  it.each([
-    ['System', '/_site/admin/system'],
-    ['Audit log', '/_site/admin/audit'],
-  ])(
+  it.each([['System', '/_site/admin/system']])(
     'keeps the %s placeholder free of internal identifiers and offers a dashboard action',
     async (title, path) => {
       const container = await mountAuditRoute(path);
@@ -165,7 +167,7 @@ describe('accessibility audit', () => {
     ['admin import', '/_site/admin/import'],
     ['admin jobs', '/_site/admin/jobs'],
     ['admin settings', '/_site/admin/settings'],
-    ['admin audit placeholder', '/_site/admin/audit'],
+    ['admin audit page', '/_site/admin/audit'],
     ['admin system placeholder', '/_site/admin/system'],
     ['not found', '/_site/not-a-route'],
   ])('has no serious WCAG violations on %s', async (_name, path) => {

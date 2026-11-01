@@ -14,7 +14,7 @@
  * The stylesheets are the exception, and they are imported here rather than in `bootstrap.ts` for one reason: they are
  * the *application's* CSS, so they must load whichever component renders first, and `main.ts` is the only module a
  * browser is guaranteed to evaluate before any component exists. Tokens first (`tokens.css`), then the type system
- * (`typography.css`), then shell rules (`shell.css`), then public catalog and admin catalog/cache table/card rules.
+ * (`typography.css`), then shell rules (`shell.css`), then public catalog and admin catalog/cache/jobs/intervals/settings/audit rules.
  *
  * @module main
  */
@@ -29,6 +29,7 @@ import './styles/jobs.css';
 import './styles/import.css';
 import './styles/intervals.css';
 import './styles/settings.css';
+import './styles/audit.css';
 import './styles/public.css';
 
 import { createWebApp, MOUNT_SELECTOR } from './bootstrap';
