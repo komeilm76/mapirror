@@ -18,6 +18,7 @@
  * | `license` | ODbL attribution that must appear on every public surface |
  * | `constants` | token format, sort fields and the enums the DB `CHECK`s mirror |
  * | `auth` | login request/response shapes and their bounds (`P1-AUTH-03`) |
+ * | `audit` | safe admin audit list/filter contract (`P5-ADM-03`) |
  * | `catalog` | admin catalog query, row and sync response contracts (`P2-API-01`) |
  * | `cache` | admin cache-list/detail and publication toggle contracts (`P2-API-05`, `P3-API-02`) |
  * | `public-catalog` | public country-list query and response contract (`P3-API-03`) |
@@ -33,6 +34,7 @@
  * @module
  */
 
+export * from './audit';
 export * from './auth';
 export * from './catalog';
 export * from './cache-download';

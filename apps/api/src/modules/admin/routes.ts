@@ -35,6 +35,7 @@ import { deleteInterval, getIntervals, patchInterval, postInterval } from './int
 import { getIntervalRun, getIntervalRuns, postIntervalRun } from './interval-runs-route';
 import { getSystemMetrics, getSystemStatus } from './system-routes';
 import { getAdminSettings, patchAdminSettings } from './settings-route';
+import { listAuditLog } from './audit-route';
 import { createCacheStorage } from '../storage/storage';
 import { readCacheOrphanReport } from '../system/storage-orphans';
 
@@ -110,6 +111,7 @@ export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, op
   );
   app.get('/system/metrics', (request) => getSystemMetrics(request));
   app.get('/settings', (request) => getAdminSettings(request, options.config));
+  app.get('/audit', listAuditLog);
   app.patch('/settings', (request) => patchAdminSettings(request, options.config));
   app.post('/jobs/:jobId/cancel', cancelJob);
 };

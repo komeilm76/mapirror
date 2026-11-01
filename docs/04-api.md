@@ -701,8 +701,10 @@ The API allow-list is exactly `branding.displayName`, `cache.keepVersions`, `cac
 token settings), system-owned markers (including `source.catalogSyncedAt`), and unknown database keys are never
 serialised, and cannot be written through this endpoint.
 
-#### `GET /_admin/api/audit?action=&page=`
-Paginated audit log (`auth.*`, `cache.*`, `catalog.*`, `version.*`, `interval.*`, `settings.*`), including `catalog.sync` after each successful catalog transaction, `settings.update` with key-only metadata, and `interval.create`, `interval.update`, `interval.delete`, and manual `interval.run` in the same transaction as the corresponding action.
+#### `GET /_admin/api/audit?action=&page=&limit=`
+Returns the append-only audit log, newest first. `action` is an optional exact action-name filter (for example `auth.login_failed`); `page` and `limit` follow §0.2 (1-based, default limit 25, maximum 100). The response uses the standard `{ data, meta }` pagination envelope. Each entry contains `id`, `actorName`, `action`, nullable `targetType`/`targetId`, safe `metadata`, and ISO `createdAt`. It deliberately omits `actorId` and the stored IP address. Metadata is recursively projected to remove credential- and IP-related keys (including password, token, authorization, cookie, user-agent, hash, and salt fields); the database IP column is never selected. Unknown query keys fail with `400 VALIDATION_ERROR`.
+
+Actions include the `auth.*`, `cache.*`, `catalog.*`, `version.*`, `interval.*`, and `settings.*` families, including `catalog.sync` after each successful catalog transaction, `settings.update` with key-only metadata, and `interval.create`, `interval.update`, `interval.delete`, and manual `interval.run` in the same transaction as the corresponding action.
 
 ---
 
