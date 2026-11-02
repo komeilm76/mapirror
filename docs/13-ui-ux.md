@@ -249,7 +249,7 @@ System-metric charts stack below 768 px; the dashboard overview becomes one colu
 
 ## 10. Rubric (target 50/50)
 
-**Reviewed:** 31 Oct 2026 against the live Vite app and the route/state tests. The complete evidence set is `docs/evidence/p5-ux-07/README.md` (40 PNGs plus `capture-diagnostics.json`). All 15 screens (S1–S15, including not-found) are captured at 390 × 844 and 1440 × 900 in every theme the screen supports: auth and public screens in light and dark; admin in dark only, as required by §1/§3. The captures use deterministic API fixtures and reduced motion. Every page rendered the intended theme, had zero browser page/console errors, and measured no horizontal overflow. This theme-aware matrix follows the actual product policy rather than inventing a light admin theme that the interface does not support.
+**Reviewed:** 2 Nov 2026 against the live Vite app, route/state tests, screenshot matrix and production-bundle performance evidence. The screenshot set is `docs/evidence/p5-ux-07/README.md` (40 PNGs plus `capture-diagnostics.json`); the P5-UX-08 LCP and bundle report is `docs/evidence/p5-ux-08/performance-report.md`. All 15 screens (S1–S15, including not-found) are captured at 390 × 844 and 1440 × 900 in every theme the screen supports: auth and public screens in light and dark; admin in dark only, as required by §1/§3. The captures use deterministic API fixtures and reduced motion. Every page rendered the intended theme, had zero browser page/console errors, and measured no horizontal overflow. This theme-aware matrix follows the actual product policy rather than inventing a light admin theme that the interface does not support.
 
 | # | Criterion | Score | Review basis |
 |---|---|---:|---|
@@ -261,9 +261,9 @@ System-metric charts stack below 768 px; the dashboard overview becomes one colu
 | 6 | Feedback | 5/5 | Async progress, success/error feedback, rollback and confirmation behavior are covered by the interaction tests and reviewed in the live app; no dead-end action was found in the captured flows. |
 | 7 | Accessibility | 5/5 | Existing axe audits report zero serious/critical violations; keyboard focus, skip navigation, labels, reduced motion and semantic status announcements are covered by automated and component tests. |
 | 8 | Responsiveness | 5/5 | Every screen was reviewed at both required widths. Browser diagnostics confirm document width equals viewport width for all 40 captures; responsive card/table rules and 44 px target contracts are tested. |
-| 9 | Performance perception | 4/5 | Loading skeletons, bounded route content and no capture-time browser errors support perceived responsiveness. A production LCP measurement was not taken (captures use local Vite and mocked APIs), so the < 2.5 s public LCP target is not claimed as verified. |
+| 9 | Performance perception | 5/5 | The production Vite bundle was measured in a cold mobile lab run with 4× CPU slowdown and 150 ms / 1.6 Mbps network shaping: public catalog LCP p75 1.136 s across five runs (maximum 1.272 s), below the 2.5 s target. The lab report records the mocked catalog and server-compression method; it does not claim field-user telemetry. Lazy routes and the first-load transfer budget are also enforced by `bun run check:web-budget`. |
 | 10 | Trust & clarity | 5/5 | Reviewed data screens show freshness/timestamps, checksums and license attribution where applicable; errors and unfinished screens use actionable user-facing copy rather than internal codes or task IDs. |
-|  | **Total** | **48/50** | **Gate passed:** ≥ 45/50 and no criterion below 3/5. |
+|  | **Total** | **49/50** | **Gate passed:** ≥ 45/50 and no criterion below 3/5. |
 
 **Gate:** ≥ 45/50 to close Phase 5; any criterion below 3/5 blocks the phase regardless of total. Evidence is linked above and indexed in `docs/evidence/p5-ux-07/README.md`.
 
@@ -305,3 +305,20 @@ System-metric charts stack below 768 px; the dashboard overview becomes one colu
 **Audit result:** implemented data screens S2/S3/S5–S11 and S14 expose loading, empty, error/recovery, and success paths; S1 and static S4/S15 have appropriate form/static equivalents, and S13 has a validated configuration form with loading, error, save and rollback states. System is the only remaining direct-page follow-up gap: P5-MON-02 delivered its API but no System UI owner task is assigned; track it before phase UX sign-off.
 
 **P5-UX-06 copy review:** reviewed visible route/component copy against §9. Job and interval states now use human labels, interval errors use safe mapped guidance rather than raw codes, and singular/plural country and job counts are grammatical. Import errors distinguish a rejected upload from an unconfirmed response and direct the reader to check Jobs before retrying; replacement prompts distinguish ready from failed prior versions. Login cooldowns use spelled-out durations, cancellation copy explains the wait and cleanup outcome, and request references consistently read “Request ID.” The incomplete System screen does not show internal task/screen IDs or route paths, and links back to the dashboard; Settings and Audit now render their task-owned pages. Focused regressions cover job labels/errors, interval outcomes, import retry/replacement copy, cooldown copy, unknown error-code fallback, and placeholder guidance.
+
+## 13. Performance budgets and verification (P5-UX-08)
+
+The public catalog is the first route for anonymous visitors. Its home page stays eager to avoid an extra route-chunk round trip before first paint; other screens, the admin shell, and the toast host are loaded only when needed. Route-owned CSS follows the same split. The public landing page does not fetch the Material Design Icons stylesheet/font; it is needed only by the lazy login page or a toast that actually appears.
+
+| Measure | Budget | Enforced / measured as |
+|---|---:|---|
+| Public first-load JavaScript | ≤ 130 KiB gzip | Static import closure of the Vite `index.html` manifest entry, compressed at nginx's default gzip level 1 |
+| Public first-load CSS | ≤ 15 KiB gzip | CSS reachable from that same static entry graph |
+| Preloaded/display fonts | ≤ 24 KiB | Emitted WOFF/TTF/OTF bytes in the initial graph; the self-hosted Space Grotesk WOFF2 is 22.28 kB |
+| Total first-load transfer | ≤ 165 KiB | Gzipped HTML + initial JS/CSS + already-compressed font assets; excludes API response data |
+| Largest single async page JS chunk | ≤ 20 KiB gzip | Largest emitted JavaScript file among the entry's lazy imports |
+| Public catalog LCP | p75 < 2.5 s | Five or more cold mobile lab navigations with a schema-valid small catalog fixture, 4× CPU slowdown, 150 ms RTT, 1.6 Mbps down / 768 Kbps up, and production compression |
+
+`bun run check` builds the production web bundle and then runs `scripts/check-web-budget.ts`; that script reads Vite's emitted manifest, walks only static imports for first-load totals, uses the Ubuntu `gzip -1` utility to match nginx's default compression level, checks lazy route chunks, and fails on a budget breach. This keeps the budgets executable without adding a browser or measurement dependency to the application.
+
+The recorded production-bundle lab measurement and exact methodology are in `docs/evidence/p5-ux-08/performance-report.md`. Lab LCP is a repeatable regression signal, not field telemetry: device CPU, browser version, proxy/CDN behavior, API latency and visitor geography can change real-user results. The report labels its fixture and local production-compression harness rather than claiming an end-user RUM measurement.

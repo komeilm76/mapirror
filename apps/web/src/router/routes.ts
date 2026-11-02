@@ -32,13 +32,7 @@
 import { ROUTE_PREFIXES } from '@mapirror/shared';
 import type { RouteRecordRaw } from 'vue-router';
 
-import CachePage from '@/pages/admin/CachePage.vue';
-import CatalogPage from '@/pages/admin/CatalogPage.vue';
-import ImportPage from '@/pages/admin/ImportPage.vue';
-import LoginPage from '@/pages/auth/LoginPage.vue';
 import HomePage from '@/pages/public/HomePage.vue';
-import NotFoundPage from '@/pages/public/NotFoundPage.vue';
-import PlaceholderPage from '@/pages/PlaceholderPage.vue';
 import { ADMIN_ROOT, LOGIN_PAGE, SITE_ROOT, adminPagePaths } from './paths';
 
 /** A screen not yet built: one component, told by `meta` which screen it stands in for. */
@@ -57,7 +51,12 @@ function pending(options: {
     owner: options.owner,
     placeholder: true,
   };
-  return { path: options.path, name: options.name, component: PlaceholderPage, meta };
+  return {
+    path: options.path,
+    name: options.name,
+    component: () => import('@/pages/PlaceholderPage.vue'),
+    meta,
+  };
 }
 
 /**
@@ -102,13 +101,13 @@ export const APP_ROUTES: readonly RouteRecordRaw[] = [
   {
     path: adminPagePaths.catalog(),
     name: 'admin-catalog',
-    component: CatalogPage,
+    component: () => import('@/pages/admin/CatalogPage.vue'),
     meta: { title: 'Catalog', screen: 'S6', owner: 'P2-WEB-01' },
   },
   {
     path: adminPagePaths.cache(),
     name: 'admin-cache',
-    component: CachePage,
+    component: () => import('@/pages/admin/CachePage.vue'),
     meta: { title: 'Cache', screen: 'S7', owner: 'P2-WEB-03' },
   },
   {
@@ -126,7 +125,7 @@ export const APP_ROUTES: readonly RouteRecordRaw[] = [
   {
     path: adminPagePaths.import(),
     name: 'admin-import',
-    component: ImportPage,
+    component: () => import('@/pages/admin/ImportPage.vue'),
     meta: { title: 'Import', screen: 'S10', owner: 'P4-IMP-05' },
   },
   {
@@ -159,7 +158,7 @@ export const APP_ROUTES: readonly RouteRecordRaw[] = [
   {
     path: LOGIN_PAGE,
     name: 'login',
-    component: LoginPage,
+    component: () => import('@/pages/auth/LoginPage.vue'),
     meta: { title: 'Sign in', screen: 'S1', owner: 'P1-WEB-06' },
   },
 
@@ -167,7 +166,7 @@ export const APP_ROUTES: readonly RouteRecordRaw[] = [
   {
     path: `${ROUTE_PREFIXES.site}/:pathMatch(.*)*`,
     name: 'not-found',
-    component: NotFoundPage,
+    component: () => import('@/pages/public/NotFoundPage.vue'),
     meta: { title: 'Not found', screen: 'S15', owner: 'P3-WEB-05' },
   },
   {

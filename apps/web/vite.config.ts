@@ -72,6 +72,7 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    manifest: true,
     // A source map in production is a file a visitor can fetch; the API's error handling strips stack traces for the
     // same reason (`P1-API-04`). `P1-DOCK-02` serves `dist/` as-is.
     sourcemap: false,

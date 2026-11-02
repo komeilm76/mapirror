@@ -1,6 +1,8 @@
 <script setup lang="ts">
 /** Shared public header, theme preference and attribution footer (`P3-WEB-01`, `13-ui-ux.md` §3). */
 
+import '@/styles/public.css';
+
 import { useStorage } from '@vueuse/core';
 import { useTheme } from 'vuetify';
 import { watch } from 'vue';

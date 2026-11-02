@@ -13,6 +13,8 @@
  * @module pages/admin/CatalogPage
  */
 
+import '@/styles/catalog.css';
+
 import {
   CacheDownloadRequestSchema,
   CacheDownloadResponseSchema,

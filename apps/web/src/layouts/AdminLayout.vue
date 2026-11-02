@@ -32,15 +32,17 @@
  *    setting `window.innerWidth` before the app is built.
  * 3. **The trail is not the page title.** §3 puts breadcrumbs in the topbar and §7 asks for one `h1` per page: the page
  *    owns the heading, the topbar owns the trail (`router/breadcrumbs.ts` says where it comes from).
- * 4. **Icons are deliberate, not decoration.** Material Design Icons are loaded globally; this shell keeps the menu
- *    action as the explicit "Menu" / "Hide menu" text and the breadcrumb separator as a decorative text chevron. The
- *    user-menu control retains its name. `tests/admin-layout.spec.ts` pins these labels and verifies no stray glyphs.
+ * 4. **Icons are deliberate, not decoration.** This shell keeps the menu action as the explicit "Menu" / "Hide menu"
+ *    text and the breadcrumb separator as a decorative text chevron. The user-menu control retains its name.
+ *    `tests/admin-layout.spec.ts` pins these labels and verifies no stray glyphs.
  *
  * The skip link (§7) is the shell's, and it is the first focusable element in the DOM so it is reachable before nine
  * sidebar entries. Its "hidden until focused" styling is in `styles/shell.css`: a rule, not a token.
  *
  * @module layouts/AdminLayout
  */
+
+import '@/styles/shell.css';
 
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';

@@ -11,26 +11,16 @@
  * Nothing else belongs here. Anything a reader might want to test goes in `bootstrap.ts`; anything a reader might want
  * to configure goes in `plugins/`.
  *
- * The stylesheets are the exception, and they are imported here rather than in `bootstrap.ts` for one reason: they are
- * the *application's* CSS, so they must load whichever component renders first, and `main.ts` is the only module a
- * browser is guaranteed to evaluate before any component exists. Tokens first (`tokens.css`), then the type system
- * (`typography.css`), then shell rules (`shell.css`), then public catalog and admin catalog/cache/jobs/intervals/settings/audit rules.
+ * The global foundations are imported here so every route starts with the same tokens and type roles. Public-shell CSS
+ * travels with `PublicLayout`; admin and page-specific styles travel with their lazy-loaded shell/page components, and
+ * the icon font is loaded only by login or the deferred toast host. This keeps unrelated route styles off the public
+ * landing page's critical request path.
  *
  * @module main
  */
 
 import './styles/tokens.css';
 import './styles/typography.css';
-import '@mdi/font/css/materialdesignicons.css';
-import './styles/shell.css';
-import './styles/catalog.css';
-import './styles/cache.css';
-import './styles/jobs.css';
-import './styles/import.css';
-import './styles/intervals.css';
-import './styles/settings.css';
-import './styles/audit.css';
-import './styles/public.css';
 
 import { createWebApp, MOUNT_SELECTOR } from './bootstrap';
 

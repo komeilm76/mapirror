@@ -70,6 +70,15 @@ async function mountAuditRoute(path: string): Promise<HTMLElement> {
   await router.isReady();
   await flushPromises();
   await flushPromises();
+  if (path.startsWith('/_site/admin/')) {
+    // App.vue intentionally defers the admin shell from the public first-load graph.
+    await vi.waitFor(() => {
+      expect(container.querySelector('[aria-label="Administration"]')).not.toBeNull();
+    });
+  } else {
+    await vi.waitFor(() => expect(container.textContent?.trim()).not.toBe(''));
+  }
+  await flushPromises();
   return container;
 }
 
@@ -100,6 +109,8 @@ async function mountPublicCatalog(theme: 'light' | 'dark' = 'light'): Promise<HT
   const router = (app.config.globalProperties as unknown as { $router: Router }).$router;
   await router.isReady();
   await flushPromises();
+  await flushPromises();
+  await vi.waitFor(() => expect(container.textContent?.trim()).not.toBe(''));
   await flushPromises();
   return container;
 }

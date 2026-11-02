@@ -8,6 +8,8 @@
  * @module pages/admin/SettingsPage
  */
 
+import '@/styles/settings.css';
+
 import {
   AdminSettingCatalogTtlMinutesSchema,
   AdminSettingDiskReserveBytesSchema,

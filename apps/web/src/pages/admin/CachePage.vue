@@ -10,6 +10,8 @@
  * @module pages/admin/CachePage
  */
 
+import '@/styles/cache.css';
+
 import {
   CacheBulkUpdateCheckRequestSchema,
   CacheBulkUpdateCheckResponseSchema,

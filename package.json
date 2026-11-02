@@ -14,7 +14,8 @@
     "packages/*"
   ],
   "scripts": {
-    "check": "bun run check:workspaces && bun run check:hygiene && bun run typecheck && bun run lint && bun run format:check && bun run test",
+    "check": "bun run check:workspaces && bun run check:hygiene && bun run typecheck && bun run lint && bun run format:check && bun run check:web-budget && bun run test",
+    "check:web-budget": "bun run build:web && bun run scripts/check-web-budget.ts",
     "check:hygiene": "bun run scripts/check-hygiene.ts",
     "check:full": "bun run check && bun run test:coverage",
     "check:workspaces": "bun run scripts/check-workspaces.ts",

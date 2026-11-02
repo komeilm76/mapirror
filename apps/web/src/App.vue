@@ -6,32 +6,28 @@
  * sizes from the provider it installs, so a page rendered outside it gets a broken grid rather than an error. It exists
  * exactly once, here.
  *
- * ## Why the admin area has its own branch
+ * The admin layout is asynchronous so its shell, persistent job drawer, and Vuetify components do not enter the public
+ * landing page's initial bundle. The public shell stays eager because it is part of the first public paint. ToastHost is
+ * loaded only after a notification is queued; public visitors who have no notification do not fetch its overlay code or
+ * the icon font it uses.
  *
- * The admin shell (`layouts/AdminLayout.vue`) owns an app bar, a drawer **and** the `v-main` those two offset — Vuetify
- * computes the main region's padding from the bars and drawers registered with the layout, so a `v-main` wrapped around a
- * drawer by a parent would leave the content under the bar. Everywhere else the page is the whole screen and a bare
- * `v-main` is exactly right, so the branch is on the **area**, from the same predicate the theme uses
- * (`theme/policy.ts`, `areaForPath`): a path is in the admin panel or it is not, and both the theme and the shell ask the
- * same function rather than each keeping a list.
- *
- * The public shell owns the public header, visitor theme toggle and attribution footer (`P3-WEB-01`). Auth remains a
- * focused bare `v-main`; its theme follows the operating system.
- *
- * `ToastHost` sits inside `v-app` (`P1-WEB-04`) so toasts inherit the theme, and outside `v-main` so a toast is never
- * part of the scrollable page it is reporting on.
+ * `areaForPath` is the same segment-aware policy that selects the route theme. Public pages use the public header and
+ * attribution; admin pages use their dedicated shell; login uses a focused bare `v-main`.
  *
  * @module App
  */
 
-import { computed } from 'vue';
+import { computed, defineAsyncComponent } from 'vue';
 import { useRoute } from 'vue-router';
 
-import ToastHost from '@/components/common/ToastHost.vue';
-import AdminLayout from '@/layouts/AdminLayout.vue';
 import PublicLayout from '@/layouts/PublicLayout.vue';
+import { useNotifications } from '@/stores/notifications';
 import { areaForPath } from '@/theme/policy';
 
+const AdminLayout = defineAsyncComponent(() => import('@/layouts/AdminLayout.vue'));
+const ToastHost = defineAsyncComponent(() => import('@/components/common/ToastHost.vue'));
+const notifications = useNotifications();
+const hasNotifications = computed(() => notifications.items.length > 0);
 const route = useRoute();
 
 /** Whether the current page belongs to the admin panel. */
@@ -54,6 +50,6 @@ const isPublic = computed(() => areaForPath(route.path) === 'public');
       <router-view />
     </v-main>
 
-    <ToastHost />
+    <ToastHost v-if="hasNotifications" />
   </v-app>
 </template>

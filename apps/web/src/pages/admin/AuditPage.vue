@@ -8,6 +8,8 @@
  * @module pages/admin/AuditPage
  */
 
+import '@/styles/audit.css';
+
 import {
   AUDIT_ACTION_VALUES,
   AuditListResponseSchema,

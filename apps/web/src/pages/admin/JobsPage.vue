@@ -8,6 +8,8 @@
  * @module pages/admin/JobsPage
  */
 
+import '@/styles/jobs.css';
+
 import {
   JOB_STATUSES,
   JOB_TYPES,

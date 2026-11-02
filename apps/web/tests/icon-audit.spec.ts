@@ -31,9 +31,13 @@ describe('the UI icon set is deliberate and drawable', () => {
   it('loads the self-hosted MDI font and the icons actually used by controls', () => {
     const stylesheet = readFileSync(MDI_CSS, 'utf8');
     const main = readFileSync(resolve(SOURCE, 'main.ts'), 'utf8');
+    const login = readFileSync(resolve(SOURCE, 'pages/auth/LoginPage.vue'), 'utf8');
+    const toastHost = readFileSync(resolve(SOURCE, 'components/common/ToastHost.vue'), 'utf8');
     const vuetify = readFileSync(resolve(SOURCE, 'plugins/vuetify.ts'), 'utf8');
 
-    expect(main).toContain('@mdi/font/css/materialdesignicons.css');
+    expect(main).not.toContain('@mdi/font/css/materialdesignicons.css');
+    expect(login).toContain('@mdi/font/css/materialdesignicons.css');
+    expect(toastHost).toContain('@mdi/font/css/materialdesignicons.css');
     expect(vuetify).toContain("icons: { defaultSet: 'mdi' }");
     expect(stylesheet).toContain('font-family: "Material Design Icons"');
     expect(stylesheet).toContain('materialdesignicons-webfont.woff2');

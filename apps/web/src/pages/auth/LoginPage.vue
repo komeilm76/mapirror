@@ -27,6 +27,8 @@
  * @module pages/auth/LoginPage
  */
 
+import '@mdi/font/css/materialdesignicons.css';
+
 import {
   LoginRateLimitDetailsSchema,
   LoginRequestSchema,

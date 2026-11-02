@@ -9,6 +9,8 @@
  * @module pages/admin/ImportPage
  */
 
+import '@/styles/import.css';
+
 import {
   CacheVersionListResponseSchema,
   CatalogListResponseSchema,

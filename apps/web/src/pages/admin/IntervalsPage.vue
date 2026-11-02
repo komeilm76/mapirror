@@ -8,6 +8,8 @@
  * @module pages/admin/IntervalsPage
  */
 
+import '@/styles/intervals.css';
+
 import {
   CatalogListResponseSchema,
   INTERVAL_FREQUENCIES,

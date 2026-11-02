@@ -1,6 +1,8 @@
 <script setup lang="ts">
 /** Admin cache-country detail and map-version actions (`P2-WEB-04`, `13-ui-ux.md` §4 S8). */
 
+import '@/styles/cache.css';
+
 import {
   CacheCountryDeleteQuerySchema,
   CacheCountryParamsSchema,

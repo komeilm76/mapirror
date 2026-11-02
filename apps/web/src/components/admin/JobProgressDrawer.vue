@@ -9,6 +9,8 @@
  * @module components/admin/JobProgressDrawer
  */
 
+import '@/styles/jobs.css';
+
 import {
   JobCancelResponseSchema,
   JobDetailResponseSchema,

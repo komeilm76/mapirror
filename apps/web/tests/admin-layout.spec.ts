@@ -128,6 +128,11 @@ async function mountAdmin(
   const router = routerOf(app);
   await router.isReady();
   await flushPromises();
+  // The admin shell is intentionally an async component so it is absent from the public entry bundle.
+  // Wait for that route-level code split to resolve before assertions about its markup.
+  await vi.waitFor(() => {
+    expect(container.querySelector('[aria-label="Administration"]')).not.toBeNull();
+  });
   await flushPromises();
 
   const auth = (app.config.globalProperties as unknown as { $pinia: unknown }).$pinia;

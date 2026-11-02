@@ -23,8 +23,11 @@
  * timers, so this is the only place a dismissal can be timed.
  *
  * The dismiss control uses Material Design Icons' close glyph at 20 px and retains an explicit accessible name. Its
- * package stylesheet is loaded once by `main.ts`; no icon may depend on an unloaded font or an unlabeled glyph.
+ * package stylesheet is loaded with this asynchronously mounted component, so public visitors without a toast do not
+ * download the icon font; no icon may depend on an unloaded font or an unlabeled glyph.
  */
+import '@mdi/font/css/materialdesignicons.css';
+
 import { useNotifications } from '@/stores/notifications';
 
 const notifications = useNotifications();
