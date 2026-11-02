@@ -53,7 +53,7 @@ function runMake(
 describe('Makefile (P1-DOCK-06)', () => {
   it('declares every operator target phony so same-named files cannot suppress the command', () => {
     expect(MAKEFILE).toMatch(
-      /^\.PHONY:.*\bup\b.*\bdown\b.*\blogs\b.*\bmigrate\b.*\btest\b.*\breset-admin\b/mu,
+      /^\.PHONY:.*\bup\b.*\bdown\b.*\blogs\b.*\bmigrate\b.*\btest\b.*\breset-admin\b.*\bbackup\b.*\brestore\b/mu,
     );
   });
 

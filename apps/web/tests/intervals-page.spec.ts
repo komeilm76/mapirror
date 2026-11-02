@@ -64,6 +64,9 @@ async function mountIntervals(
   document.body.append(container);
   app.mount(container);
   await routerOf(app).isReady();
+  // `IntervalsPage` is route-lazy-loaded; `router.isReady()` does not guarantee its async component has rendered.
+  // Wait for the route-owned root instead of assuming two promise flushes are enough under a busy test worker.
+  await vi.waitFor(() => expect(container.querySelector('.mm-intervals-page')).not.toBeNull());
   await flushPromises();
   await flushPromises();
   return { app, container };

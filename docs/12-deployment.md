@@ -426,17 +426,16 @@ generated password to a secret store, for example); it refuses a terminal, where
 
 ```bash
 ./scripts/backup.sh                 # runs ON THE HOST; shells into the containers
+# or: make backup
 ```
 
-`scripts/backup.sh` is a host-side wrapper: `docker compose exec -T db pg_dump …` for the database,
-then it walks `/data/cache` through the `api` container to write the manifest. Output goes to
-`./backups/<timestamp>/` (gitignored).
-
-Backs up:
-
-- `pg_dump --format=custom` of the database (authoritative state),
-- a manifest of cached artifacts (path, size, md5) — the files themselves are already checksummed and
-  can be re-downloaded from the source if lost.
+`scripts/backup.sh` writes `database.dump` and `cache-manifest.json` to
+`./backups/<UTC timestamp>/` (gitignored). The database is captured with `pg_dump --format=custom`;
+a disposable, freshly built API container scans the shared cache volume, and the manifest records each
+regular cached map file's relative path, byte size, and computed MD5. Hashing
+reads every cached artifact, so schedule it for a quiet period on large volumes. The map files themselves
+are not copied: they can be re-downloaded from Geofabrik if lost. A failed run removes its incomplete
+staging directory rather than leaving something that looks like a complete backup.
 
 Recommended cron:
 
@@ -447,19 +446,22 @@ Recommended cron:
 ### Restore
 
 ```bash
-docker compose stop api
 ./scripts/restore.sh backups/2026-10-24T021500Z
-docker compose start api
+# or: make restore BACKUP=backups/2026-10-24T021500Z
 ```
 
-The restore script recreates the database and restores the dump. It does **not** restore map files —
-the backup contains a manifest, not terabytes of artifacts. Instead it reconciles: every `ready` version
-whose file is present on the volume is verified against its recorded md5; every missing file is marked
-`failed` with `VERSION_FILE_MISSING` and appears in the admin UI as "file missing — re-download".
+The restore wrapper validates the backup files and builds the current API image before taking the API
+offline, then starts PostgreSQL if needed, stops the API, recreates the `mapirror` database, and restores
+the custom dump. It leaves the cache volume in place and runs the same missing-file reconciliation
+used by API housekeeping **before** restarting the API. Missing, empty, or unsafe files for `ready`
+versions are marked `failed` with `VERSION_FILE_MISSING`; the admin UI then offers the re-download path.
+The manifest is an inventory, not a file backup, and restore does not compare its hashes with the cache or
+re-hash every file against database checksums. Re-download missing artifacts from the source.
 
-That is deliberate: re-downloading a country from Geofabrik is cheaper and more trustworthy than
-restoring a copy from backup. A restore drill — including the missing-artifact path — is required in
-Phase 6 (`P6-OPS-01`).
+On success the script starts the API and waits for `/readyz`; on failure it leaves the API stopped so the
+operator can inspect the failing restore step before serving traffic. The script is intentionally destructive
+to the current database. Perform a restore drill against a disposable deployment first, and retain a separate
+copy of backups outside the server. Phase 6 (`P6-OPS-01`) requires a drill including the missing-artifact path.
 
 ## 7. Monitoring the deployment
 

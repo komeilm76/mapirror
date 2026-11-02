@@ -152,6 +152,8 @@ describe('the Dockerfile', () => {
       'scripts/init-admin.ts',
       'scripts/reset-admin-password.ts',
       'scripts/wait-for-db.ts',
+      'scripts/cache-manifest.ts',
+      'scripts/reconcile-cache.ts',
       'scripts/lib/secret-prompt.ts',
       'docker/entrypoint.api.sh',
     ]) {

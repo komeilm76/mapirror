@@ -2,7 +2,7 @@
 # Override COMPOSE when using a wrapper, for example: make up COMPOSE='docker compose -f compose.prod.yaml'.
 COMPOSE ?= docker compose
 
-.PHONY: up down logs migrate test reset-admin
+.PHONY: up down logs migrate test reset-admin backup restore
 
 ## Build and start the stack in the background.
 up:
@@ -27,3 +27,12 @@ test:
 ## Reset the admin password interactively in the running API container.
 reset-admin:
 	$(COMPOSE) exec api bun scripts/reset-admin-password.ts
+
+## Write a PostgreSQL dump and cache artifact manifest under backups/.
+backup:
+	COMPOSE='$(COMPOSE)' ./scripts/backup.sh
+
+## Restore BACKUP=backups/<timestamp>, reconcile cache records, and verify API readiness.
+restore:
+	@test -n "$(BACKUP)" || (echo 'set BACKUP=backups/<timestamp>' >&2; exit 2)
+	COMPOSE='$(COMPOSE)' ./scripts/restore.sh "$(BACKUP)"

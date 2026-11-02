@@ -87,11 +87,11 @@ COPY --chown=10001:10001 packages/shared/package.json ./packages/shared/
 COPY --chown=10001:10001 packages/shared/src ./packages/shared/src
 
 # The operator scripts that must exist *inside* the container: `P1-DOCK-04`'s entrypoint runs the first two on every
-# boot, and the third is what an operator runs through `docker compose exec api` to reset a forgotten password. Named
-# one by one, with `secret-prompt.ts` — the only `lib/` module they import — because `scripts/lib/` also holds the
-# build-context matcher, which is a gate tool the container has no use for.
+# boot, and the third is what an operator runs through `docker compose exec api` to reset a forgotten password. The
+# cache manifest and one-off reconciliation are invoked by the host backup/restore wrappers. Named one by one, with
+# `secret-prompt.ts` — the only `lib/` module they import — because `scripts/lib/` also holds gate tooling.
 COPY --chown=10001:10001 scripts/migrate.ts scripts/init-admin.ts scripts/reset-admin-password.ts ./scripts/
-COPY --chown=10001:10001 scripts/wait-for-db.ts ./scripts/
+COPY --chown=10001:10001 scripts/wait-for-db.ts scripts/cache-manifest.ts scripts/reconcile-cache.ts ./scripts/
 COPY --chown=10001:10001 scripts/lib/secret-prompt.ts ./scripts/lib/
 
 # The entrypoint the container starts from (`P1-DOCK-04`). Copied to `/usr/local/bin`, outside the application tree, so
