@@ -6,6 +6,7 @@ import { createUpdateCheckHandler } from '../src/modules/jobs/update-check-handl
 import type { JobHandlerContext } from '../src/modules/jobs/worker';
 
 function makeContext(countryIds: readonly string[]) {
+  const controller = new AbortController();
   const execute = vi.fn(() => Promise.resolve(countryIds.map((country_id) => ({ country_id }))));
   const query = {
     select: vi.fn(() => query),
@@ -18,18 +19,19 @@ function makeContext(countryIds: readonly string[]) {
   return {
     context: {
       database,
-      signal: new AbortController().signal,
+      signal: controller.signal,
       reportProgress,
     } as JobHandlerContext,
     execute,
     reportProgress,
+    controller,
   };
 }
 
-function makeJob(payload: Job['payload']): Job {
+function makeJob(payload: Job['payload'], type: Job['type'] = 'update_check'): Job {
   return {
     id: '00000000-0000-4000-8000-000000000001',
-    type: 'update_check',
+    type,
     status: 'running',
     priority: 0,
     payload,
@@ -117,6 +119,47 @@ describe('bulk update-check handler', () => {
       unknown: 0,
       skipped: 1,
     });
+  });
+
+  it('rejects the wrong job type and propagates or synthesizes cancellation reasons', async () => {
+    const { context, controller } = makeContext([]);
+    const handler = createUpdateCheckHandler({
+      checker: { check: vi.fn(() => Promise.resolve(checkedResult('unknown'))) },
+    });
+    await expect(handler(makeJob({}, 'download'), context)).rejects.toThrow(
+      'update check handler received a non-update job',
+    );
+
+    const reason = new Error('worker shutdown');
+    controller.abort(reason);
+    await expect(handler(makeJob({}), context)).rejects.toBe(reason);
+
+    const { context: noReasonContext, controller: noReasonController } = makeContext([]);
+    noReasonController.abort('stop');
+    await expect(handler(makeJob({}), noReasonContext)).rejects.toThrow(
+      'Update check job was canceled.',
+    );
+  });
+
+  it('stops between country checks after cooperative cancellation and omits final progress', async () => {
+    const ids = ['country-a', 'country-b'];
+    const { context, controller, reportProgress } = makeContext(ids);
+    const checker = {
+      check: vi.fn(() => {
+        controller.abort();
+        return Promise.resolve(checkedResult('up_to_date'));
+      }),
+    } as unknown as UpdateChecker;
+    const result = await createUpdateCheckHandler({ checker })(makeJob({}), context);
+    expect(result).toEqual({
+      total: 2,
+      checked: 1,
+      updateAvailable: 0,
+      upToDate: 1,
+      unknown: 0,
+      skipped: 1,
+    });
+    expect(reportProgress).toHaveBeenCalledTimes(2);
   });
 
   it('treats a cache removed during checking as skipped while other failures remain retryable', async () => {
