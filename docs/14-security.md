@@ -228,7 +228,7 @@ recorded here so a future reviewer does not "fix" the missing token check.
 - [x] Production-mode error test confirms unexpected errors expose no message, stack, driver details, or secrets (`errors.spec.ts`)
 - [ ] Non-root containers verified with `docker compose exec api id` — Docker was unavailable here; operator verification remains
 - [x] Production Compose does not publish PostgreSQL to the host; the DB has no `ports` mapping (`compose.spec.ts`)
-- [ ] `bun audit` clean; base images use the documented version tags, but `bun audit` reports two moderate transitive advisories (`glob@13.0.6`, `minimatch@3.1.5`/`10.2.6`). `bun audit fix` cannot cross the current dependent version ranges; no high/critical advisories were reported. Review/remediation is assigned to P6-SEC-02
+- [ ] `bun audit` clean; base images use the documented version tags. Full audit reports two moderate dev-only transitive advisories (`glob@13.0.6`, `minimatch@3.1.5`/`10.2.6`); `bun audit --production` is clean and `bun audit --audit-level=high` reports none. `bun audit fix` cannot cross current dependent ranges. P6-SEC-02 is complete (no high/critical); this checkbox stays open until the full audit is clean or the remaining advisories are explicitly accepted
 - [ ] Backup/restore drill completed without exposing secrets — the Docker restore drill remains pending with P6-OPS-01
 
-**Sign-off status:** 15 of 20 items are evidence-backed. Final sign-off is intentionally withheld pending the four database/Docker checks above and remediation/review of the dependency advisories in P6-SEC-02.
+**Sign-off status:** 15 of 20 items are evidence-backed. P6-SEC-02 verified no high/critical findings and a clean production dependency audit, but the full audit still has two moderate dev-tool advisories. Final sign-off remains withheld pending the four database/Docker checks above and resolution or explicit acceptance of those advisories.
