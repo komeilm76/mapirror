@@ -189,6 +189,23 @@ describe('deployment proxy contract (12-deployment.md / 08-tasks.md ↔ nginx.co
   });
 });
 
+describe('forward-only upgrade runbook (12-deployment.md ↔ 08-tasks.md)', () => {
+  it('requires a pre-upgrade backup, checks the migrated API, and restores both code and schema on rollback', () => {
+    const deployment = read('docs/12-deployment.md');
+    const upgrade = deployment.slice(
+      deployment.indexOf('### Upgrade (forward-only migrations)'),
+      deployment.indexOf('### Admin password reset'),
+    );
+
+    expect(upgrade).toContain('./scripts/backup.sh');
+    expect(upgrade).toContain('docker compose up -d --build');
+    expect(upgrade).toContain('SCHEMA_SKEW');
+    expect(upgrade).toContain('pre-upgrade');
+    expect(upgrade).toContain('pg_restore --username=mapirror --exit-on-error --no-owner');
+    expect(upgrade).toContain('bun run test:api');
+  });
+});
+
 describe('enums (03-data-model.md ↔ constants)', () => {
   it.each([
     ['interval_frequency', INTERVAL_FREQUENCIES],

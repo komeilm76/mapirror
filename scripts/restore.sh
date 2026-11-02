@@ -74,6 +74,9 @@ for _ in {1..90}; do
   sleep 1
 done
 if [[ "$ready" -ne 1 ]]; then
+  if ! compose stop api; then
+    printf 'warning: could not stop the API after its readiness check failed; stop it manually before serving traffic\n' >&2
+  fi
   printf 'error: API did not become ready within 90 seconds; inspect: docker compose logs api\n' >&2
   exit 1
 fi

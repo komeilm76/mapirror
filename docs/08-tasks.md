@@ -273,7 +273,7 @@ prove L1–L3.
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
 | P6-OPS-01 | Backup/restore script + drill (DB + cache manifest) | DOCK-5 | P1-DOCK-05 | 🟦 | Scripts and non-Docker tests pass; pending operator Docker restore drill before done |
-| P6-OPS-02 | Upgrade path documented + tested (migrations forward) | DOCK-5 | all | ⬜ | vN → vN+1 without data loss |
+| P6-OPS-02 | Upgrade path documented + tested (migrations forward) | DOCK-5 | all | 🟦 | Upgrade integration case added; pending operator Docker PostgreSQL run to verify vN → vN+1 data retention |
 | P6-OPS-03 | Disk-full + restart drills | DOCK-5 | P2-JOB-04 | ⬜ | Documented outcomes match behavior |
 | P6-SEC-01 | Security checklist sign-off (`14-security.md`) | ENG-6 | all | ⬜ | Every item checked |
 | P6-SEC-02 | Dependency audit + headers + rate-limit verification | ENG-6 | P1-API-05 | ⬜ | No high/critical |

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -11,6 +11,7 @@ import {
   migrateToLatest,
   resetDatabase,
 } from '../../src/db/migrator';
+import { EXPECTED_MIGRATIONS } from '../../src/db/version-check';
 import { freshDatabaseSkipReason, withFreshDatabase } from '../helpers/fresh-db';
 import { Migrator } from 'kysely/migration';
 
@@ -148,6 +149,104 @@ describe.skipIf(canCreate !== null)('migrations on a fresh database', () => {
       const settings = await sql<{ key: string }>`select key from settings`.execute(database.db);
       expect(settings.rows.map((row) => row.key)).toEqual(['probe.key']);
     });
+  });
+
+  it('upgrades the preceding schema version and preserves existing rows', async () => {
+    const previousMigrations = EXPECTED_MIGRATIONS.slice(0, -1);
+    const latestMigration = EXPECTED_MIGRATIONS.at(-1);
+    expect(latestMigration).toBeDefined();
+    const previousDirectory = await mkdtemp(join(tmpdir(), 'mapirror-upgrade-from-'));
+
+    try {
+      for (const name of previousMigrations) {
+        await copyFile(join(MIGRATIONS_DIR, `${name}.sql`), join(previousDirectory, `${name}.sql`));
+      }
+
+      await withFreshDatabase(async (database) => {
+        const prior = await migrateToLatest(database.db, previousDirectory);
+        expect(prior.applied).toEqual(previousMigrations);
+
+        const admin = await sql<{ id: string }>`
+          insert into admins (username, password_hash)
+          values ('upgrade-probe', 'argon2id$upgrade-probe')
+          returning id
+        `.execute(database.db);
+        const adminId = admin.rows[0]!.id;
+        const country = await sql<{ id: string }>`
+          insert into countries (source_id, slug, name)
+          values ('europe/finland', 'finland', 'Finland')
+          returning id
+        `.execute(database.db);
+        const countryId = country.rows[0]!.id;
+        await sql`
+          insert into country_cache (country_id, versions_ready_count, total_size_bytes)
+          values (${countryId}::uuid, 1, 1234)
+        `.execute(database.db);
+        await sql`
+          insert into map_versions (
+            country_id, version, origin, source_filename, file_size_bytes, checksum_md5,
+            storage_path, status, uploaded_by
+          ) values (
+            ${countryId}::uuid, 'upgrade-probe', 'upload', 'finland-upgrade-probe.osm.pbf', 1234,
+            'd41d8cd98f00b204e9800998ecf8427e',
+            'finland/upgrade-probe/finland-upgrade-probe.osm.pbf', 'ready', ${adminId}::uuid
+          )
+        `.execute(database.db);
+        await sql`
+          insert into settings (key, value)
+          values ('upgrade.probe', '{"retained":true}'::jsonb)
+        `.execute(database.db);
+
+        const upgraded = await migrateToLatest(database.db);
+        expect(upgraded.applied).toEqual([latestMigration]);
+
+        const preserved = await sql<{
+          username: string;
+          slug: string;
+          versions_ready_count: number;
+          total_size_bytes: string;
+          version: string;
+          version_status: string;
+          checksum_md5: string;
+          setting_value: { retained: boolean };
+        }>`
+          select admins.username, countries.slug, country_cache.versions_ready_count,
+                 country_cache.total_size_bytes, map_versions.version, map_versions.status as version_status,
+                 map_versions.checksum_md5, settings.value as setting_value
+            from admins
+            join map_versions on map_versions.uploaded_by = admins.id
+            join countries on countries.id = map_versions.country_id
+            join country_cache on country_cache.country_id = countries.id
+            cross join settings
+           where admins.id = ${adminId}::uuid
+             and countries.id = ${countryId}::uuid
+             and settings.key = 'upgrade.probe'
+        `.execute(database.db);
+        expect(preserved.rows).toEqual([
+          {
+            username: 'upgrade-probe',
+            slug: 'finland',
+            versions_ready_count: 1,
+            total_size_bytes: '1234',
+            version: 'upgrade-probe',
+            version_status: 'ready',
+            checksum_md5: 'd41d8cd98f00b204e9800998ecf8427e',
+            setting_value: { retained: true },
+          },
+        ]);
+
+        await sql`
+          insert into metrics_samples (sampled_at, cache_size_bytes)
+          values ('2026-11-02T12:00:00Z', 1234)
+        `.execute(database.db);
+        const migrationHistory = await sql<{ name: string }>`
+          select name from kysely_migration order by name
+        `.execute(database.db);
+        expect(migrationHistory.rows.map(({ name }) => name)).toEqual(EXPECTED_MIGRATIONS);
+      });
+    } finally {
+      await rm(previousDirectory, { recursive: true, force: true });
+    }
   });
 
   it('refuses to roll back, because migrations are forward-only', async () => {

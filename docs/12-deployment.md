@@ -395,17 +395,59 @@ docker compose logs -f web          # nginx access/error
 docker compose logs --tail=200 db
 ```
 
-### Restart / update
+### Upgrade (forward-only migrations)
+
+Before changing the running release, create a database dump and cache inventory, and copy the backup directory
+off the server. Keep the backup until the new release is healthy and verified:
 
 ```bash
-git pull
-docker compose build
-docker compose up -d                # migrations run on boot
+./scripts/backup.sh
+# Copy the reported backups/<UTC timestamp>/ directory to separate storage.
+
+git pull --ff-only
+docker compose up -d --build
+docker compose logs --tail=200 api
 docker compose ps
 ```
 
-Rollback: `git checkout <previous-tag> && docker compose up -d --build`. Migrations are forward-only;
-restore the database backup if a rollback crosses a schema change.
+Compose waits for PostgreSQL health before starting the API. The API entrypoint applies each pending SQL
+migration in its own transaction **before** it starts serving; a failed migration is not recorded as applied,
+and the API does not start. Logs should show either `migrations: already up to date` or the exact migration
+names followed by `migrations: N applied`, then API startup. Confirm `api` is healthy in `docker compose ps`
+and verify readiness:
+
+```bash
+docker compose exec -T api bun -e \
+  'fetch("http://127.0.0.1:3000/readyz").then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'
+```
+
+The integration suite includes an upgrade drill: it migrates a fresh scratch database to the preceding
+migration set, inserts representative admin, catalog/cache, version, and settings rows, applies the next
+migration, then asserts those rows and the full migration history remain intact. Run it with `bun run test:api`
+against the reachable PostgreSQL instance in `DATABASE_URL_TEST`; the test role must have `CREATEDB`. It is
+skipped when that database is unreachable or the role cannot create scratch databases.
+
+Migrations are forward-only. An older API image against a database with a newer migration is refused at boot
+with `SCHEMA_SKEW`; the API does not attempt a downgrade. A code-only rollback is safe only when the restored
+image recognizes every applied migration and compatibility has been checked. If the new release applied a
+migration, use the **pre-upgrade** database dump to roll back both schema and code. The cache volume is retained;
+missing files are reconciled by the older API's housekeeping after it starts:
+
+```bash
+# Preserve the backup directory outside the checkout before switching tags.
+docker compose stop api
+git checkout <previous-tag>
+docker compose up -d db
+docker compose exec -T db dropdb --if-exists --force --username=mapirror mapirror
+docker compose exec -T db createdb --username=mapirror --owner=mapirror mapirror
+docker compose exec -T db pg_restore --username=mapirror --exit-on-error --no-owner --role=mapirror --dbname=mapirror \
+  < /secure/backups/<pre-upgrade-timestamp>/database.dump
+docker compose up -d --build
+```
+
+This rollback database restore is deliberately separate from `scripts/restore.sh`: that script restores a
+backup for the current code and runs the current release's migration/reconciliation path. For destructive
+recovery, see §6 `Restore`; the pre-upgrade dump is the only path that returns the schema to an older release.
 
 ### Admin password reset
 
@@ -458,8 +500,9 @@ versions are marked `failed` with `VERSION_FILE_MISSING`; the admin UI then offe
 The manifest is an inventory, not a file backup, and restore does not compare its hashes with the cache or
 re-hash every file against database checksums. Re-download missing artifacts from the source.
 
-On success the script starts the API and waits for `/readyz`; on failure it leaves the API stopped so the
-operator can inspect the failing restore step before serving traffic. The script is intentionally destructive
+On success the script starts the API and waits for `/readyz`; on failure it stops the API so the operator
+can inspect the failing restore step before serving traffic. If Docker refuses that final stop, the script
+warns explicitly and the operator must stop the API manually before serving traffic. The script is intentionally destructive
 to the current database. Perform a restore drill against a disposable deployment first, and retain a separate
 copy of backups outside the server. Phase 6 (`P6-OPS-01`) requires a drill including the missing-artifact path.
 

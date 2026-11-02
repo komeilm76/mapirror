@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -21,7 +21,12 @@ const RESTORE = join(ROOT, 'scripts/restore.sh');
 function fixture() {
   const directory = mkdtempSync(join(tmpdir(), 'mapirror-backup-restore-'));
   const compose = join(directory, 'compose');
+  const bin = join(directory, 'bin');
   const log = join(directory, 'compose.log');
+  mkdirSync(bin);
+  const sleep = join(bin, 'sleep');
+  writeFileSync(sleep, '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 });
+  chmodSync(sleep, 0o755);
   writeFileSync(
     compose,
     `#!/usr/bin/env bash
@@ -39,12 +44,15 @@ case "$*" in
   *pg_restore*)
     [[ pg_restore != "\${FAIL_AT:-}" ]] || exit 19
     ;;
+  *127.0.0.1:3000/readyz*)
+    [[ readiness != "\${FAIL_AT:-}" ]] || exit 19
+    ;;
 esac
 `,
     { mode: 0o755 },
   );
   chmodSync(compose, 0o755);
-  return { directory, compose, log };
+  return { directory, compose, bin, log };
 }
 
 describe('host backup and restore scripts', () => {
@@ -164,6 +172,36 @@ describe('host backup and restore scripts', () => {
       );
       expect(calls.at(-1)).toContain('127.0.0.1:3000/readyz');
       expect(result.stdout).toContain('restore complete');
+    } finally {
+      rmSync(state.directory, { recursive: true, force: true });
+    }
+  });
+
+  it('stops the API again if it fails the post-restore readiness check', () => {
+    const state = fixture();
+    const backupDirectory = join(state.directory, 'backup');
+    mkdirSync(backupDirectory);
+    writeFileSync(join(backupDirectory, 'database.dump'), 'dump');
+    writeFileSync(join(backupDirectory, 'cache-manifest.json'), '{"artifacts":[]}');
+    try {
+      const result = spawnSync('bash', [RESTORE, backupDirectory], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: [state.bin, process.env.PATH ?? '/usr/bin:/bin'].join(delimiter),
+          COMPOSE: state.compose,
+          COMPOSE_LOG: state.log,
+          FAIL_AT: 'readiness',
+        },
+      });
+      const calls = readFileSync(state.log, 'utf8').trim().split('\n').filter(Boolean);
+      const apiStops = calls.filter((call) => call.endsWith('stop api'));
+
+      expect(result.status).not.toBe(0);
+      expect(calls.some((call) => call.includes('up -d api'))).toBe(true);
+      expect(apiStops).toHaveLength(2);
+      expect(calls.at(-1)).toContain('stop api');
     } finally {
       rmSync(state.directory, { recursive: true, force: true });
     }
