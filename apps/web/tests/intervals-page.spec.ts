@@ -614,4 +614,221 @@ describe('admin intervals screen', () => {
     expect(container.textContent).toContain('Last status');
     expect(container.textContent).toContain('No runs yet');
   });
+
+  it('edits a schedule with frequency-specific fields, then pauses it with a partial mutation', async () => {
+    const initial = intervalFromBody({
+      name: 'Daily Finland refresh',
+      frequency: 'daily',
+      timeOfDay: '03:00',
+      keepVersions: 3,
+      onlyIfChanged: true,
+      enabled: true,
+    });
+    let saved = initial;
+    const mutations: Array<{ method: string; body: Record<string, unknown> }> = [];
+    const fetchImpl = vi.fn<typeof fetch>((input, init) =>
+      Promise.resolve().then(() => {
+        const url = requestUrl(input);
+        const method = init?.method ?? 'GET';
+        if (url.pathname === '/_auth/api/me') return jsonResponse(ME);
+        if (url.pathname === '/_admin/api/catalog') {
+          return jsonResponse({
+            data: [COUNTRY],
+            meta: { page: 1, limit: 100, total: 1, totalPages: 1 },
+            catalogSyncedAt: NOW,
+          });
+        }
+        if (url.pathname === '/_admin/api/intervals' && method === 'GET') {
+          return jsonResponse({ data: [saved] });
+        }
+        if (url.pathname === `/_admin/api/intervals/${INTERVAL_ID}` && method === 'PATCH') {
+          const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as Record<
+            string,
+            unknown
+          >;
+          mutations.push({ method, body });
+          saved = intervalFromBody({ ...saved, ...body });
+          return jsonResponse({ interval: saved });
+        }
+        if (url.pathname === '/_admin/api/jobs') {
+          return jsonResponse({ data: [], meta: { page: 1, limit: 1, total: 0, totalPages: 0 } });
+        }
+        return jsonResponse({ data: [], meta: { page: 1, limit: 25, total: 0, totalPages: 0 } });
+      }),
+    );
+
+    const { container } = await mountIntervals(fetchImpl);
+    await vi.waitFor(() =>
+      expect(container.querySelector('.mm-interval-card h2')?.textContent).toBe(initial.name),
+    );
+    [...container.querySelectorAll<HTMLButtonElement>('.mm-interval-actions button')]
+      .find((button) => button.textContent?.trim() === 'Edit')
+      ?.click();
+    await flushPromises();
+
+    expect(container.querySelector('#mm-interval-form-title')?.textContent).toBe('Edit interval');
+    expect(
+      container.querySelector<HTMLInputElement>(
+        'input[type="checkbox"][value="' + COUNTRY_ID + '"]',
+      )?.checked,
+    ).toBe(true);
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="e.g. Weekly Europe refresh"]',
+    );
+    expect(name).not.toBeNull();
+    if (name === null) throw new Error('interval name input missing');
+    name.value = 'Monthly Finland refresh';
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+
+    const frequency = container.querySelector<HTMLSelectElement>('.mm-interval-form select');
+    expect(frequency).not.toBeNull();
+    if (frequency === null) throw new Error('frequency select missing');
+    frequency.value = 'monthly';
+    frequency.dispatchEvent(new Event('change', { bubbles: true }));
+    await flushPromises();
+    const dayOfMonth = [
+      ...container.querySelectorAll<HTMLSelectElement>('.mm-interval-form select'),
+    ].at(-1);
+    expect(dayOfMonth).toBeDefined();
+    if (dayOfMonth === undefined) throw new Error('day-of-month select missing');
+    dayOfMonth.value = '15';
+    dayOfMonth.dispatchEvent(new Event('change', { bubbles: true }));
+
+    const retention = container.querySelector<HTMLInputElement>(
+      '.mm-interval-options input[type="number"]',
+    );
+    expect(retention).not.toBeNull();
+    if (retention === null) throw new Error('retention input missing');
+    retention.value = '5';
+    retention.dispatchEvent(new Event('input', { bubbles: true }));
+    const options = container.querySelectorAll<HTMLInputElement>(
+      '.mm-interval-options input[type="checkbox"]',
+    );
+    expect(options).toHaveLength(2);
+    options[0]!.click();
+
+    [...container.querySelectorAll<HTMLButtonElement>('.mm-interval-form-actions button')]
+      .find((button) => button.textContent?.includes('Save changes'))
+      ?.click();
+    await vi.waitFor(() => expect(mutations).toHaveLength(1));
+    await vi.waitFor(() =>
+      expect(container.querySelector('.mm-interval-card h2')?.textContent).toBe(
+        'Monthly Finland refresh',
+      ),
+    );
+    expect(mutations[0]?.body).toMatchObject({
+      name: 'Monthly Finland refresh',
+      frequency: 'monthly',
+      dayOfMonth: 15,
+      countryIds: [COUNTRY_ID],
+      keepVersions: 5,
+      onlyIfChanged: false,
+      enabled: true,
+    });
+    expect(mutations[0]?.body).not.toHaveProperty('weekday');
+    expect(container.textContent).toContain('Day 15 of each month at 03:00 UTC');
+
+    [...container.querySelectorAll<HTMLButtonElement>('.mm-interval-actions button')]
+      .find((button) => button.textContent?.trim() === 'Pause')
+      ?.click();
+    await vi.waitFor(() => expect(mutations).toHaveLength(2));
+    await vi.waitFor(() => expect(container.textContent).toContain('Paused'));
+    expect(mutations[1]?.body).toEqual({ enabled: false });
+  });
+
+  it('keeps the delete confirmation open on a running-run conflict and removes only after retry', async () => {
+    let saved: ReturnType<typeof intervalFromBody> | null = intervalFromBody({
+      name: 'Daily Finland refresh',
+      frequency: 'daily',
+      timeOfDay: '03:00',
+      keepVersions: 3,
+      onlyIfChanged: true,
+      enabled: true,
+    });
+    let deleteAttempts = 0;
+    const fetchImpl = vi.fn<typeof fetch>((input, init) =>
+      Promise.resolve().then(() => {
+        const url = requestUrl(input);
+        const method = init?.method ?? 'GET';
+        if (url.pathname === '/_auth/api/me') return jsonResponse(ME);
+        if (url.pathname === '/_admin/api/catalog') {
+          return jsonResponse({
+            data: [COUNTRY],
+            meta: { page: 1, limit: 100, total: 1, totalPages: 1 },
+            catalogSyncedAt: NOW,
+          });
+        }
+        if (url.pathname === '/_admin/api/intervals' && method === 'GET') {
+          return jsonResponse({ data: saved === null ? [] : [saved] });
+        }
+        if (url.pathname === `/_admin/api/intervals/${INTERVAL_ID}` && method === 'DELETE') {
+          deleteAttempts += 1;
+          if (deleteAttempts === 1) {
+            return jsonResponse(
+              {
+                error: {
+                  code: 'JOB_ALREADY_RUNNING',
+                  message:
+                    'This interval has a run in progress. Wait for it to finish or retry with force=true.',
+                  requestId: 'req-interval-delete',
+                },
+              },
+              409,
+            );
+          }
+          saved = null;
+          return new Response(null, { status: 204 });
+        }
+        if (url.pathname === '/_admin/api/jobs') {
+          return jsonResponse({ data: [], meta: { page: 1, limit: 1, total: 0, totalPages: 0 } });
+        }
+        return jsonResponse({ data: [], meta: { page: 1, limit: 25, total: 0, totalPages: 0 } });
+      }),
+    );
+
+    const { container } = await mountIntervals(fetchImpl);
+    await vi.waitFor(() =>
+      expect(container.querySelector('.mm-interval-card h2')?.textContent).toBe(
+        'Daily Finland refresh',
+      ),
+    );
+    [...container.querySelectorAll<HTMLButtonElement>('.mm-interval-actions button')]
+      .find((button) => button.textContent?.trim() === 'Delete')
+      ?.click();
+    await flushPromises();
+
+    const dialog = container.querySelector<HTMLElement>('#mm-interval-delete-title')?.parentElement;
+    expect(dialog?.textContent).toContain('run history');
+    expect(dialog?.textContent).toContain('Downloaded map versions are retained.');
+    [...(dialog?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
+      .find((button) => button.textContent?.trim() === 'Keep interval')
+      ?.click();
+    await flushPromises();
+    expect(container.querySelector('#mm-interval-delete-title')).toBeNull();
+    expect(deleteAttempts).toBe(0);
+
+    [...container.querySelectorAll<HTMLButtonElement>('.mm-interval-actions button')]
+      .find((button) => button.textContent?.trim() === 'Delete')
+      ?.click();
+    await flushPromises();
+    const reopenedDialog = container.querySelector<HTMLElement>(
+      '#mm-interval-delete-title',
+    )?.parentElement;
+    [...(reopenedDialog?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
+      .find((button) => button.textContent?.trim() === 'Delete interval')
+      ?.click();
+    await vi.waitFor(() => expect(deleteAttempts).toBe(1));
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain('Request ID: req-interval-delete'),
+    );
+    expect(container.querySelector('#mm-interval-delete-title')).not.toBeNull();
+    expect(container.textContent).toContain('This interval has a run in progress.');
+
+    [...(reopenedDialog?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
+      .find((button) => button.textContent?.trim() === 'Delete interval')
+      ?.click();
+    await vi.waitFor(() => expect(deleteAttempts).toBe(2));
+    await vi.waitFor(() => expect(container.textContent).toContain('No intervals yet'));
+    expect(container.querySelector('#mm-interval-delete-title')).toBeNull();
+  });
 });
