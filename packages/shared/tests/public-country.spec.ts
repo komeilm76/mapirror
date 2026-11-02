@@ -66,11 +66,23 @@ describe('public country detail contracts', () => {
       license,
     };
     expect(PublicCountryVersionsResponseSchema.parse(response)).toEqual(response);
-    expect(
-      PublicCountryVersionsResponseSchema.safeParse({
-        ...response,
-        data: [{ ...version, jobId: 'internal-job' }],
-      }).success,
-    ).toBe(false);
+    for (const field of [
+      'storage_path',
+      'jobId',
+      'job_id',
+      'adminId',
+      'admin_id',
+      'ip',
+      'ipHash',
+      'ip_hash',
+    ]) {
+      expect(
+        PublicCountryVersionsResponseSchema.safeParse({
+          ...response,
+          data: [{ ...version, [field]: 'internal-value' }],
+        }).success,
+        field,
+      ).toBe(false);
+    }
   });
 });

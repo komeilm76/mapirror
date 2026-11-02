@@ -47,11 +47,24 @@ describe('public catalog contracts', () => {
       },
     };
     expect(PublicCountriesResponseSchema.parse(response)).toEqual(response);
-    expect(
-      PublicCountriesResponseSchema.safeParse({
-        ...response,
-        data: [{ ...response.data[0], countryId: 'internal-id' }],
-      }).success,
-    ).toBe(false);
+    for (const field of [
+      'countryId',
+      'storage_path',
+      'jobId',
+      'job_id',
+      'adminId',
+      'admin_id',
+      'ip',
+      'ipHash',
+      'ip_hash',
+    ]) {
+      expect(
+        PublicCountriesResponseSchema.safeParse({
+          ...response,
+          data: [{ ...response.data[0], [field]: 'internal-value' }],
+        }).success,
+        field,
+      ).toBe(false);
+    }
   });
 });

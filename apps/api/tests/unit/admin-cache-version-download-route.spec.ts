@@ -177,6 +177,11 @@ describe('admin cached-version download handler', () => {
     await setup.handler(setup.request, setup.reply);
     expect(setup.code.mock.calls[0]?.[0]).toBe(206);
     expect(setup.header.mock.calls).toContainEqual(['Content-Range', 'bytes 2-4/8']);
+    expect(setup.header.mock.calls).toContainEqual([
+      'Content-Disposition',
+      'attachment; filename="finland.osm.pbf"',
+    ]);
+    expect(setup.storage.versionFileAt).toHaveBeenCalledWith('finland/261101/finland.osm.pbf');
     expect(setup.header.mock.calls).toContainEqual(['Cache-Control', 'private, no-store']);
     expect(setup.header.mock.calls).toContainEqual(['ETag', `"md5:${CHECKSUM}"`]);
     expect(setup.fileHandle.createReadStream).toHaveBeenCalledWith({

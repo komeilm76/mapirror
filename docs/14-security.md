@@ -210,23 +210,25 @@ recorded here so a future reviewer does not "fix" the missing token check.
 
 ## 11. Security checklist (Phase 6 sign-off)
 
-- [ ] Admin password ≥ 12 chars enforced, weak list rejected, Argon2id verified
-- [ ] Token hash-only storage confirmed in DB inspection
+- [x] Admin password ≥ 12 chars enforced, weak list rejected, Argon2id verified (`password.spec.ts`, `admin-accounts.spec.ts`, and bootstrap/reset tests)
+- [ ] Token hash-only storage confirmed in DB inspection — the code and `integration/tokens.spec.ts` assert digest-only rows, but the database-backed test was skipped here and no live DB inspection was performed
 - [x] Every `/_admin/api/*` route returns 401 without a token (law test, `P1-API-08`)
 - [x] Cookie auth, query-token auth, and Basic auth all rejected (`P1-API-08`: a live token offered in each place)
 - [x] Logout revokes; password reset revokes all sessions (`P1-AUTH-04`, `P1-AUTH-07`)
-- [ ] No JWT anywhere (tokens are opaque): the client never decodes or trusts token contents
-- [ ] Path traversal attempts rejected (unit test with `../`, absolute paths, URL-encoded input)
-- [ ] Upload validation: extension, magic bytes, size cap, temp cleanup
-- [ ] `Content-Disposition` uses a generated filename only
-- [ ] Security headers present on HTML and API responses
-- [ ] CSP has no `unsafe-eval`; no `v-html` in the codebase
-- [x] Rate limits verified with a loop test (login, public download) — `login-route.spec.ts` (burst, `401`×N then `429`) and `rate-limit.spec.ts` (public reads, downloads, admin token; the download bucket proved separate by pointing it at the read window)
-- [ ] Unpublished country returns 404 on all public endpoints (`P3-TST-01` matrix added; awaiting a fresh PostgreSQL run)
-- [ ] Public payloads contain no `storage_path`, job ids, admin ids, or IP data
-- [ ] Secrets absent from git history (`git log -p | grep -i password` sanity check)
-- [ ] Error responses expose no stack traces (`NODE_ENV=production`)
-- [ ] Non-root containers verified (`docker compose exec api id`)
-- [ ] DB not reachable from the host in production compose
-- [ ] `bun audit` clean; base images pinned
-- [ ] Backup/restore drill completed without exposing secrets
+- [x] No JWT or client-side token decoding in tracked application code; tokens are opaque bearer credentials (`tokens.spec.ts`, client storage/request tests, source scan)
+- [x] Path traversal attempts rejected, including `../`, absolute, and URL-encoded inputs (`storage.spec.ts`; cache and upload storage accept only validated identities)
+- [x] Upload validation covers extension, media type, PBF magic/header bytes, size cap, and staging cleanup (`unit/admin-import-route.spec.ts`, `upload-storage.spec.ts`)
+- [x] `Content-Disposition` uses only the basename of a validated cache-storage identity; public and admin handler unit tests assert the generated filename
+- [x] Security headers are asserted on API responses (`security.spec.ts`) and configured for the HTML shell (`nginx-routing.spec.ts`)
+- [x] CSP has no `unsafe-eval`; `v-html` is lint-banned and absent from tracked application code (`security.spec.ts`, ESLint)
+- [x] Rate limits verified with loop tests (login, public download) — `login-throttle.spec.ts` exercises the 10-failure/11th-attempt lockout; `rate-limit.spec.ts` exercises public read/download request bursts, the separate download bucket, and the documented 429 response
+- [ ] Unpublished country returns 404 on all public endpoints — `P3-TST-01` matrix exists, but its PostgreSQL-backed cases were skipped; awaiting a fresh PostgreSQL run
+- [x] Public response schemas are strict and reject `storage_path`, job/admin ids, and IP fields (`public-catalog.spec.ts`, `public-country.spec.ts`, `public-stats.spec.ts`); route projections expose only public fields
+- [x] Git-history secret sanity scan found no `.env`, private-key, or production credential artifact; matches are the documented development template and test fixtures (`git log -p --all`, tracked-path and credential-pattern review)
+- [x] Production-mode error test confirms unexpected errors expose no message, stack, driver details, or secrets (`errors.spec.ts`)
+- [ ] Non-root containers verified with `docker compose exec api id` — Docker was unavailable here; operator verification remains
+- [x] Production Compose does not publish PostgreSQL to the host; the DB has no `ports` mapping (`compose.spec.ts`)
+- [ ] `bun audit` clean; base images use the documented version tags, but `bun audit` reports two moderate transitive advisories (`glob@13.0.6`, `minimatch@3.1.5`/`10.2.6`). `bun audit fix` cannot cross the current dependent version ranges; no high/critical advisories were reported. Review/remediation is assigned to P6-SEC-02
+- [ ] Backup/restore drill completed without exposing secrets — the Docker restore drill remains pending with P6-OPS-01
+
+**Sign-off status:** 15 of 20 items are evidence-backed. Final sign-off is intentionally withheld pending the four database/Docker checks above and remediation/review of the dependency advisories in P6-SEC-02.

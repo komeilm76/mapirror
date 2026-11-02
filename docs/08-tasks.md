@@ -275,7 +275,7 @@ prove L1–L3.
 | P6-OPS-01 | Backup/restore script + drill (DB + cache manifest) | DOCK-5 | P1-DOCK-05 | 🟦 | Scripts and non-Docker tests pass; pending operator Docker restore drill before done |
 | P6-OPS-02 | Upgrade path documented + tested (migrations forward) | DOCK-5 | all | 🟦 | Upgrade integration case added; pending operator Docker PostgreSQL run to verify vN → vN+1 data retention |
 | P6-OPS-03 | Disk-full + restart drills | DOCK-5 | P2-JOB-04 | 🟦 | Added isolated tmpfs ENOSPC and API/DB restart runbook; pending operator Docker drills |
-| P6-SEC-01 | Security checklist sign-off (`14-security.md`) | ENG-6 | all | ⬜ | Every item checked |
+| P6-SEC-01 | Security checklist sign-off (`14-security.md`) | ENG-6 | all | 🟦 | Audit and non-DB verification complete; 15/20 items checked. Final sign-off waits on DB/Docker checks and P6-SEC-02 remediation/review of two moderate transitive audit advisories |
 | P6-SEC-02 | Dependency audit + headers + rate-limit verification | ENG-6 | P1-API-05 | ⬜ | No high/critical |
 | P6-PERF-01 | Load check: 1 GB+ download throughput, memory flat | UX-8 | P2-JOB-05 | ⬜ | No memory growth over 3 GB transfer |
 | P6-DOC-01 | README quick start + deployment runbook verified on fresh VM | DOCK-2 | P6-OPS-01 | ⬜ | Zero undocumented steps |

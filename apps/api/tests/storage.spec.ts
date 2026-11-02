@@ -49,6 +49,9 @@ describe('cache storage paths and safe filesystem operations', () => {
   it.each([
     '/tmp/outside/finland/261023/finland-261023.osm.pbf',
     '../outside/261023/finland-261023.osm.pbf',
+    '%2e%2e/outside/261023/finland-261023.osm.pbf',
+    'finland/%2e%2e/outside/finland-261023.osm.pbf',
+    'finland%2f..%2foutside%2ffinland-261023.osm.pbf',
     'finland/../outside/finland-261023.osm.pbf',
     'finland/261023/../outside.osm.pbf',
     'finland\\261023\\finland-261023.osm.pbf',

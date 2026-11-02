@@ -23,9 +23,21 @@ describe('public stats contract', () => {
     expect(PublicStatsResponseSchema.parse({ ...response, lastPublishedAt: null })).toMatchObject({
       lastPublishedAt: null,
     });
-    expect(
-      PublicStatsResponseSchema.safeParse({ ...response, ipHash: 'must-not-leak' }).success,
-    ).toBe(false);
+    for (const field of [
+      'storage_path',
+      'jobId',
+      'job_id',
+      'adminId',
+      'admin_id',
+      'ip',
+      'ipHash',
+      'ip_hash',
+    ]) {
+      expect(
+        PublicStatsResponseSchema.safeParse({ ...response, [field]: 'must-not-leak' }).success,
+        field,
+      ).toBe(false);
+    }
     expect(PublicStatsResponseSchema.safeParse({ ...response, countries: -1 }).success).toBe(false);
   });
 });

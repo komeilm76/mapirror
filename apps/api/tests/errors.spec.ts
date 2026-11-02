@@ -11,6 +11,7 @@ import {
   installErrorHandlers,
   installRequestContext,
   INTERNAL_MESSAGE,
+  parseEnv,
   toErrorEnvelope,
   type PluginSlot,
 } from '../src/index';
@@ -119,8 +120,14 @@ describe('the error stage wraps a real pipeline', () => {
     await instance.close();
   });
 
-  it('turns an unexpected exception into INTERNAL_ERROR without describing it', async () => {
-    const instance = await appWithTestRoutes();
+  it('turns an unexpected exception into INTERNAL_ERROR without describing it in production', async () => {
+    const instance = await buildTestApp({
+      slots: TEST_SLOTS,
+      config: parseEnv({
+        NODE_ENV: 'production',
+        DATABASE_URL: 'postgres://mapirror@localhost:5432/mapirror',
+      }),
+    });
 
     const response = await instance.inject({ method: 'GET', url: '/_public/api/boom' });
     const body = response.json<{ error: { code: string; message: string } }>();
