@@ -508,17 +508,127 @@ copy of backups outside the server. Phase 6 (`P6-OPS-01`) requires a drill inclu
 
 ## 7. Monitoring the deployment
 
-- `/healthz` — process alive (use for restarts). It checks nothing else on purpose: a liveness probe that
+- `/healthz` — process alive (liveness only). It checks nothing else on purpose: a liveness probe that
   consults Postgres restarts a healthy API every time the database blinks.
 - `/readyz` — DB reachable + cache dir writable (use for load-balancer gating). Two checks, concurrent, each
   bounded at 2 s, so a hung connection cannot stall the probe. `503` names the failing checks in the body and
   the reason in the API log.
 - Both answer `GET`/`HEAD` with `cache-control: no-store` and need no credentials. Keep `/readyz` on the
   internal network where your load balancer can reach it; it performs a `select 1` and a small file write per
-  call, and it is deliberately not rate limited (a probe must never be throttled). Docker's own healthcheck
-  should use `/healthz`, because a container that restarts on readiness has the same restart-loop problem.
+  call, and it is deliberately not rate limited (a probe must never be throttled). Compose deliberately uses
+  `/readyz` as the API healthcheck so `docker compose ps` exposes whether the service is ready. Docker's
+  `restart: unless-stopped` policy does **not** restart a container merely because its health is `unhealthy`;
+  it restarts after the main process exits. `/healthz` remains the process-liveness probe, and external traffic
+  gates should use `/readyz`.
 - Admin dashboard `/_site/admin/` — CPU/RAM/disk charts, jobs, updates available, disk headroom.
 - Optional: point an uptime monitor at `/_public/api/stats` and a disk alarm at `/_admin/api/system/status`.
+
+### Disk-full and restart drills (disposable projects only)
+
+Never run these against production volumes. Use a disposable checkout with a fresh `.env` containing throwaway
+credentials; `-p` gives every drill its own PostgreSQL/cache volumes. Do not reuse or remove the volumes of a real
+installation. Record `docker compose ps`, the API logs, `/healthz` and `/readyz` before and after each fault.
+
+**Bounded disk-full drill.** This overlays only the disposable API's cache directory with a 32 MiB tmpfs; the normal
+`data:/data` volume, including uploads, and the host filesystem are not filled:
+
+```bash
+cat >/tmp/mapirror-disk-drill.yaml <<'YAML'
+services:
+  api:
+    tmpfs:
+      - /data/cache:rw,size=32m,mode=1777
+YAML
+
+DC=(docker compose -p mapirror-p6-disk -f compose.yaml -f /tmp/mapirror-disk-drill.yaml)
+"${DC[@]}" up -d --build db api
+"${DC[@]}" ps api
+```
+
+Wait for the API to become healthy, then fill only that tmpfs until the write reports `ENOSPC`:
+
+```bash
+"${DC[@]}" exec -T api bun -e '
+const file = await (await import("node:fs/promises")).open("/data/cache/.p6-ops-03-fill", "w");
+const block = Buffer.alloc(1024 * 1024);
+let bytes = 0;
+try {
+  while (true) {
+    const result = await file.write(block);
+    bytes += result.bytesWritten;
+    if (result.bytesWritten !== block.length) throw Object.assign(new Error("short write"), { code: "ENOSPC" });
+  }
+} catch (error) {
+  if (error.code !== "ENOSPC") throw error;
+  console.log(`tmpfs reached ENOSPC after ${bytes} bytes`);
+} finally {
+  await file.close();
+}
+'
+"${DC[@]}" exec -T api bun -e '
+const live = await fetch("http://127.0.0.1:3000/healthz");
+const ready = await fetch("http://127.0.0.1:3000/readyz");
+console.log(`healthz=${live.status} readyz=${ready.status}`);
+if (live.status !== 200 || ready.status !== 503) process.exit(1);
+'
+"${DC[@]}" ps api
+"${DC[@]}" logs --tail=100 api
+```
+
+Expected: the process remains up and `/healthz` stays `200`; the cache write makes `/readyz` return `503`, and
+Compose eventually reports `api` as `unhealthy`. The `unless-stopped` restart policy does **not** restart a process
+just because its health status is unhealthy. A real `GET /_admin/api/system/status` response reports `storage.state` as `full` at
+zero available bytes (or `low` when bytes remain but are at/below `DISK_RESERVE_BYTES`). A new download is rejected
+with `503 DISK_FULL` before its job is queued when its padded estimate plus reserve do not fit. For the rarer case
+where another writer consumes space after preflight, the existing ENOSPC/EDQUOT worker test asserts that the
+partial download is removed, the version is marked failed with `failure_reason=DISK_FULL`, and the worker persists
+only its safe retrying `JOB_HANDLER_FAILED` job code. Previously-ready versions are unchanged.
+
+Free the space and prove readiness recovers without restarting the API:
+
+```bash
+"${DC[@]}" exec -T api bun -e 'await (await import("node:fs/promises")).unlink("/data/cache/.p6-ops-03-fill")'
+"${DC[@]}" exec -T api bun -e 'const r = await fetch("http://127.0.0.1:3000/readyz"); console.log(`readyz=${r.status}`); if (!r.ok) process.exit(1)'
+"${DC[@]}" down -v                         # only this named, disposable project
+rm -f /tmp/mapirror-disk-drill.yaml
+```
+
+**Restart drills.** Use a separate fresh checkout and `.env` with throwaway credentials, the normal named volumes
+(no tmpfs override), and an unused host port 8080 for the disposable web UI:
+
+```bash
+RESTART=(docker compose -p mapirror-p6-restart -f compose.yaml)
+"${RESTART[@]}" up -d --build
+"${RESTART[@]}" ps
+```
+
+With no active jobs, `"${RESTART[@]}" restart api` should return to healthy and leave database/cache data intact.
+Then stop only the throwaway DB with `"${RESTART[@]}" stop db`: `/healthz` should remain `200`, `/readyz` should
+become `503`; after `"${RESTART[@]}" start db`, the pool reconnects and readiness returns without an API restart.
+Compose health status is an observation, not a restart trigger.
+
+For crash recovery, trigger catalog sync in the disposable admin UI, then queue the newest dated Finland snapshot
+(about 0.7 GiB in the storage-sizing table). Confirm the disposable cache volume has the padded estimate plus reserve,
+wait for the job to remain `running` with progress, and confirm `.partial/<job-id>.part` exists. Kill the **API process**, not the container, so Docker's
+restart policy is exercised rather than a manual container stop:
+
+```bash
+"${RESTART[@]}" exec -T api bun -e 'process.kill(1, "SIGKILL")' || true  # exec disconnects as PID 1 exits
+"${RESTART[@]}" ps api
+"${RESTART[@]}" logs --since=10m api
+```
+
+Expected: the container restarts and becomes healthy; after the stale-job reaper's 4 min 30 s age threshold plus at
+most one 15 s scan interval and retry backoff, the abandoned attempt is requeued with `WORKER_LOST`. That code stays
+on the queued retry. The download retries from its retained `.part` using validated Range/If-Range rules, then verifies
+size/checksum before installing the ready version. If attempts are exhausted instead, it ends `failed` with
+`WORKER_LOST`. Keep the project until those outcomes and preserved rows are recorded, then remove only that project's
+volumes with `docker compose ... down -v`.
+
+The deterministic cases are in `apps/api/tests/unit/system-disk.spec.ts`, `apps/api/tests/unit/jobs-download-handler.spec.ts`,
+`apps/api/tests/integration/download-handler.spec.ts` (resume and real writer seam), `apps/api/tests/unit/jobs-reaper.spec.ts`,
+`apps/api/tests/integration/jobs-reaper.spec.ts`, and `apps/api/tests/unit/jobs-worker.spec.ts`. PostgreSQL-backed cases
+require the test database; the live Docker drills above remain operator-run and must be recorded before P6-OPS-03 is marked done.
 
 ## 8. Troubleshooting
 

@@ -206,6 +206,31 @@ describe('forward-only upgrade runbook (12-deployment.md ↔ 08-tasks.md)', () =
   });
 });
 
+describe('disk-full and restart drills (12-deployment.md / 02-architecture.md ↔ Compose)', () => {
+  it('matches the readiness probe, disk states, restart policy and recovery timing', () => {
+    const compose = read('compose.yaml');
+    const deployment = read('docs/12-deployment.md');
+    const architecture = read('docs/02-architecture.md');
+    const faultDrills = deployment.slice(
+      deployment.indexOf('### Disk-full and restart drills'),
+      deployment.indexOf('## 8. Troubleshooting'),
+    );
+
+    expect(compose).toContain('restart: unless-stopped');
+    expect(compose).toContain('http://127.0.0.1:3000/readyz');
+    expect(faultDrills).toContain('does **not** restart a process');
+    expect(faultDrills).toContain('storage.state');
+    expect(faultDrills).toContain('503 DISK_FULL');
+    expect(faultDrills).toContain('failure_reason=DISK_FULL');
+    expect(faultDrills).toContain('JOB_HANDLER_FAILED');
+    expect(faultDrills).toContain('process.kill(1, "SIGKILL")');
+    expect(faultDrills).toContain('4 min 30 s');
+    expect(faultDrills).toContain('15 s scan interval');
+    expect(architecture).toContain('storage.state=low');
+    expect(architecture).not.toContain('DISK_LOW');
+  });
+});
+
 describe('enums (03-data-model.md ↔ constants)', () => {
   it.each([
     ['interval_frequency', INTERVAL_FREQUENCIES],

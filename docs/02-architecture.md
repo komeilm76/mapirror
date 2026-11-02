@@ -282,7 +282,7 @@ class implementing the interface + one line where it is constructed.
 |---|---|
 | Geofabrik unreachable | Catalog sync job fails; UI shows stale-catalog timestamp + retry; cached maps keep serving |
 | Checksum mismatch | `.part` is deleted and the version remains `failed` (never served); the worker persists the safe generic `JOB_HANDLER_FAILED` retry/terminal contract, not upstream checksum values |
-| Disk full | Preflight blocks new jobs; a running `ENOSPC`/`EDQUOT` fails safely with `.partial/<job>.part` removed; the operator-facing disk signal remains `DISK_LOW` |
+| Disk full | Preflight blocks new jobs with `503 DISK_FULL`; a running `ENOSPC`/`EDQUOT` fails safely with `.partial/<job>.part` removed. `GET /_admin/api/system/status` reports `storage.state=low` at/below the configured reserve and `full` when no bytes are available |
 | DB down | API returns `503` with `DB_UNAVAILABLE`; worker pauses; Nginx keeps serving nothing else |
 | Process crash mid-download | Reaper requeues once the job's advisory lock is free; resume continues from `.partial/<job>.part` (details: `05-flows.md` F13) |
 | File missing for a `ready` version | Download returns `410 VERSION_FILE_MISSING` + audit entry; admin row shows "file missing" |
