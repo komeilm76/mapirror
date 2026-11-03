@@ -39,7 +39,7 @@ which keeps the route table exactly as wide as the law allows.
 
 | Topic | Rule |
 |---|---|
-| Base | `http://<host>:8080` (Nginx) → proxies to the API |
+| Base | Host-local default `http://127.0.0.1:8080` (Nginx; Compose binds loopback); external clients use the operator's HTTPS reverse-proxy origin |
 | Namespaces | APIs: `/_auth/*`, `/_admin/api/*`, `/_public/api/*`. Pages: **all** under `/_site/*` (`/_site/admin/*` for the panel). See §0.1 |
 | Auth (admin) | `Authorization: Bearer mm_…` on **every** `/_admin/api/*` request |
 | Auth (public) | none |
@@ -354,8 +354,8 @@ ready versions, and only queued/running jobs whose payload identifies this count
 }
 ```
 
-Download events are recorded for completed or interrupted admin streams, but per-version counts are not exposed here;
-that read model remains part of the later public-download analytics task (P3-API-06).
+Download events are recorded for completed or interrupted admin streams. This detail response does not expose per-version
+counts; public aggregate transfer counts are available from `GET /_public/api/stats` (§3.5).
 
 #### `DELETE /_admin/api/cache/:countryId?confirm=<slug>`
 
@@ -376,8 +376,8 @@ and uncached/unknown countries return `404 NOT_FOUND`.
 - The database deletes and audit `cache.delete_country` commit together; validated version paths are unlinked afterward
   through the storage boundary. An unlink failure is logged as an orphan for the sweep and does not turn a committed
   deletion into a `500`.
-- `204 No Content`. The current P2 schema has no interval-membership tables; when P4-INT-01 adds them, its integration
-  must also remove a country from those memberships when this cache-delete operation runs.
+- `204 No Content`. The catalog country remains, but this operation removes its interval memberships along with the cache;
+  schedules continue without targeting the deleted cache country.
 
 #### `POST /_admin/api/cache/:countryId/public`
 
@@ -810,7 +810,7 @@ md5sum finland.osm.pbf   # verify against the version's checksumMd5
 
 The public stream takes the same shared per-country advisory lock as the admin stream and holds it from before the file
 is opened until the HTTP response closes, so cache deletion cannot unlink an active transfer (CACHE-5). Public GET
-transfers are recorded by the later analytics task (P3-API-06); `HEAD` and `304` are not downloads and create no event.
+transfers are recorded after a body-bearing response closes, including interrupted transfers; `HEAD` and `304` are not downloads and create no event. The public aggregate counts are exposed by `GET /_public/api/stats` (§3.5), not per-version.
 Rate limit: `PUBLIC_DOWNLOADS_PER_MINUTE` (default 10 per IP per minute, `Retry-After` on refusal), **applied per
 request start**, not per byte — a large transfer is never interrupted mid-stream. The read endpoints have their own
 allowance (60 per IP per minute), so a client downloading files cannot lock itself out of the catalog (`14-security.md`
@@ -904,9 +904,10 @@ container check in Phase 6 (`P6-DOC-01`).
 
 ## 6. Contract tooling
 
-- `packages/shared/src/schemas/*` is the single definition; API handlers validate with the same
-  schemas the SPA parses responses with (catch drift at both ends).
-- A test asserts every registered route has a matching schema export and a heading in this document
-  (`docs/04-api.md` contains the route string).
-- No OpenAPI generation in v1 (keeps dependencies low); the public API docs page is rendered from
-  `packages/shared` metadata so it cannot go stale.
+- Shared Zod schemas in `packages/shared` define request/response contracts where a shared schema applies; the web
+  client parses API responses against those contracts, and API handlers validate requests before service work.
+- `apps/api/tests/law-routes.test.ts` walks the real Fastify route table and checks namespace/probe placement and JSON
+  responses. `scripts/tests/docs-contract.spec.ts` checks documented route prefixes, pagination, enums, error codes, and
+  selected deployment/API invariants; it does not claim every endpoint heading is mechanically schema-linked.
+- No OpenAPI generation in v1 (keeps dependencies low); the public API docs page is rendered from shared public schemas
+  and its response examples are parsed by those schemas in the web tests.

@@ -9,25 +9,28 @@ the job worker and the scheduler.
 
 ```mermaid
 flowchart LR
-  subgraph Browser
-    A[Admin SPA]
-    P[Public SPA]
+  B[Browser]
+  T[Optional TLS reverse proxy]
+  subgraph Host["Ubuntu 24.04 host"]
+    subgraph Docker["Docker Compose network"]
+      N["web: Nginx :8080<br/>SPA + API reverse proxy"]
+      S["api: Fastify :3000<br/>routes + worker + scheduler"]
+      D[("db: PostgreSQL 16-alpine")]
+      V[("/data/cache volume")]
+    end
+    H["Host port 127.0.0.1:8080 → web:8080"]
   end
-  subgraph Docker["Docker host (Ubuntu 24.04)"]
-    N[Nginx :8080<br/>SPA under /_site/* + reverse proxy]
-    S[Fastify API :3000<br/>routes + worker + scheduler]
-    D[(PostgreSQL 16)]
-    V[(/data/cache volume)]
-  end
-  G[Geofabrik<br/>download.geofabrik.de]
+  G["Geofabrik<br/>download.geofabrik.de"]
 
-  A -->|fetch /_auth/api, /_admin/api| N
-  P -->|fetch /_public/api| N
-  N -->|HTML/JS/CSS| Browser
-  N -->|proxy /_auth/api, /_admin/api, /_public/api, /healthz| S
+  B -->|HTTPS| T
+  T -->|HTTP to host loopback| H
+  B -.->|direct host-local access| H
+  H --> N
+  N -->|/_site/* and /_auth/login: static SPA| B
+  N -->|/_auth/api/*, /_admin/api/*,<br/>/_public/api/*, /healthz, /readyz| S
   S --> D
   S -->|read/write artifacts| V
-  S -->|index, region pages, pbf + md5| G
+  S -->|index, region pages, PBF + MD5| G
 ```
 
 **Why one API container:** the requirement is a small self-hosted mirror; a separate worker service
@@ -56,20 +59,24 @@ shared contracts live in `packages/shared` (Zod + types) used by both API and we
 
 ```mermaid
 flowchart LR
-  R[HTTP request] --> C[request-context<br/>request id + logger]
-  C --> H[security headers, CORS, body limit]
-  H --> RL[rate limit<br/>login / public download]
-  RL --> G{route prefix}
+  B[Browser request] --> N[Nginx]
+  N -->|/_site/*, /_auth/login| SPA[Static SPA shell and assets]
+  N -->|API paths and probes| C[request-context<br/>request id + logger]
+  C --> E[errors<br/>JSON handlers]
+  E --> H[security<br/>headers, CORS, body limit]
+  H --> D[database pool]
+  D --> RL[rate limit<br/>login has a separate throttle]
+  RL --> G{route prefix or probe}
   G -->|/_admin/api/*| AU[Bearer guard<br/>token hash lookup]
   G -->|/_public/api/*| PB[public read model]
   G -->|/_auth/api/*| AT[auth handlers]
-  G -->|/_site/*| ST[static SPA shell<br/>no data, no secrets]
-  AU --> V[Zod validate params/body]
+  G -->|/healthz, /readyz| PR[probe handlers]
+  AU --> V[Zod request validation]
   PB --> V
   AT --> V
   V --> S[service layer]
-  S --> DB[(Kysely)]
-  S --> ERR[error taxonomy → JSON envelope]
+  S --> DB[(PostgreSQL via Kysely)]
+  S --> R[typed JSON response or stream]
 ```
 
 - Validation happens **before** the service layer; handlers receive typed DTOs.
@@ -114,12 +121,14 @@ Two consequences of making the order data:
 stateDiagram-v2
   [*] --> queued
   queued --> running: worker claims (SKIP LOCKED)
-  queued --> canceled: admin cancels
-  running --> succeeded: verify + persist
-  running --> failed: error / checksum mismatch
-  running --> canceled: cancel_requested observed
-  failed --> queued: retry (attempts < max)
+  queued --> canceled: admin cancels immediately
+  running --> succeeded: handler completes and persists
+  running --> queued: JOB_HANDLER_FAILED / WORKER_LOST retry with backoff
+  running --> failed: attempts exhausted
+  running --> canceled: cancellation cleanup completes
   succeeded --> [*]
+  failed --> [*]
+  canceled --> [*]
 ```
 
 - **Table as queue.** `jobs` rows with `status`, `priority`, `run_after`, `attempts`.

@@ -303,3 +303,46 @@ describe('route prefixes (04-api.md §0 ↔ ROUTE_PREFIXES)', () => {
     expect(read('docs/10-laws.md')).toContain('returns `302` to `/_site/`');
   });
 });
+
+describe('API examples and diagrams (04-api.md / 02-architecture.md / 05-flows.md / 06-diagrams.md)', () => {
+  it('documents completed public analytics and cache-delete membership behavior, not future work', () => {
+    const api = read('docs/04-api.md');
+    const flows = read('docs/05-flows.md');
+    expect(api).toContain('GET /_public/api/stats');
+    expect(api).toContain('public aggregate transfer counts');
+    expect(api).toContain('removes its interval memberships');
+    expect(api).not.toContain('later public-download analytics task');
+    expect(api).not.toContain('when P4-INT-01 adds them');
+    expect(flows).toContain('removes its `interval_countries` memberships');
+    expect(flows).toContain('delete versions + interval memberships + cache row');
+    expect(flows).not.toContain('must add cleanup for interval memberships');
+  });
+
+  it('matches Compose loopback publication, runtime images, Nginx routing and worker transitions', () => {
+    const compose = read('compose.yaml');
+    const webDockerfile = read('docker/web.Dockerfile');
+    const diagrams = read('docs/06-diagrams.md');
+    const architecture = read('docs/02-architecture.md');
+
+    expect(compose).toContain('127.0.0.1:8080:8080');
+    expect(compose).toContain('image: postgres:16-alpine');
+    expect(webDockerfile).toContain('nginx:1.29.0-alpine');
+    expect(diagrams).toContain('127.0.0.1:8080 → web:8080');
+    expect(diagrams).toContain('nginx:1.29.0-alpine');
+    expect(diagrams).toContain('postgres:16-alpine');
+    expect(architecture).toContain('Static SPA shell and assets');
+    expect(architecture).toContain('errors<br/>JSON handlers');
+    for (const diagram of [diagrams, architecture]) {
+      expect(diagram).toContain('running --> queued');
+      expect(diagram).toContain('cancellation cleanup completes');
+      expect(diagram).not.toContain('failed --> queued');
+    }
+  });
+
+  it('describes only contract checks that actually exist', () => {
+    const api = read('docs/04-api.md');
+    expect(api).toContain('apps/api/tests/law-routes.test.ts');
+    expect(api).toContain('scripts/tests/docs-contract.spec.ts');
+    expect(api).not.toContain('every registered route has a matching schema export');
+  });
+});

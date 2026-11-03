@@ -297,11 +297,11 @@ sequenceDiagram
       API->>DB: wait for cleanup-complete job status
     end
   end
-  API->>DB: delete versions + cache row; audit cache.delete_country
+  API->>DB: delete versions + interval memberships + cache row; audit cache.delete_country
   API->>DB: COMMIT
   API->>FS: unlink each validated file (idempotent)
   API->>DB: release advisory lock
-  API-->>A: 204 → cache row disappears; catalog country remains
+  API-->>A: 204 → cache row and memberships disappear; catalog country remains
 ```
 
 **Specific-version path:** `DELETE /cache/:countryId/versions/:versionId?confirm=true` uses the same per-country exclusive
@@ -316,8 +316,7 @@ new worker cannot install into a path while it is being unlinked. The admin and 
 the full response lifetime, so deletion cannot unlink an active transfer's file. All cache paths and unlinks go through
 `modules/storage/storage.ts`: parent symlinks are never followed, only a named file or encountered link component is
 unlinked, and directories are never recursively deleted. A file-unlink failure is logged for the orphan sweep but does
-not change the committed `204`. The catalog row remains; P4-INT-01 must add cleanup for interval memberships when that
-table is introduced. Deleting the last version auto-unpublishes. Public URLs for deleted versions ⇒ `404`.
+not change the committed `204`. The catalog row remains; cache-country deletion also removes its `interval_countries` memberships so schedules no longer target it. Deleting the last version auto-unpublishes. Public URLs for deleted versions ⇒ `404`.
 **Tests:** typed confirmation and audit, cache removal while catalog identity remains, queued cancellation, running-job
 cleanup timeout leaves files intact, unlink failure leaves a sweepable orphan while retaining `204`, and download-enqueue
 serialization against deletion.

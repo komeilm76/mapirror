@@ -12,122 +12,164 @@ C4Context
   Person(consumer, "API consumer", "Scripts/apps using /_public/api")
   System(mm, "MapMirror", "Cache + mirror for OSM extracts")
   System_Ext(gf, "Geofabrik", "Upstream OSM extract server (ODbL)")
-  System_Ext(proxy, "TLS reverse proxy", "Caddy/Traefik in front of Nginx :8080")
+  System_Ext(proxy, "Optional TLS reverse proxy", "Operator-owned; forwards to host-local Nginx")
 
   Rel(admin, mm, "HTTPS", "/_auth, /_admin")
   Rel(visitor, mm, "HTTPS", "/_public")
   Rel(consumer, mm, "HTTPS", "/_public/api")
-  Rel(proxy, mm, "proxy", "http://:8080")
-  Rel(mm, gf, "index, region pages, pbf + md5", "HTTPS")
+  Rel(proxy, mm, "HTTP to 127.0.0.1:8080", "Nginx origin")
+  Rel(mm, gf, "index, region pages, PBF + MD5", "HTTPS")
 ```
+
+The optional TLS proxy runs on the same host in the default Compose setup. The web container is published only on
+`127.0.0.1:8080`; the API and PostgreSQL ports are not published to the host.
 
 ## 2. Container view
 
 ```mermaid
 flowchart TB
+  client["Browser / API client"]
+  tls["Optional operator-owned TLS proxy"]
   subgraph host["Ubuntu 24.04 host"]
-    proxy["Reverse proxy (TLS)\noptional, operator-owned"]
-    subgraph compose["docker compose"]
-      web["web (nginx:alpine)\nSPA + /_auth /_admin /_public proxy\n:8080"]
-      api["api (bun)\nFastify + worker + scheduler\n:3000 internal"]
-      db[("db (postgres:16)")]
-      vol1[("/data/cache (volume)")]
-      vol2[("/var/lib/postgresql/data (volume)")]
+    hostport["127.0.0.1:8080 → web:8080"]
+    subgraph compose["docker compose network"]
+      web["web (nginx:1.29.0-alpine)\nSPA + /_auth /_admin /_public proxy\n:8080"]
+      api["api (Bun)\nFastify + worker + scheduler\n:3000 internal only"]
+      db[("db (postgres:16-alpine)")]
+      vol1[("/data/cache volume")]
+      vol2[("/var/lib/postgresql/data volume")]
     end
   end
-  proxy --> web
-  web -->|proxy| api
+  gf["Geofabrik"]
+
+  client -->|HTTPS| tls
+  tls -->|HTTP, same host| hostport
+  client -.->|direct host-local HTTP, if used| hostport
+  hostport --> web
+  web -->|API paths / probes| api
+  web -->|pages and assets| client
   api --> db
   api --> vol1
   db --> vol2
-  api -.->|HTTPS| gf["Geofabrik"]
+  api -.->|HTTPS| gf
 ```
 
 ## 3. Deployment on Ubuntu 24.04
 
 ```mermaid
 flowchart LR
-  u["User"] -->|443| caddy["Caddy / Traefik\n(TLS, provider)"]
-  caddy -->|8080| nginx["Nginx container"]
-  nginx -->|3000| fastify["API container"]
-  fastify --> pg["Postgres container"]
-  fastify --> cache[("cache volume")]
-  fastify -->|outbound 443| geofabrik["download.geofabrik.de"]
-  backup["backup profile\npg_dump + manifest"] -.-> pg
-  backup -.-> cache
+  user["User / API client"] -->|443 HTTPS| proxy["Optional Caddy / Traefik\nTLS termination"]
+  proxy -->|HTTP to 127.0.0.1:8080| web["Compose web\nNginx :8080"]
+  web -->|Compose network :3000| api["API container\nFastify + worker + scheduler"]
+  api -->|Compose network :5432| pg["Postgres 16-alpine"]
+  api --> cache[("cache volume")]
+  api -->|outbound 443| geofabrik["download.geofabrik.de"]
+  operator["Host backup script"] -.->|docker compose exec| pg
+  operator -.->|manifest reads cache| cache
 ```
+
+Compose publishes the web service as `127.0.0.1:8080:8080` by default. For a TLS proxy on another host, bind the web
+service to the server's private interface and restrict access at the network firewall; do not assume a host firewall
+alone protects a Docker-published port.
 
 ## 4. API namespace map
 
 ```mermaid
 flowchart LR
-  root["/"] -->|302| site["/_site/"]
-  site --> pages["/_site/*\npublic pages (SPA)"]
-  site --> adm["/_site/admin/*\nadmin panel pages (SPA)"]
-  login["/_auth/login\nlogin page (SPA)"]
-  pages --> papi["/_public/api/*\nJSON, anonymous"]
-  adm --> aapi["/_admin/api/*\nJSON, Bearer"]
-  login --> auth["/_auth/api/*\nJSON: login / logout / me"]
-  adm --> dash["/_site/admin/cache/00000000-0000-4000-8000-000000000001\ndeep links rewritten to index.html"]
+  browser["Browser / API client"] --> nginx["Nginx\nstatic pages + reverse proxy"]
+  nginx -->|GET / → 302| root["/_site/"]
+  nginx -->|/_site/* deep links| spa["SPA shell and assets\nserved by Nginx"]
+  nginx -->|GET /_auth/login| login["Login SPA shell\nserved by Nginx"]
+  nginx -->|/_auth/api/*| auth["Fastify auth API\nlogin / logout / me"]
+  nginx -->|/_admin/api/*\nBearer required| admin["Fastify admin API"]
+  nginx -->|/_public/api/*\nanonymous, rate limited| public["Fastify public API"]
+  nginx -->|/healthz, /readyz| probes["Fastify probes"]
+  spa -->|same-origin requests| public
+  spa -->|same-origin requests| admin
+  login -->|same-origin requests| auth
 ```
 
 ## 5. Data model (compact)
 
 ```mermaid
 erDiagram
-  admins ||--o{ admin_tokens : ""
-  countries ||--|| country_cache : ""
-  countries ||--o{ map_versions : ""
-  countries ||--o{ interval_countries : ""
-  intervals ||--o{ interval_countries : ""
-  intervals ||--o{ interval_runs : ""
-  interval_runs ||--o{ interval_run_items : ""
-  countries ||--o{ download_events : ""
-  admins ||--o{ audit_logs : ""
+  admins ||--o{ admin_tokens : "issues"
+  admins ||--o{ audit_logs : "acts"
+  admins o|--o{ upload_sessions : "creates"
+  countries ||--|| country_cache : "has state"
+  countries ||--o{ map_versions : "has"
+  countries ||--o{ upload_sessions : "stages"
+  countries ||--o{ interval_countries : "selected by"
+  intervals ||--o{ interval_countries : "targets"
+  intervals ||--o{ interval_runs : "fires"
+  interval_runs ||--o{ interval_run_items : "contains"
+  countries ||--o{ interval_run_items : "snapshots"
+  countries ||--o{ download_events : "records"
+  map_versions ||--o{ download_events : "records"
+  jobs }o--|| countries : "countryId in JSON payload"
+  settings
+  metrics_samples
 ```
 
-Full DDL: [`03-data-model.md`](03-data-model.md).
+`jobs` identify country targets in a JSON payload rather than a foreign key. `settings` stores configuration markers;
+`metrics_samples` stores bounded dashboard history. Full DDL: [`03-data-model.md`](03-data-model.md).
 
 ## 6. Job state machine
 
 ```mermaid
 stateDiagram-v2
   [*] --> queued
-  queued --> running : claimed
-  queued --> canceled : admin cancel
-  running --> succeeded : verify + install
-  running --> failed : error / checksum / source gone
-  running --> canceled : cancel flag seen
-  failed --> queued : retry if attempts < max
-  failed --> [*] : attempts exhausted
+  queued --> running : worker claims
+  queued --> canceled : admin cancels immediately
+  running --> succeeded : handler completes and persists
+  running --> queued : JOB_HANDLER_FAILED / WORKER_LOST retry with backoff
+  running --> failed : attempts exhausted
+  running --> canceled : cancellation cleanup completes
   succeeded --> [*]
+  failed --> [*]
   canceled --> [*]
 ```
+
+A running cancellation request does not change the durable job status immediately: the owner observes it, aborts the
+handler, waits for cooperative cleanup, then marks the job canceled. `WORKER_LOST` either requeues with backoff or
+becomes terminal after attempts are exhausted.
 
 ## 7. Cache lifecycle per country
 
 ```mermaid
 stateDiagram-v2
   [*] --> Uncached
-  Uncached --> Cached : first download/import ready
-  Cached --> Published : admin flips switch (needs ready version)
-  Published --> Cached : admin flips switch off
-  Cached --> Cached : add version / prune to 3 / update
-  Cached --> Uncached : delete last version or delete country
-  Published --> Uncached : delete last version (auto-unpublish)
+  Uncached --> Cached : first download or import becomes ready
+  Cached --> Published : admin publishes (requires a ready version)
+  Published --> Cached : admin unpublishes
+  Cached --> Cached : add version / retention prune / update
+  Cached --> Uncached : delete cache or last version row
+  Published --> Uncached : delete cache
+  Published --> Cached : last ready version removed; auto-unpublish
 ```
+
+Deleting the cache preserves the catalog country but removes its interval memberships. Deleting the last ready version
+closes publication even if pending or failed version rows remain.
 
 ## 8. Update check decision
 
 ```mermaid
 flowchart TD
-  a["Check for update"] --> b{Source reachable?}
-  b -- no --> c["unknown\n(show retry)"]
-  b -- yes --> d{Source newest data timestamp\nnewer than newest cached?}
-  d -- no --> e["up_to_date"]
-  d -- yes --> f{That version already cached?}
-  f -- yes --> e
-  f -- no --> g["update_available\n+ Download update"]
+  start["Check for update"] --> reachable{Source page fetched and parsed?}
+  reachable -- no --> unknown["unknown\n(show retry; do not claim up to date)"]
+  reachable -- yes --> identity{Current source snapshot already cached and ready?}
+  identity -- yes --> current["up_to_date"]
+  identity -- no --> timestamps{Both source and newest-cache timestamps known?}
+  timestamps -- no --> fallback{Both sizes known and different?}
+  fallback -- yes --> available["update_available"]
+  fallback -- no --> unknown
+  timestamps -- yes --> newer{Source timestamp newer?}
+  newer -- yes --> available
+  newer -- no --> older{Source timestamp older?}
+  older -- yes --> current
+  older -- no --> size{Both sizes known and different?}
+  size -- yes --> available
+  size -- no --> current
 ```
 
 ## 9. Interval scheduling timeline (daily 03:00 UTC)
@@ -169,6 +211,7 @@ flowchart LR
 flowchart LR
   home["/_site/ catalog"] --> country["/_site/countries/:slug"]
   home --> apidocs["/_site/api-docs"]
-  country -->|Download| file["file stream"]
-  apidocs -->|copy curl| file
+  country -->|Download| file["public file stream"]
+  apidocs -->|copy curl| api["same-origin /_public/api"]
+  api --> file
 ```
