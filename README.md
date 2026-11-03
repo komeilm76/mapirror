@@ -16,9 +16,9 @@ Public  →  /_site/*       ·  /_public/api/*  (anonymous)
 | | |
 |---|---|
 | **Phase 0 — documentation** | ✅ released as [`v0.1.0`](https://github.com/komeilm76/mapirror/releases/tag/v0.1.0) |
-| **Phase 1 — foundation** | 🟨 in progress (`0.2.0-dev`) |
+| **Phase 6 — hardening & release** | 🟦 in progress (`0.2.0-dev`) |
 
-There is no running application yet: Phase 1 builds the workspace, Docker stack, database and auth.
+The API, public site, admin UI, worker and Docker Compose deployment are implemented. Phase 6 is still in progress: operator-run Docker/PostgreSQL drills and the fresh-Ubuntu deployment verification remain before release. See the [task board](docs/08-tasks.md) for current evidence and open checks.
 
 | | |
 |---|---|
@@ -43,21 +43,17 @@ Bun workspaces; the root `package.json` holds the release version (`0.2.0-dev`),
 private and versionless. Dependency graph: `apps/* → packages/shared` (no other edges yet).
 
 ```bash
-bun install                 # links the three workspaces
+bun install                 # installs the locked workspace dependencies
 bun run typecheck           # strict tsc across scripts + all workspaces
 bun run lint                # ESLint (type-aware, Vue, zero warnings tolerated)
-bun run test                # Vitest: shared + api + web + scripts projects (96 tests)
-bun run format:check        # Prettier, code only — markdown stays hand-authored
-bun run check:workspaces    # verifies the workspace wiring (22 checks)
-bun run check:hygiene       # ignore matrix + env-doc parity + .dockerignore + no orphan tests (54 checks)
-bun run check               # the gate: workspaces + hygiene + typecheck + lint + format + tests
+bun run test                # Vitest across shared, API, web and scripts projects
+bun run format:check        # Prettier checks all matched repository files
+bun run check:workspaces    # verifies workspace wiring
+bun run check:hygiene       # ignore matrix, env-doc parity, Docker context and test collection
+bun run check               # full gate: workspace/hygiene checks, typecheck, lint, formatting, build budget and tests
 ```
 
-TypeScript is pinned to 5.9.3 rather than 7.x: the toolchain around it (`vue-tsc`,
-`typescript-eslint`) is still on the 5.x line, and the compiler version is not worth a
-compatibility gamble while the SPA build is being assembled.
-
-## What it will do
+## What it does
 
 - **Search Geofabrik** and cache a country (latest or a specific dated snapshot), streamed with
   progress, resume, and md5 verification.
@@ -74,15 +70,23 @@ compatibility gamble while the SPA build is being assembled.
 Bun · TypeScript · Fastify · Zod · PostgreSQL · Kysely · Vue 3 · Vuetify 3 · VueUse · Pinia · Vite ·
 Vitest · Nginx · Docker.
 
-## Quick start (when Phase 1 lands)
+## Quick start (Docker Compose)
+
+With Docker Engine and the Compose plugin installed, run from the repository root:
 
 ```bash
-cp .env.example .env          # set ADMIN_PASSWORD (≥ 12 chars)
+cp .env.example .env
+chmod 600 .env
+# Edit .env: set a strong POSTGRES_PASSWORD and ADMIN_PASSWORD (at least 12 characters).
 docker compose up -d --build
-open http://localhost:8080/_auth/login
+docker compose ps
+curl -fsS http://localhost:8080/readyz
 ```
 
-Ubuntu 24.04 runbook: [`docs/12-deployment.md`](docs/12-deployment.md).
+Wait for `db`, `api` and `web` to report healthy. Then open `http://localhost:8080/_auth/login` in a browser and sign in
+with the `ADMIN_USERNAME` and `ADMIN_PASSWORD` you configured. Do not keep the example PostgreSQL password for an
+exposed deployment. For Ubuntu 24.04 prerequisites, firewall/TLS setup, storage, backups and operations, follow the
+[deployment runbook](docs/12-deployment.md).
 
 ## License & attribution
 

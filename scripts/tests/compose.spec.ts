@@ -151,7 +151,7 @@ describe('the compose file', () => {
     // The database's port on the host is a password-guessing surface with no benefit (the API is its only client), and a
     // published API port would let a client reach it without nginx — bypassing the proxy and the CSP, and making
     // `TRUST_PROXY` a way for anyone to choose their own address.
-    expect(WEB.ports).toEqual(['8080:8080']);
+    expect(WEB.ports).toEqual(['127.0.0.1:8080:8080']);
     expect(API.ports).toBeUndefined();
     expect(DB.ports).toBeUndefined();
   });

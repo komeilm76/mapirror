@@ -142,9 +142,10 @@ services:
       api:
         condition: service_started
     ports:
-      # The one published port. `8080` because the container runs as uid 101 and cannot bind 80; the guide's firewall
-      # rule and `PUBLIC_BASE_URL` default both name it.
-      - '8080:8080'
+      # Bind to host loopback by default: same-host TLS proxies can reach it without exposing the plain-HTTP origin.
+      # Docker-published ports can bypass UFW rules, so a firewall allow/deny alone is not a safe exposure boundary.
+      # For a proxy on another host, bind this to the server's private interface and restrict it at the network firewall.
+      - '127.0.0.1:8080:8080'
     healthcheck:
       # A static file, deliberately: if this asked the API, a database outage would mark the web container unhealthy and
       # the page that explains the outage would be the thing being taken away. `wget` is busybox's, which is what

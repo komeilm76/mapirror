@@ -8,7 +8,7 @@ reverse proxy (D-15).
 ```bash
 # Ubuntu 24.04 LTS
 sudo apt update && sudo apt upgrade -y
-sudo apt install -y ca-certificates curl git ufw
+sudo apt install -y ca-certificates curl git gpg openssl ufw
 
 # Docker Engine + Compose plugin (official repo)
 sudo install -m 0755 -d /etc/apt/keyrings
@@ -23,19 +23,38 @@ sudo usermod -aG docker "$USER" && newgrp docker
 docker compose version
 ```
 
-Firewall (adjust if a proxy runs on another host):
+Membership in the `docker` group grants root-equivalent control of this host; add only trusted administrators.
+
+Compose binds the published web port to `127.0.0.1:8080` by default: host-local checks and a TLS proxy on this same
+machine can reach it, but remote clients cannot. Keep that binding for production. Docker-published ports may bypass UFW's
+normal input rules, so do not treat `ufw deny 8080` as an exposure control.
+
+Configure UFW before enabling it and allow SSH first. For a same-host TLS proxy, allow only its public listener ports:
 
 ```bash
 sudo ufw allow OpenSSH
-sudo ufw allow 8080/tcp     # or 80/443 only, if the proxy is on this machine
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
 sudo ufw enable
+sudo ufw status verbose
 ```
+
+A host-local test needs no inbound 8080 rule. If a proxy on another machine must reach the application, change the Compose
+port binding to the server's **private interface address** (for example, `10.0.0.5:8080:8080`) and restrict that port in
+the cloud/provider network firewall to the proxy's address. Do not publish `8080` on all interfaces or rely on UFW alone
+for a Docker-published port.
 
 ## 2. Install MapMirror
 
+The current deployment candidate is the Phase 6 working branch; use a release tag here after P6-REL-01 publishes one.
+
 ```bash
 sudo mkdir -p /opt/mapirror && sudo chown "$USER:$USER" /opt/mapirror
-git clone <repo-url> /opt/mapirror && cd /opt/mapirror
+git clone --branch arena/5a1becdd-mapirror --single-branch \
+  https://github.com/komeilm76/mapirror.git /opt/mapirror
+cd /opt/mapirror
 
 cp .env.example .env
 # edit .env:
@@ -55,7 +74,7 @@ docker compose logs -f api
 |---|---|---|---|---|---|
 | `db` | `postgres:16-alpine` | — | `pg-data:/var/lib/postgresql/data` | `pg_isready -U mapirror -d mapirror` | `initdb` finished and the server answers |
 | `api` | `docker/api.Dockerfile` | — | `data:/data` (`CACHE_DIR`, `TMP_DIR`) | `bun -e` → `GET /readyz` | the database **and** the cache directory answer |
-| `web` | `docker/web.Dockerfile` | `8080:8080` | — | `wget` → `/index.html` | nginx serves the shell — not the API |
+| `web` | `docker/web.Dockerfile` | `127.0.0.1:8080:8080` | — | `wget` → `/index.html` | nginx serves the shell — not the API |
 
 Only `web` publishes a port. `db` is reachable solely by the API (a published `5432` is a password-guessing surface with no
 benefit), and `api` only through nginx — otherwise a client could skip the proxy and choose its own
@@ -156,8 +175,8 @@ sudo chown -R 10001:10001 /srv/mapirror/data
 ```
 
 The web image needs none of that: nginx reads the bundle and writes only to `/tmp` inside its own container. It listens on
-`8080` (an unprivileged process cannot bind `80`), which is why compose publishes the host's `8080` onto it — the address
-the rest of this guide uses.
+`8080` (an unprivileged process cannot bind `80`); Compose publishes that container port as `127.0.0.1:8080` on the host,
+so the same-host TLS proxy and local health checks can reach it without exposing the plain-HTTP origin.
 
 **Do not edit `DATABASE_URL`.** Inside the containers it is derived — `postgres://mapirror:<POSTGRES_PASSWORD>@db:5432/mapirror` — so changing `POSTGRES_PASSWORD` is enough and the two can never disagree. The copy in `.env` is for running the API outside Docker (native dev, tests). The same rule applies to `CACHE_DIR` / `TMP_DIR`, which compose points at the mounted volumes (`/data/cache`, `/data/tmp`).
 
@@ -221,7 +240,9 @@ curl -sI http://localhost:8080/ | head -1          # expect 302 → /_site/
 curl -s  http://localhost:8080/_public/api/countries
 ```
 
-Then open `http://<server>:8080/_auth/login` and log in with `ADMIN_USERNAME` / `ADMIN_PASSWORD`.
+For the production setup, open `https://maps.example.com/_auth/login` (replace with your hostname) and log in with
+`ADMIN_USERNAME` / `ADMIN_PASSWORD`. For host-local testing before configuring TLS, use
+`http://localhost:8080/_auth/login` from the Docker host.
 
 > Change the password through the reset script immediately if the bootstrap password was shared
 > in any channel.
@@ -230,7 +251,8 @@ Then open `http://<server>:8080/_auth/login` and log in with `ADMIN_USERNAME` / 
 
 `0001_init.sql` creates `pg_trgm` (search) and optionally `unaccent`. Both are *trusted* extensions in
 PostgreSQL 13+, so the database **owner** can create them without superuser rights — the default
-`postgres` user in the container is fine. If you point MapMirror at an externally managed database:
+`postgres` user in the container is fine. If you point MapMirror at an externally managed database, run this once as a database admin. On the Ubuntu host, install
+`postgresql-client` first if `psql` is not already available (`sudo apt install -y postgresql-client`):
 
 ```bash
 psql "$DATABASE_URL" -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'   # once, as an admin
@@ -278,8 +300,9 @@ server {
 }
 ```
 
-Set `PUBLIC_BASE_URL=https://maps.example.com` so generated links are correct, and keep port 8080
-bound to localhost or firewalled when a proxy fronts it.
+Set `PUBLIC_BASE_URL=https://maps.example.com` so generated links are correct. The Compose port stays bound to
+`127.0.0.1` for a same-host proxy; Docker-published ports may bypass UFW, so a firewall rule alone is not a safe substitute.
+For a proxy on another host, bind only to a private host interface and restrict it with the provider/network firewall.
 
 ### How the internal Nginx container routes (order matters)
 
