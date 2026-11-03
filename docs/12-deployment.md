@@ -506,6 +506,41 @@ warns explicitly and the operator must stop the API manually before serving traf
 to the current database. Perform a restore drill against a disposable deployment first, and retain a separate
 copy of backups outside the server. Phase 6 (`P6-OPS-01`) requires a drill including the missing-artifact path.
 
+### Download throughput and memory check (P6-PERF-01)
+
+Run this on the Docker host during a quiet window, against a disposable or explicitly approved deployment. It sends one
+3,000,000,000-byte HTTP range from an **already cached, published, exact-version** artifact through the public web/nginx
+endpoint and discards the body on the host. It does not contact Geofabrik or write a local 3 GB file, but the transfer
+still consumes 3 GB of network egress and records a public download event. The selected version must be at least 3 GB;
+Europe is normally large enough, but use the actual stored version size shown in the admin cache page. Do not use `latest`:
+record its resolved immutable version first.
+
+From the repository/deployment checkout root, with Compose `api` and `web` healthy and Docker CLI access:
+
+```bash
+mkdir -p docs/evidence/p6-perf-01
+set -o pipefail
+BASE_URL=http://127.0.0.1:8080 \
+COUNTRY_SLUG=europe \
+VERSION='<exact-published-version>' \
+bun run scripts/perf-download.ts | tee "docs/evidence/p6-perf-01/$(date -u +%Y%m%dT%H%M%SZ).json"
+```
+
+Replace the slug/version with a published, cached artifact at least 3,000,000,000 bytes. `BASE_URL` must reach this
+Compose deployment's nginx origin (the default localhost URL does); do not route through a CDN/cache that could serve the
+range without exercising the sampled containers. An external TLS proxy is acceptable only if it forwards to these same
+containers without caching the range response. The script samples the local Compose `api` and `web` containers. The
+preflight checks the immutable version and full object size, then requests exactly bytes 0–2,999,999,999.
+It verifies the HTTP 206, `Content-Range`, `Content-Length`, identity encoding, and all received bytes. Every second it
+samples Docker's container memory for both API and nginx; it prints a JSON report with elapsed time, decimal MB/s,
+sample count, baseline, peak growth, and final memory. Exit status is nonzero if either container's peak rises more than
+64 MiB above baseline or the full transfer/headers are not verified. The 64 MiB allowance is a bounded allocator/runtime
+noise tolerance, not permission for continuing growth; inspect the samples and repeat a noisy run before sign-off.
+
+Keep the JSON report with the release evidence. Mark P6-PERF-01 complete only after a successful real Compose run with
+at least three memory samples and no sustained upward trend. Do not run this against an unapproved public deployment:
+the operation deliberately transfers 3 GB and may incur egress charges.
+
 ## 7. Monitoring the deployment
 
 - `/healthz` — process alive (liveness only). It checks nothing else on purpose: a liveness probe that

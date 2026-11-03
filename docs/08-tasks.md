@@ -277,7 +277,7 @@ prove L1–L3.
 | P6-OPS-03 | Disk-full + restart drills | DOCK-5 | P2-JOB-04 | 🟦 | Added isolated tmpfs ENOSPC and API/DB restart runbook; pending operator Docker drills |
 | P6-SEC-01 | Security checklist sign-off (`14-security.md`) | ENG-6 | all | 🟦 | Audit and non-DB verification complete; 15/20 items checked. Final sign-off waits on four DB/Docker checks and resolution or explicit acceptance of two moderate dev-only audit advisories (production audit is clean; P6-SEC-02 found no high/critical) |
 | P6-SEC-02 | Dependency audit + headers + rate-limit verification | ENG-6 | P1-API-05 | ✅ | Full audit has two moderate dev-only advisories; production audit clean and no high/critical. API/HTML security-header and login/public rate-limit tests passed |
-| P6-PERF-01 | Load check: 1 GB+ download throughput, memory flat | UX-8 | P2-JOB-05 | ⬜ | No memory growth over 3 GB transfer |
+| P6-PERF-01 | Load check: 1 GB+ download throughput, memory flat | UX-8 | P2-JOB-05 | 🟦 | Added a bounded 3,000,000,000-byte public range benchmark and operator procedure; the live Compose run remains pending. Record throughput and API/nginx peak memory; each must stay within 64 MiB of baseline over the full transfer |
 | P6-DOC-01 | README quick start + deployment runbook verified on fresh VM | DOCK-2 | P6-OPS-01 | ⬜ | Zero undocumented steps |
 | P6-DOC-02 | API examples re-verified, diagrams refreshed | L12 | all | ⬜ | Docs match code |
 | P6-REL-01 | Version tag + changelog | L12 | P6-* | ⬜ | Tag on `arena/5a1becdd-mapirror` |
