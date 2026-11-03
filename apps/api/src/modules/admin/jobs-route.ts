@@ -248,8 +248,19 @@ function safeJobPayload(type: JobType, payload: JsonValue): JobPayload | null {
 }
 
 function safeUpdateCheckResult(type: JobType, result: JsonValue | null) {
-  if (type !== 'update_check' || result === null) return null;
-  const parsed = UpdateCheckJobResultSchema.safeParse(result);
+  if (
+    type !== 'update_check' ||
+    typeof result !== 'object' ||
+    result === null ||
+    Array.isArray(result)
+  ) {
+    return null;
+  }
+  const allowedKeys = ['total', 'checked', 'updateAvailable', 'upToDate', 'unknown', 'skipped'];
+  const projection = Object.fromEntries(
+    Object.entries(result).filter(([key]) => allowedKeys.includes(key)),
+  );
+  const parsed = UpdateCheckJobResultSchema.safeParse(projection);
   return parsed.success ? parsed.data : null;
 }
 

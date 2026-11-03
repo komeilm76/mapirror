@@ -69,13 +69,16 @@ async function withPublicDownloadApp(
             latestMd5,
             '2026-10-02T00:00:00.000Z',
           ),
-          readyVersion(
-            countryId('finland'),
-            '261000-no-checksum',
-            Buffer.from('no checksum'),
-            null,
-            '2026-09-30T00:00:00.000Z',
-          ),
+          {
+            ...readyVersion(
+              countryId('finland'),
+              '261000-no-md5',
+              Buffer.from('no MD5 checksum'),
+              null,
+              '2026-09-30T00:00:00.000Z',
+            ),
+            checksum_sha256: 'b'.repeat(64),
+          },
           { ...pendingVersion(countryId('finland')), version: '261003' },
           readyVersion(
             countryId('norway'),
@@ -91,17 +94,18 @@ async function withPublicDownloadApp(
       const cacheDir = await mkdtemp(join(tmpdir(), 'mapirror-public-stream-'));
       const latestPath = join(cacheDir, 'finland/261002/finland-261002.osm.pbf');
       const oldPath = join(cacheDir, 'finland/261001/finland-261001.osm.pbf');
-      const noChecksumPath = join(
-        cacheDir,
-        'finland/261000-no-checksum/finland-261000-no-checksum.osm.pbf',
-      );
+      const noMd5Path = join(cacheDir, 'finland/261000-no-md5/finland-261000-no-md5.osm.pbf');
       await Promise.all([
         writeFixture(latestPath, latestBytes),
         writeFixture(oldPath, olderBytes),
-        writeFixture(noChecksumPath, Buffer.from('no checksum')),
+        writeFixture(noMd5Path, Buffer.from('no MD5 checksum')),
       ]);
       const app = await buildApp({
-        config: parseEnv({ DATABASE_URL: dsnFor(name), CACHE_DIR: cacheDir }),
+        config: parseEnv({
+          DATABASE_URL: dsnFor(name),
+          CACHE_DIR: cacheDir,
+          PUBLIC_DOWNLOADS_PER_MINUTE: '100',
+        }),
         database,
       });
       try {
@@ -152,6 +156,18 @@ async function writeFixture(path: string, bytes: Buffer): Promise<void> {
   await writeFile(path, bytes);
 }
 
+async function waitForDownloadEvents(
+  app: Awaited<ReturnType<typeof buildApp>>,
+  expectedCount: number,
+): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const events = await app.db.db.selectFrom('download_events').select('id').execute();
+    if (events.length >= expectedCount) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Expected ${expectedCount} download events before the test deadline.`);
+}
+
 async function tryExclusiveCountryLock(
   app: Awaited<ReturnType<typeof buildApp>>,
   countryId: string,
@@ -199,13 +215,14 @@ describe.skipIf(skipReason !== null)('public country download stream', () => {
       expect(explicit.headers['cache-control']).toBe('public, max-age=31536000, immutable');
       expect(explicit.headers.etag).toBe(`"md5:${olderMd5}"`);
 
+      await waitForDownloadEvents(app, 2);
       const events = await app.db.db.selectFrom('download_events').selectAll().execute();
       expect(events).toHaveLength(2);
       expect(events.map((event) => event.channel)).toEqual(['public', 'public']);
       expect(events.map((event) => Number(event.bytes_sent)).sort((a, b) => a - b)).toEqual(
         [latestBytes.length, olderBytes.length].sort((a, b) => a - b),
       );
-      expect(events.every((event) => /^[a-f\\d]{64}$/u.test(event.ip_hash ?? ''))).toBe(true);
+      expect(events.every((event) => /^[a-f\d]{64}$/u.test(event.ip_hash ?? ''))).toBe(true);
       expect(events.some((event) => event.ip_hash === '127.0.0.1')).toBe(false);
     });
   });
@@ -323,6 +340,7 @@ describe.skipIf(skipReason !== null)('public country download stream', () => {
       expect(rangedGet.statusCode).toBe(206);
       const fullGet = await app.inject({ method: 'GET', url: publicDownloadUrl() });
       expect(fullGet.statusCode).toBe(200);
+      await waitForDownloadEvents(app, 7);
       const eventsBeforeBodylessResponses = await app.db.db
         .selectFrom('download_events')
         .select('id')
@@ -365,7 +383,7 @@ describe.skipIf(skipReason !== null)('public country download stream', () => {
 
       const wildcard = await app.inject({
         method: 'GET',
-        url: publicDownloadUrl('finland', '261000-no-checksum'),
+        url: publicDownloadUrl('finland', '261000-no-md5'),
         headers: { 'if-none-match': '*' },
       });
       expect(wildcard.statusCode).toBe(304);
@@ -434,7 +452,7 @@ describe.skipIf(skipReason !== null)('public country download stream', () => {
           .executeTakeFirst();
         expect(event?.channel).toBe('public');
         expect(BigInt(event?.bytes_sent ?? 0)).toBeGreaterThan(0n);
-        expect(event?.ip_hash).toMatch(/^[a-f\\d]{64}$/u);
+        expect(event?.ip_hash).toMatch(/^[a-f\d]{64}$/u);
       } finally {
         clientResponse?.destroy();
       }

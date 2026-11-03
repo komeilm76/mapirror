@@ -99,15 +99,11 @@ async function withRegionApp(
 
 async function withSourceServer(
   pageStatus: number,
-  run: (baseUrl: string, requestedPaths: string[]) => Promise<void>,
+  run: (baseUrl: string, requests: string[]) => Promise<void>,
 ) {
   await withGeofabrikFixtureServer(
     { statusByPath: { '/europe/finland.html': pageStatus } },
-    ({ baseUrl, requests }) =>
-      run(
-        baseUrl,
-        requests.map((request) => request.replace(/^[^ ]+ /u, '')),
-      ),
+    ({ baseUrl, requests }) => run(baseUrl, requests),
   );
 }
 
@@ -185,7 +181,10 @@ describe.skipIf(skipReason !== null)('admin catalog region routes', () => {
           sourceReachable: true,
         });
         expect(snapshotBody.fetchedAt).toMatch(/^\d{4}-\d\d-\d\dT/u);
-        expect(requestedPaths).toEqual(['/europe/finland.html', '/europe/finland.html']);
+        expect(requestedPaths.map((request) => request.replace(/^[^ ]+ /u, ''))).toEqual([
+          '/europe/finland.html',
+          '/europe/finland.html',
+        ]);
       });
     });
   });

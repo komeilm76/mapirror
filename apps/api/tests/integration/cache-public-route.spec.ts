@@ -171,10 +171,11 @@ describe.skipIf(skipReason !== null)('POST /_admin/api/cache/:countryId/public',
           ).toEqual({ is_public: false });
 
           // Force the append-only audit insert to fail: the country update must roll back with it.
-          await database.db.schema
-            .alterTable('audit_logs')
-            .addCheckConstraint('test_reject_cache_publish_audit', sql`action <> 'cache.publish'`)
-            .execute();
+          await sql`
+            ALTER TABLE audit_logs
+            ADD CONSTRAINT test_reject_cache_publish_audit
+            CHECK (action <> 'cache.publish') NOT VALID
+          `.execute(database.db);
           const auditFailure = await toggle(finlandId, true);
           expect(auditFailure.statusCode).toBe(500);
           expect(auditFailure.json<{ error: { code: string } }>().error.code).toBe(

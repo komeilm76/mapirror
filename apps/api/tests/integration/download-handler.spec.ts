@@ -141,7 +141,7 @@ describe.skipIf(skipReason !== null)('PostgreSQL download handler', () => {
             });
             expect(
               Uint8Array.from(await readFile(join(cacheDirectory, version.storage_path))),
-            ).toEqual(payloadBytes);
+            ).toEqual(Uint8Array.from(payloadBytes));
             await expect(
               stat(join(cacheDirectory, '.partial', `${job.id}.part`)),
             ).rejects.toMatchObject({
@@ -404,7 +404,7 @@ describe.skipIf(skipReason !== null)('PostgreSQL download handler', () => {
             const installed = await readFile(
               join(cacheDirectory, 'finland/261023/finland-261023.osm.pbf'),
             );
-            expect(Uint8Array.from(installed)).toEqual(payloadBytes);
+            expect(Uint8Array.from(installed)).toEqual(Uint8Array.from(payloadBytes));
             const resumedRequest = requestDetails.find(
               (request) =>
                 request.method === 'GET' && request.url === '/europe/finland-261023.osm.pbf',
@@ -472,7 +472,7 @@ describe.skipIf(skipReason !== null)('PostgreSQL download handler', () => {
             Uint8Array.from(
               await readFile(join(cacheDirectory, 'test/261023/test-261023.osm.pbf')),
             ),
-          ).toEqual(payloadBytes);
+          ).toEqual(Uint8Array.from(payloadBytes));
         });
       },
       { migrate: true, prefix: 'jobrange200' },
@@ -547,7 +547,7 @@ describe.skipIf(skipReason !== null)('PostgreSQL download handler', () => {
             await worker.stop();
           }
           expect(responseCanceled).toBe(true);
-          expect(Uint8Array.from(await readFile(partialPath))).toEqual(prefix);
+          expect(Uint8Array.from(await readFile(partialPath))).toEqual(Uint8Array.from(prefix));
           await expect(
             stat(join(cacheDirectory, 'test/261023/test-261023.osm.pbf')),
           ).rejects.toMatchObject({ code: 'ENOENT' });
@@ -618,7 +618,7 @@ describe.skipIf(skipReason !== null)('PostgreSQL download handler', () => {
           expect(rangeHeader).toBeNull();
           expect(
             Uint8Array.from(await readFile(join(cacheDirectory, version.storage_path))),
-          ).toEqual(payloadBytes);
+          ).toEqual(Uint8Array.from(payloadBytes));
         });
       },
       { migrate: true, prefix: 'joblatest' },

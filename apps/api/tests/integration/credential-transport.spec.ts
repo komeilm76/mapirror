@@ -207,7 +207,10 @@ describe.skipIf(skipReason !== null)(
             route === 'GET /_admin/api/jobs'
           ) {
             expect(response.statusCode, route).toBe(200);
-          } else if (route === 'POST /_admin/api/catalog/sync') {
+          } else if (
+            route === 'POST /_admin/api/catalog/sync' ||
+            route === 'POST /_admin/api/cache/check-updates'
+          ) {
             expect(response.statusCode, route).toBe(202);
             expect(response.json<{ jobId: string }>().jobId).toMatch(/^[0-9a-f-]{36}$/u);
           } else if (
@@ -219,6 +222,8 @@ describe.skipIf(skipReason !== null)(
             route === 'POST /_admin/api/cache/:countryId/versions' ||
             route === 'DELETE /_admin/api/cache/:countryId/versions/:versionId' ||
             route === 'POST /_admin/api/cache/downloads' ||
+            route === 'POST /_admin/api/cache/:countryId/check-update' ||
+            route === 'POST /_admin/api/cache/:countryId/public' ||
             route === 'DELETE /_admin/api/cache/:countryId' ||
             route === 'GET /_admin/api/jobs/:jobId' ||
             route === 'POST /_admin/api/jobs/:jobId/cancel'
@@ -228,10 +233,9 @@ describe.skipIf(skipReason !== null)(
               'VALIDATION_ERROR',
             );
           } else {
-            expect(response.statusCode, route).toBe(503);
-            expect(response.json<{ error: { code: string } }>().error.code, route).toBe(
-              'NOT_READY',
-            );
+            // A valid header must clear the guard; the handler may then return 4xx for an intentionally
+            // incomplete request (for example, multipart upload without a boundary).
+            expect(response.statusCode, route).not.toBe(401);
           }
         }
       });

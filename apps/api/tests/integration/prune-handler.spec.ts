@@ -207,7 +207,7 @@ describe.skipIf(skipReason !== null)('PostgreSQL retention prune worker', () => 
             code: 'ENOENT',
           });
           expect(Uint8Array.from(await readFile(join(cacheDirectory, newerPath)))).toEqual(
-            artifact,
+            Uint8Array.from(artifact),
           );
           expect(
             await db

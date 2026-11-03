@@ -42,6 +42,11 @@ export class SkipError extends Error {}
 /** Names created and not yet dropped, so a crashed test still leaves the server clean. */
 const created = new Set<string>();
 
+/** Quotes a PostgreSQL identifier used by the scratch-database lifecycle. */
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
+
 /**
  * Creates an empty database and hands it over, dropping it afterwards whatever happens.
  *
@@ -53,7 +58,8 @@ export async function withFreshDatabase(
   run: (database: SqlDatabase, name: string) => Promise<void>,
   options: { prefix?: string; migrate?: boolean } = {},
 ): Promise<void> {
-  const name = `mapirror_${options.prefix ?? 'tmp'}_${randomUUID().replaceAll('-', '').slice(0, 12)}`;
+  const prefix = (options.prefix ?? 'tmp').replace(/[^A-Za-z0-9_]/gu, '_') || 'tmp';
+  const name = `mapirror_${prefix}_${randomUUID().replaceAll('-', '').slice(0, 12)}`;
   const admin = new pg.Client({ connectionString: dsnFor('postgres') });
 
   try {
@@ -64,7 +70,7 @@ export async function withFreshDatabase(
   }
 
   try {
-    await admin.query(`create database ${name}`);
+    await admin.query(`create database ${quoteIdentifier(name)}`);
   } catch (error) {
     await admin.end().catch(() => undefined);
     const code = (error as { code?: string }).code;
@@ -85,7 +91,7 @@ export async function withFreshDatabase(
     await run(database, name);
   } finally {
     await database.close();
-    await admin.query(`drop database if exists ${name} with (force)`);
+    await admin.query(`drop database if exists ${quoteIdentifier(name)} with (force)`);
     await admin.end();
     created.delete(name);
   }
@@ -102,7 +108,7 @@ export async function dropDatabase(name: string): Promise<void> {
   const admin = new pg.Client({ connectionString: dsnFor('postgres') });
   try {
     await admin.connect();
-    await admin.query(`drop database if exists ${name} with (force)`);
+    await admin.query(`drop database if exists ${quoteIdentifier(name)} with (force)`);
     created.delete(name);
   } finally {
     await admin.end().catch(() => undefined);

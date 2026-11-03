@@ -221,6 +221,7 @@ describe.skipIf(skipReason !== null)('runHousekeeping', () => {
               origin: 'geofabrik_snapshot',
               source_filename: 'finland-261024.osm.pbf',
               file_size_bytes: 17,
+              checksum_md5: 'a'.repeat(32),
               storage_path: 'finland/261024/finland-261024.osm.pbf',
               status: 'ready',
               ready_at: NOW,
@@ -424,8 +425,8 @@ describe.skipIf(skipReason !== null)('runHousekeeping', () => {
             .orderBy('temp_path')
             .execute();
           expect(remaining).toEqual([
-            { temp_path: `${freshId}.osm.pbf`, status: 'received' },
             { temp_path: `${installingId}.osm.pbf`, status: 'installing' },
+            { temp_path: `${freshId}.osm.pbf`, status: 'received' },
           ]);
           await expect(uploadStorage.file(expiredId).size()).resolves.toBe(0n);
           await expect(

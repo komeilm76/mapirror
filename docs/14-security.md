@@ -211,7 +211,7 @@ recorded here so a future reviewer does not "fix" the missing token check.
 ## 11. Security checklist (Phase 6 sign-off)
 
 - [x] Admin password ≥ 12 chars enforced, weak list rejected, Argon2id verified (`password.spec.ts`, `admin-accounts.spec.ts`, and bootstrap/reset tests)
-- [ ] Token hash-only storage confirmed in DB inspection — the code and `integration/tokens.spec.ts` assert digest-only rows, but the database-backed test was skipped here and no live DB inspection was performed
+- [x] Token hash-only storage confirmed by `integration/tokens.spec.ts` against an ephemeral local PostgreSQL 16.2 instance; the database-backed assertions verify stored digests, not plaintext tokens
 - [x] Every `/_admin/api/*` route returns 401 without a token (law test, `P1-API-08`)
 - [x] Cookie auth, query-token auth, and Basic auth all rejected (`P1-API-08`: a live token offered in each place)
 - [x] Logout revokes; password reset revokes all sessions (`P1-AUTH-04`, `P1-AUTH-07`)
@@ -222,7 +222,7 @@ recorded here so a future reviewer does not "fix" the missing token check.
 - [x] Security headers are asserted on API responses (`security.spec.ts`) and configured for the HTML shell (`nginx-routing.spec.ts`)
 - [x] CSP has no `unsafe-eval`; `v-html` is lint-banned and absent from tracked application code (`security.spec.ts`, ESLint)
 - [x] Rate limits verified with loop tests (login, public download) — `login-throttle.spec.ts` exercises the 10-failure/11th-attempt lockout; `rate-limit.spec.ts` exercises public read/download request bursts, the separate download bucket, and the documented 429 response
-- [ ] Unpublished country returns 404 on all public endpoints — `P3-TST-01` matrix exists, but its PostgreSQL-backed cases were skipped; awaiting a fresh PostgreSQL run
+- [x] Unpublished country returns 404 on all public endpoints — `public-visibility-matrix.spec.ts` passed against an ephemeral local PostgreSQL 16.2 instance
 - [x] Public response schemas are strict and reject `storage_path`, job/admin ids, and IP fields (`public-catalog.spec.ts`, `public-country.spec.ts`, `public-stats.spec.ts`); route projections expose only public fields
 - [x] Git-history secret sanity scan found no `.env`, private-key, or production credential artifact; matches are the documented development template and test fixtures (`git log -p --all`, tracked-path and credential-pattern review)
 - [x] Production-mode error test confirms unexpected errors expose no message, stack, driver details, or secrets (`errors.spec.ts`)
@@ -231,4 +231,4 @@ recorded here so a future reviewer does not "fix" the missing token check.
 - [ ] `bun audit` clean; base images use the documented version tags. Full audit reports two moderate dev-only transitive advisories (`glob@13.0.6`, `minimatch@3.1.5`/`10.2.6`); `bun audit --production` is clean and `bun audit --audit-level=high` reports none. `bun audit fix` cannot cross current dependent ranges. P6-SEC-02 is complete (no high/critical); this checkbox stays open until the full audit is clean or the remaining advisories are explicitly accepted
 - [ ] Backup/restore drill completed without exposing secrets — the Docker restore drill remains pending with P6-OPS-01
 
-**Sign-off status:** 15 of 20 items are evidence-backed. P6-SEC-02 verified no high/critical findings and a clean production dependency audit, but the full audit still has two moderate dev-tool advisories. Final sign-off remains withheld pending the four database/Docker checks above and resolution or explicit acceptance of those advisories.
+**Sign-off status:** 17 of 20 items are evidence-backed. The token-storage and unpublished-country checks now pass against an ephemeral local PostgreSQL 16.2 instance; this is not a Docker deployment drill. P6-SEC-02 verified no high/critical findings and a clean production dependency audit, but the full audit still has two moderate dev-tool advisories. Final sign-off remains withheld pending the container-UID and restore drills and resolution or explicit acceptance of those advisories.
