@@ -59,6 +59,10 @@ passes. Patch releases (`0.1.1`, …) are corrections to an already-tagged phase
 - **P4-INT-08 intervals screen:** authenticated interval list and create/edit form with searchable multi-country selection, frequency-specific UTC timing, pause/delete controls, last-run status, and a live next-five preview. The browser preview and API scheduler now use the same shared recurrence helper.
 - **P4-INT-08 verification:** `bun run check` passes (1,327 tests passed; 326 skipped, including PostgreSQL-backed cases without a fresh test database). `bun run build:web` passes and emits the lazy-loaded Intervals screen chunk (16.63 kB; 5.33 kB gzip).
 
+### Changed
+
+- **P6-DOC-02 — API documentation and diagrams:** removed obsolete statements that public transfer analytics and interval-membership cleanup were future work; corrected the API contract-testing description; and refreshed architecture/deployment, API namespace, data-model, update-decision, cache-lifecycle and job-state diagrams to match current handlers, Compose port binding and runtime images. Added docs-contract regressions. Full `bun run check` passes: 172 test files / 1,735 tests passed; 44 files / 341 PostgreSQL-dependent tests were skipped because the operator-managed database was unavailable. Release tagging remains gated on the outstanding Phase 6 operator evidence.
+
 ### Fixed
 - **Pagination could produce a non-integer offset** (review pass 8): `?page=9007199254740991&limit=100`
   gave `900719925474099000`, which is what would have reached SQL as `OFFSET`. The product is now clamped to

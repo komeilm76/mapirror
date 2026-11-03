@@ -280,7 +280,7 @@ prove L1–L3.
 | P6-PERF-01 | Load check: 1 GB+ download throughput, memory flat | UX-8 | P2-JOB-05 | 🟦 | Added a bounded 3,000,000,000-byte public range benchmark and operator procedure; the live Compose run remains pending. Record throughput and API/nginx peak memory; each must stay within 64 MiB of baseline over the full transfer |
 | P6-DOC-01 | README quick start + deployment runbook verified on fresh VM | DOCK-2 | P6-OPS-01 | 🟦 | README/status and Ubuntu runbook refreshed; added link/quick-start/prerequisite/firewall contract tests. Fresh Ubuntu 24.04 Docker install remains pending operator verification before completion |
 | P6-DOC-02 | API examples re-verified, diagrams refreshed | L12 | all | ✅ | Rechecked public/admin examples and route-law paths against current schemas/handlers; corrected stale analytics and interval-cleanup claims, refreshed runtime/loopback/API/job diagrams, and added docs-contract regressions |
-| P6-REL-01 | Version tag + changelog | L12 | P6-* | ⬜ | Tag on `arena/5a1becdd-mapirror` |
+| P6-REL-01 | Version tag + changelog | L12 | P6-* | 🟦 | Added P6-DOC-02 to unreleased notes; version bump/tag are withheld until the remaining Phase 6 operator evidence and security sign-off satisfy the release gate |
 
 **Phase 6 gate:** clean Ubuntu 24.04 install from docs alone; backup/restore proven; security signed off.
 
