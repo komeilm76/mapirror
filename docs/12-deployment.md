@@ -8,7 +8,7 @@ reverse proxy (D-15).
 ```bash
 # Ubuntu 24.04 LTS
 sudo apt update && sudo apt upgrade -y
-sudo apt install -y ca-certificates curl git gpg openssl ufw
+sudo apt install -y ca-certificates curl git gpg openssl ufw unzip
 
 # Docker Engine + Compose plugin (official repo)
 sudo install -m 0755 -d /etc/apt/keyrings
@@ -67,6 +67,27 @@ docker compose up -d --build
 docker compose ps
 docker compose logs -f api
 ```
+
+### Optional host-side Bun checks
+
+Bun is **not required on the Docker host** to build or run this deployment: the API image contains its own pinned Bun
+runtime. Install Bun on the host only if you also want to install workspace dependencies and run repository checks there.
+The prerequisites above install `curl` and `unzip`, which the Bun installer needs:
+
+```bash
+curl -fsSL https://bun.com/install | bash
+source ~/.bashrc
+bun --version                         # expected: 1.4.4 (package.json's packageManager pin)
+test "$(bun --version)" = "1.4.4"   # stop if the installed version differs
+cd /opt/mapirror
+bun install --frozen-lockfile
+bun run check
+```
+
+`bun run check` may skip PostgreSQL-backed integration cases if `DATABASE_URL_TEST` is not reachable or its role cannot
+create scratch databases. Treat those skips as unverified, not as passes; run the database-backed suites against a
+separate disposable PostgreSQL instance with `CREATEDB` when collecting release evidence. Do not point tests at the
+production database.
 
 ### What `compose.yaml` starts
 

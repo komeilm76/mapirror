@@ -63,7 +63,9 @@ describe('README quick start and Ubuntu deployment runbook', () => {
       deployment.indexOf('### What `compose.yaml` starts'),
     );
 
-    expect(prerequisites).toContain('sudo apt install -y ca-certificates curl git gpg openssl ufw');
+    expect(prerequisites).toContain(
+      'sudo apt install -y ca-certificates curl git gpg openssl ufw unzip',
+    );
     expect(prerequisites).toContain('gpg --dearmor');
     expect(prerequisites.indexOf('sudo ufw allow OpenSSH')).toBeLessThan(
       prerequisites.indexOf('sudo ufw enable'),
@@ -80,6 +82,12 @@ describe('README quick start and Ubuntu deployment runbook', () => {
     expect(installation).toContain('cp .env.example .env');
     expect(installation).toContain('chmod 600 .env');
     expect(installation).toContain('docker compose up -d --build');
+    expect(installation).toContain('Bun is **not required on the Docker host**');
+    expect(installation).toContain('curl -fsSL https://bun.com/install | bash');
+    expect(installation).toContain('source ~/.bashrc');
+    expect(installation).toContain('bun --version');
+    expect(installation).toContain('bun install --frozen-lockfile');
+    expect(installation).toContain('DATABASE_URL_TEST');
     expect(deployment).toContain('curl -s http://localhost:8080/readyz');
     expect(deployment).toContain('`127.0.0.1:8080:8080`');
     expect(deployment).toContain('Docker-published ports may bypass UFW');
