@@ -214,68 +214,30 @@ describe('admin catalog page', () => {
     );
   });
 
-  it('syncs Geofabrik from the admin page and displays newly listed regions after the job completes', async () => {
-    const emptyCatalog: CatalogListResponse = {
-      data: [],
-      meta: { page: 1, limit: 50, total: 0, totalPages: 0 },
-      catalogSyncedAt: null,
-    };
-    const syncJob = {
-      id: QUEUED_JOB_ID,
-      type: 'catalog_sync',
-      status: 'succeeded',
-      phase: null,
-      progressBytes: 0,
-      totalBytes: null,
-      speedBps: null,
-      etaSeconds: null,
-      payload: { source: 'geofabrik' },
-      updateCheckResult: null,
-      cancelRequested: false,
-      attempts: 1,
-      maxAttempts: 3,
-      createdAt: JOB_CREATED_AT,
-      startedAt: JOB_CREATED_AT,
-      finishedAt: JOB_CREATED_AT,
-      error: null,
-    };
+  it('searches catalog countries by name or ISO code from the local filter and the topbar', async () => {
     const catalogUrls: URL[] = [];
-    const fetchMock = makeFetch((url, init, catalogCall) => {
-      if (url.pathname === '/_admin/api/catalog' && (init?.method ?? 'GET') === 'GET') {
+    const fetchMock = makeFetch((url) => {
+      if (url.pathname === '/_admin/api/catalog') {
         catalogUrls.push(url);
-        return jsonResponse(catalogCall === 1 ? emptyCatalog : TWO_ROWS);
+        return jsonResponse(TWO_ROWS);
       }
-      if (url.pathname === '/_admin/api/catalog/sync' && init?.method === 'POST') {
-        return jsonResponse({ jobId: QUEUED_JOB_ID }, 202);
-      }
-      if (url.pathname === `/_admin/api/jobs/${QUEUED_JOB_ID}`) return jsonResponse(syncJob);
-      if (url.pathname === '/_admin/api/jobs') {
-        return jsonResponse({ data: [], meta: { page: 1, limit: 1, total: 0, totalPages: 0 } });
-      }
-      throw new Error(`Unexpected request: ${init?.method ?? 'GET'} ${url.pathname}`);
+      throw new Error(`Unexpected request: ${url.pathname}`);
     });
-    const { container } = await mountCatalog(fetchMock);
-
-    await vi.waitFor(() => expect(container.textContent).toContain('No regions match'));
-    container.querySelector<HTMLButtonElement>('[data-testid="catalog-sync-button"]')?.click();
+    const { container, router } = await mountCatalog(fetchMock);
 
     await vi.waitFor(() => expect(container.textContent).toContain('Finland'));
+    const countrySearch = container.querySelector<HTMLInputElement>('#catalog-country-search');
+    expect(countrySearch).not.toBeNull();
+    if (countrySearch === null) return;
+    countrySearch.value = 'Iran';
+    countrySearch.dispatchEvent(new Event('input', { bubbles: true }));
+
+    await vi.waitFor(() => expect(router.currentRoute.value.query['q']).toBe('Iran'));
     await vi.waitFor(() =>
-      expect(document.querySelector('#mm-job-progress-drawer')?.textContent).toContain(
-        'Catalog refresh · Completed',
-      ),
+      expect(catalogUrls.some((url) => url.searchParams.get('q') === 'Iran')).toBe(true),
     );
-    expect(document.querySelector('#mm-job-progress-drawer')?.textContent).toContain(QUEUED_JOB_ID);
-    expect(catalogUrls).toHaveLength(2);
-    expect(container.textContent).toContain(
-      'Geofabrik catalog refreshed. Newly listed regions are now available.',
-    );
-    const syncRequest = (
-      fetchMock as typeof fetchMock & { catalogCalls: { url: URL; init?: RequestInit }[] }
-    ).catalogCalls.find((call) => call.url.pathname === '/_admin/api/catalog/sync');
-    expect(syncRequest?.init?.method).toBe('POST');
-    expect(new Headers(syncRequest?.init?.headers).get('authorization')).toBe(
-      'Bearer mm_catalog_test',
+    expect(container.querySelector<HTMLInputElement>('form[role="search"] input')?.value).toBe(
+      'Iran',
     );
   });
 
@@ -580,9 +542,13 @@ describe('admin catalog page', () => {
       fetchedAt: '2026-10-24T09:12:00.000Z',
       sourceReachable: false,
     };
+    let snapshotCalls = 0;
     const fetchMock = makeFetch((url) => {
       if (url.pathname === '/_admin/api/catalog') return jsonResponse(TWO_ROWS);
-      if (url.pathname.endsWith('/snapshots')) return jsonResponse(unreachable);
+      if (url.pathname.endsWith('/snapshots')) {
+        snapshotCalls += 1;
+        return jsonResponse(snapshotCalls === 1 ? unreachable : SOURCE_SNAPSHOTS);
+      }
       throw new Error(`Unexpected request: ${url.pathname}`);
     });
     const { container } = await mountCatalog(fetchMock);
@@ -590,12 +556,93 @@ describe('admin catalog page', () => {
     await vi.waitFor(() => expect(container.textContent).toContain('Finland'));
     container.querySelector<HTMLButtonElement>('.mm-catalog-download-button')?.click();
     await vi.waitFor(() => expect(container.querySelector('[role="dialog"]')).not.toBeNull());
-    expect(container.textContent).toContain('Geofabrik is unreachable');
+    expect(container.textContent).toContain('The server cannot reach Geofabrik');
     expect(container.textContent).toContain('Already cached');
+    expect(
+      container
+        .querySelector<HTMLAnchorElement>('[role="dialog"] .mm-catalog-source-warning a')
+        ?.getAttribute('href'),
+    ).toBe(adminPagePaths.proxy());
     const queueButton = container.querySelector<HTMLButtonElement>(
       '[role="dialog"] .mm-catalog-dialog-actions button:last-child',
     );
     expect(queueButton?.disabled).toBe(true);
+
+    container.querySelector<HTMLButtonElement>('.mm-catalog-source-actions button')?.click();
+    await vi.waitFor(() => expect(container.textContent).toContain('Latest · 261024'));
+    expect(snapshotCalls).toBe(2);
+  });
+
+  it('syncs Geofabrik from the admin page and displays newly listed regions after the job completes', async () => {
+    const emptyCatalog: CatalogListResponse = {
+      data: [],
+      meta: { page: 1, limit: 50, total: 0, totalPages: 0 },
+      catalogSyncedAt: null,
+    };
+    const syncJob = {
+      id: QUEUED_JOB_ID,
+      type: 'catalog_sync',
+      status: 'succeeded',
+      phase: null,
+      progressBytes: 0,
+      totalBytes: null,
+      speedBps: null,
+      etaSeconds: null,
+      payload: { source: 'geofabrik' },
+      updateCheckResult: null,
+      cancelRequested: false,
+      attempts: 1,
+      maxAttempts: 3,
+      createdAt: JOB_CREATED_AT,
+      startedAt: JOB_CREATED_AT,
+      finishedAt: JOB_CREATED_AT,
+      error: null,
+    };
+    const catalogUrls: URL[] = [];
+    const fetchMock = makeFetch((url, init, catalogCall) => {
+      if (url.pathname === '/_admin/api/catalog' && (init?.method ?? 'GET') === 'GET') {
+        catalogUrls.push(url);
+        return jsonResponse(catalogCall === 1 ? emptyCatalog : TWO_ROWS);
+      }
+      if (url.pathname === '/_admin/api/catalog/sync' && init?.method === 'POST') {
+        return jsonResponse({ jobId: QUEUED_JOB_ID }, 202);
+      }
+      if (url.pathname === `/_admin/api/jobs/${QUEUED_JOB_ID}`) return jsonResponse(syncJob);
+      if (url.pathname === '/_admin/api/jobs') {
+        return jsonResponse({ data: [], meta: { page: 1, limit: 1, total: 0, totalPages: 0 } });
+      }
+      throw new Error(`Unexpected request: ${init?.method ?? 'GET'} ${url.pathname}`);
+    });
+    const { container } = await mountCatalog(fetchMock);
+
+    await vi.waitFor(() => expect(container.textContent).toContain('No regions match'));
+    container.querySelector<HTMLButtonElement>('[data-testid="catalog-sync-button"]')?.click();
+
+    await vi.waitFor(() => expect(container.textContent).toContain('Finland'));
+    await vi.waitFor(() =>
+      expect(document.querySelector('#mm-job-progress-drawer')?.textContent).toContain(
+        'Catalog refresh · Completed',
+      ),
+    );
+    expect(document.querySelector('#mm-job-progress-drawer')?.textContent).toContain(QUEUED_JOB_ID);
+    document.querySelector<HTMLButtonElement>('[aria-label="Close job progress"]')?.click();
+    await vi.waitFor(() =>
+      expect(
+        container.querySelector('[aria-label="Open job progress"]')?.getAttribute('aria-expanded'),
+      ).toBe('false'),
+    );
+    await flushPromises();
+    expect(catalogUrls).toHaveLength(2);
+    expect(container.textContent).toContain(
+      'Geofabrik catalog refreshed. Newly listed regions are now available.',
+    );
+    const syncRequest = (
+      fetchMock as typeof fetchMock & { catalogCalls: { url: URL; init?: RequestInit }[] }
+    ).catalogCalls.find((call) => call.url.pathname === '/_admin/api/catalog/sync');
+    expect(syncRequest?.init?.method).toBe('POST');
+    expect(new Headers(syncRequest?.init?.headers).get('authorization')).toBe(
+      'Bearer mm_catalog_test',
+    );
   });
 
   it('uses cards below the documented responsive breakpoint and honors reduced motion', () => {

@@ -34,6 +34,7 @@ import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { ApiError } from '@/api/errors';
+import { adminPagePaths } from '@/router/paths';
 import { useApi } from '@/composables/useApi';
 import { useJobProgress } from '@/stores/jobProgress';
 
@@ -53,6 +54,7 @@ const loading = ref(true);
 const errorMessage = ref<string | null>(null);
 const errorRequestId = ref<string | null>(null);
 const retryNumber = ref(0);
+const countryInput = ref(queryText(route.query.q) ?? '');
 const continentInput = ref(queryText(route.query.continent) ?? '');
 const downloadDialogOpen = ref(false);
 const downloadDialogElement = ref<HTMLElement | null>(null);
@@ -135,6 +137,10 @@ const updateContinentLater = useDebounceFn(
   () => updateQuery({ continent: continentInput.value }),
   300,
 );
+const updateCountryLater = useDebounceFn(
+  () => updateQuery({ q: countryInput.value.trim() || null }),
+  300,
+);
 
 onUnmounted(() => {
   snapshotsRequestNumber += 1;
@@ -145,12 +151,24 @@ onUnmounted(() => {
 });
 
 watch(
+  () => route.query.q,
+  (value) => {
+    const next = queryText(value) ?? '';
+    if (countryInput.value !== next) countryInput.value = next;
+  },
+);
+
+watch(
   () => route.query.continent,
   (value) => {
     const next = queryText(value) ?? '';
     if (continentInput.value !== next) continentInput.value = next;
   },
 );
+
+watch(countryInput, () => {
+  void updateCountryLater();
+});
 
 watch(continentInput, () => {
   void updateContinentLater();
@@ -261,6 +279,7 @@ function setPage(nextPage: number): void {
 /** Clears every catalog filter, including global search, back to its documented defaults. */
 function clearFilters(): void {
   void router.replace({ query: {} });
+  countryInput.value = '';
   continentInput.value = '';
 }
 
@@ -758,6 +777,20 @@ async function queueDownload(): Promise<void> {
 
     <section class="mm-catalog-filters" aria-label="Catalog filters">
       <div class="mm-catalog-filter-field">
+        <label for="catalog-country-search">Search country or ISO code</label>
+        <input
+          id="catalog-country-search"
+          v-model="countryInput"
+          autocomplete="off"
+          maxlength="128"
+          name="q"
+          placeholder="e.g. Iran or IR"
+          type="search"
+        />
+        <span class="mm-caption">Matches country names and ISO codes.</span>
+      </div>
+
+      <div class="mm-catalog-filter-field">
         <label for="catalog-continent">Continent or source region ID</label>
         <input
           id="catalog-continent"
@@ -1093,10 +1126,20 @@ async function queueDownload(): Promise<void> {
           <button class="mm-catalog-button" type="button" @click="loadSnapshots">Try again</button>
         </div>
         <template v-else-if="snapshots !== null">
-          <p v-if="!snapshots.sourceReachable" class="mm-catalog-source-warning" role="status">
-            Geofabrik is unreachable. Only already-cached source versions are listed; new downloads
-            are unavailable.
-          </p>
+          <div v-if="!snapshots.sourceReachable" class="mm-catalog-source-warning" role="status">
+            <p>
+              The server cannot reach Geofabrik, so only cached versions are available. Check the
+              outbound proxy and Geofabrik health checks under Network, then retry.
+            </p>
+            <div class="mm-catalog-source-actions">
+              <router-link class="mm-catalog-button" :to="adminPagePaths.proxy()">
+                Check network settings
+              </router-link>
+              <button class="mm-catalog-button" type="button" @click="loadSnapshots">
+                Retry source list
+              </button>
+            </div>
+          </div>
           <fieldset class="mm-catalog-version-list">
             <legend>Available source versions</legend>
             <label

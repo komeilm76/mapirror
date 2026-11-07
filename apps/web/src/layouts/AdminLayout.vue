@@ -183,11 +183,11 @@ onMounted(() => {
     <form class="mm-admin-search" role="search" @submit.prevent="submitSearch">
       <v-text-field
         v-model="search"
-        aria-label="Search the catalog"
+        aria-label="Search countries by name or ISO code"
         density="compact"
         hide-details
         maxlength="128"
-        placeholder="Search catalog"
+        placeholder="Search countries"
         single-line
         type="search"
         variant="solo"
