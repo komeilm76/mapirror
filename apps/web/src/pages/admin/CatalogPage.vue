@@ -7,8 +7,8 @@
  * Every request goes through the shared API client and the response is parsed against the same Zod contract the API
  * returns. Stale requests are aborted when route state changes; an old response can never replace a newer filter.
  *
- * The download action and version picker belong to `P2-WEB-02`; this page intentionally limits itself to discovery and
- * status, rather than presenting a button that cannot yet complete its promised action.
+ * Catalog refresh uses the existing durable admin sync job; the download action and version picker belong to
+ * `P2-WEB-02`. Only regions published by Geofabrik can be added to this catalog.
  *
  * @module pages/admin/CatalogPage
  */
@@ -20,7 +20,9 @@ import {
   CacheDownloadResponseSchema,
   CatalogListResponseSchema,
   CatalogQuerySchema,
+  CatalogSyncResponseSchema,
   CatalogRegionSnapshotsResponseSchema,
+  JobDetailResponseSchema,
   SORT_FIELDS,
   type CatalogListItem,
   type CatalogListResponse,
@@ -68,7 +70,14 @@ const downloadErrorRequestId = ref<string | null>(null);
 const queuedJobs = ref<Record<string, string>>({});
 const queueAnnouncement = ref<string | null>(null);
 const queueAnnouncementElement = ref<HTMLElement | null>(null);
+const catalogSyncAnnouncement = ref<string | null>(null);
+const catalogSyncState = ref<'idle' | 'submitting' | 'queued' | 'running'>('idle');
+const catalogSyncError = ref<string | null>(null);
+const catalogSyncRequestId = ref<string | null>(null);
 let snapshotsController: AbortController | undefined;
+let syncController: AbortController | undefined;
+let syncPollTimer: ReturnType<typeof setTimeout> | undefined;
+let syncRequestNumber = 0;
 let snapshotsRequestNumber = 0;
 
 /**
@@ -130,6 +139,9 @@ const updateContinentLater = useDebounceFn(
 onUnmounted(() => {
   snapshotsRequestNumber += 1;
   snapshotsController?.abort();
+  syncRequestNumber += 1;
+  syncController?.abort();
+  if (syncPollTimer !== undefined) clearTimeout(syncPollTimer);
 });
 
 watch(
@@ -255,6 +267,113 @@ function clearFilters(): void {
 /** Repeats the last request without changing the bookmarked query. */
 function retry(): void {
   retryNumber.value += 1;
+}
+
+/** Queues a source-catalog refresh so newly published Geofabrik regions become available to cache. */
+async function syncCatalog(): Promise<void> {
+  if (catalogSyncState.value !== 'idle') return;
+  catalogSyncState.value = 'submitting';
+  catalogSyncAnnouncement.value = null;
+  catalogSyncError.value = null;
+  catalogSyncRequestId.value = null;
+  const requestNumber = ++syncRequestNumber;
+  const controller = new AbortController();
+  syncController = controller;
+
+  try {
+    const response = await api.post<unknown>(
+      '/_admin/api/catalog/sync',
+      {},
+      { signal: controller.signal },
+    );
+    if (requestNumber !== syncRequestNumber) return;
+    const parsed = CatalogSyncResponseSchema.safeParse(response);
+    if (!parsed.success) {
+      catalogSyncError.value = 'The server accepted a refresh but returned an unreadable job id.';
+      return;
+    }
+
+    catalogSyncState.value = 'queued';
+    catalogSyncAnnouncement.value =
+      'Geofabrik catalog refresh queued. Newly listed regions will appear when it finishes.';
+    jobProgress.track(parsed.data.jobId);
+    void pollCatalogSync(parsed.data.jobId, requestNumber);
+  } catch (cause) {
+    if (
+      requestNumber !== syncRequestNumber ||
+      (cause instanceof ApiError && cause.code === 'ABORTED')
+    )
+      return;
+    if (cause instanceof ApiError) {
+      catalogSyncError.value = cause.message;
+      catalogSyncRequestId.value = cause.requestId;
+    } else {
+      catalogSyncError.value = 'The Geofabrik catalog refresh could not be queued. Try again.';
+    }
+  } finally {
+    if (syncController === controller) syncController = undefined;
+    if (catalogSyncState.value === 'submitting') catalogSyncState.value = 'idle';
+  }
+}
+
+/** Polls the durable catalog job and reloads the list only after a successful sync. */
+async function pollCatalogSync(jobId: string, requestNumber: number): Promise<void> {
+  if (requestNumber !== syncRequestNumber) return;
+  const controller = new AbortController();
+  syncController = controller;
+  try {
+    const response = await api.get<unknown>(`/_admin/api/jobs/${encodeURIComponent(jobId)}`, {
+      signal: controller.signal,
+    });
+    if (requestNumber !== syncRequestNumber) return;
+    const parsed = JobDetailResponseSchema.safeParse(response);
+    if (!parsed.success || parsed.data.type !== 'catalog_sync') {
+      catalogSyncState.value = 'idle';
+      catalogSyncAnnouncement.value = null;
+      catalogSyncError.value =
+        'The catalog refresh status could not be verified. Check Jobs before retrying.';
+      return;
+    }
+
+    if (parsed.data.status === 'queued' || parsed.data.status === 'running') {
+      catalogSyncState.value = parsed.data.status;
+      syncPollTimer = setTimeout(() => {
+        syncPollTimer = undefined;
+        void pollCatalogSync(jobId, requestNumber);
+      }, 2_000);
+      return;
+    }
+
+    catalogSyncState.value = 'idle';
+    if (parsed.data.status === 'succeeded') {
+      catalogSyncAnnouncement.value =
+        'Geofabrik catalog refreshed. Newly listed regions are now available.';
+      retryNumber.value += 1;
+    } else {
+      catalogSyncAnnouncement.value = null;
+      catalogSyncError.value =
+        parsed.data.status === 'failed'
+          ? 'The Geofabrik catalog refresh failed. Review the job details and try again.'
+          : 'The Geofabrik catalog refresh was canceled. You can try again.';
+    }
+  } catch (cause) {
+    if (
+      requestNumber !== syncRequestNumber ||
+      (cause instanceof ApiError && cause.code === 'ABORTED')
+    )
+      return;
+    catalogSyncState.value = 'idle';
+    catalogSyncAnnouncement.value = null;
+    if (cause instanceof ApiError) {
+      catalogSyncError.value = cause.message;
+      catalogSyncRequestId.value = cause.requestId;
+    } else {
+      catalogSyncError.value =
+        'The catalog refresh status could not be loaded. Check Jobs and retry.';
+    }
+  } finally {
+    if (syncController === controller) syncController = undefined;
+  }
 }
 
 /** Formats exact JSON-safe integer bytes without converting a large decimal string to a lossy Number. */
@@ -574,17 +693,41 @@ async function queueDownload(): Promise<void> {
         <p class="mm-caption mb-2">Admin · Catalog</p>
         <h1 id="catalog-heading" class="mm-display">Catalog</h1>
         <p class="mm-catalog-intro mm-text-secondary">
-          Search the source catalog, filter by parent region, and see what is already cached.
+          Search Geofabrik regions and see what is already cached. Sync to add newly listed regions;
+          custom sources are not supported.
         </p>
       </div>
-      <p class="mm-catalog-freshness mm-caption">
-        Last successful sync
-        <time v-if="result?.catalogSyncedAt" :datetime="result.catalogSyncedAt">{{
-          syncedLabel
-        }}</time>
-        <span v-else>{{ syncedLabel }}</span>
-      </p>
+      <div class="mm-catalog-header-actions">
+        <button
+          data-testid="catalog-sync-button"
+          class="mm-catalog-button mm-catalog-button-primary"
+          type="button"
+          :disabled="catalogSyncState !== 'idle'"
+          @click="syncCatalog"
+        >
+          {{
+            catalogSyncState === 'submitting'
+              ? 'Starting refresh…'
+              : catalogSyncState === 'running'
+                ? 'Refreshing catalog…'
+                : catalogSyncState === 'queued'
+                  ? 'Refresh queued…'
+                  : 'Sync Geofabrik catalog'
+          }}
+        </button>
+        <p class="mm-catalog-freshness mm-caption">
+          Last successful sync
+          <time v-if="result?.catalogSyncedAt" :datetime="result.catalogSyncedAt">{{
+            syncedLabel
+          }}</time>
+          <span v-else>{{ syncedLabel }}</span>
+        </p>
+      </div>
     </header>
+
+    <p v-if="catalogSyncAnnouncement" class="mm-catalog-queued" role="status" aria-live="polite">
+      {{ catalogSyncAnnouncement }}
+    </p>
 
     <p
       v-if="queueAnnouncement"
@@ -596,6 +739,22 @@ async function queueDownload(): Promise<void> {
     >
       {{ queueAnnouncement }}
     </p>
+
+    <div v-if="catalogSyncError !== null" class="mm-catalog-error" role="alert">
+      <div>
+        <p class="mm-catalog-state-copy">{{ catalogSyncError }}</p>
+        <p v-if="catalogSyncRequestId" class="mm-mono-small mm-catalog-request-id">
+          Request ID: {{ catalogSyncRequestId }}
+        </p>
+      </div>
+      <button
+        class="mm-catalog-button mm-catalog-button-primary"
+        type="button"
+        @click="syncCatalog"
+      >
+        Retry sync
+      </button>
+    </div>
 
     <section class="mm-catalog-filters" aria-label="Catalog filters">
       <div class="mm-catalog-filter-field">

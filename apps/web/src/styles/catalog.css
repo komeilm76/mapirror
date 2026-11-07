@@ -25,9 +25,16 @@
   margin-bottom: 0;
 }
 
-.mm-catalog-freshness {
+.mm-catalog-header-actions {
+  display: flex;
   flex: 0 0 auto;
-  margin-bottom: var(--mm-space-1);
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--mm-space-2);
+}
+
+.mm-catalog-freshness {
+  margin: 0;
   text-align: right;
 }
 
@@ -544,8 +551,11 @@
     gap: var(--mm-space-2);
   }
 
+  .mm-catalog-header-actions {
+    align-items: flex-start;
+  }
+
   .mm-catalog-freshness {
-    margin: 0;
     text-align: left;
   }
 
