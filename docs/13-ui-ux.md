@@ -1,6 +1,6 @@
 # 13 — UI/UX specification
 
-**TL;DR** — dark admin / light public, two-font system with a pre-approved fallback, 14 screens + a not-found page, strict component and state rules, and a 10-criterion rubric (≥45/50 to close Phase 5).
+**TL;DR** — dark admin / light public, two-font system with a pre-approved fallback, 15 screens + a not-found page, strict component and state rules, and a 10-criterion rubric (≥45/50 to close Phase 5).
 
 Target: **5/5** — reviewed against the rubric in §10, scored with evidence, not opinion.
 Design intelligence reference: [uupm.cc](https://uupm.cc/) (UI UX Pro Max — styles, palettes, font
@@ -128,6 +128,7 @@ fails above 40 kB, so the exemption stays earned.
 │ Jobs    •2 │  │ table / charts / content                             ││
 │ System     │  └──────────────────────────────────────────────────────┘│
 │ Settings   │                                                          │
+│ Network    │                                                          │
 │ Audit      │                                                          │
 └────────────┴──────────────────────────────────────────────────────────┘
 ```
@@ -175,7 +176,10 @@ fails above 40 kB, so the exemption stays earned.
 | S12 | `/_site/admin/system` | Status | disk, counts, source freshness, orphan report | — |
 | S13 | `/_site/admin/settings` | Settings | display name; cache version retention and disk reserve; public download limit; Geofabrik catalog refresh interval; validated save/discard flow | — |
 | S14 | `/_site/admin/audit` | Audit log | exact action filter, URL-backed pagination, current-page CSV export | "No audit entries yet" / "No entries match this action" |
+| S16 | `/_site/admin/network` | Outbound proxy | validated HTTP(S)/SOCKS5 endpoint, draft test and post-apply health checks for every Geofabrik operation, per-check HTTP status/reason, remove-to-direct action | Direct outbound requests; no proxy configured |
 | S15 | `/_site/*` (unmatched) | Not found | Decorative map/route illustration, 404, requested address, concise guidance and a primary catalog link | — |
+
+S16 accepts only an `http://`, `https://`, or `socks5://` host and optional port; URL credentials, paths, query strings, and fragments are rejected, and authenticated proxies are not supported. The bounded health report exercises the Geofabrik catalog JSON, Finland region page, PBF `HEAD` metadata, MD5 sidecar, and a one-byte PBF range (cancelling the body immediately). Applying persists and activates the endpoint before running the five checks through that live transport; failed checks remain visible while the proxy stays active, so the admin can remove or replace it. Removal deletes the setting and routes new requests directly. The checks intentionally use the same live outbound transport as admin source reads and startup workers, not a separate health-only proxy path.
 
 The admin detail URL carries the local country UUID because the cache detail/version APIs are UUID-scoped. The page reads the country name from the API for its heading and breadcrumb. Version download/delete belongs to P2-WEB-04; whole-country deletion is P2-WEB-05 and requires exact slug typing, with explicit opt-in before canceling active work. The publication switch is P3-WEB-06. P4-UPD-03 places update-check and confirmed update actions on each cached-country row in S7.
 
@@ -234,7 +238,7 @@ The admin detail URL carries the local country UUID because the cache detail/ver
 
 System-metric charts stack below 768 px; the dashboard overview becomes one column below 600 px. Admin catalog/cache/job/version tables switch to responsive cards below 1024 px, with two columns from 640–1023 px and one below 640 px (facts become one column on the narrowest cards). Cards retain the row's primary label (country, version or job type/status) and expose actions directly rather than hiding them in a hover-only menu. The public API error-reference table may scroll **inside its own wrapper** on a narrow screen; it must not create page-level horizontal scrolling. Buttons and inputs retain the shared 44 px minimum touch target.
 
-**P5-UX-03 / P5-UX-07 evidence:** `responsive-layout.spec.ts` pins the table/card, tablet two-column, phone one-column, and contained public-table rules; `admin-layout.spec.ts` mounts the real shell at 390, 768, and 1440 px and checks drawer state. The existing catalog/cache/jobs/cached-version DOM tests cover the corresponding content. Screenshot review is complete in `docs/evidence/p5-ux-07/`: all 15 screens were captured at 390 × 844 and 1440 × 900 in every theme supported by the UI policy (40 captures total; the admin is intentionally dark-only). All captures report zero page/console errors and no horizontal page overflow.
+**P5-UX-03 / P5-UX-07 evidence:** `responsive-layout.spec.ts` pins the table/card, tablet two-column, phone one-column, and contained public-table rules; `admin-layout.spec.ts` mounts the real shell at 390, 768, and 1440 px and checks drawer state. The existing catalog/cache/jobs/cached-version DOM tests cover the corresponding content. The historical screenshot review in `docs/evidence/p5-ux-07/` covers the original 15 screens at 390 × 844 and 1440 × 900 in every theme supported by the UI policy (40 captures total; the admin is intentionally dark-only). P6-OPS-04 adds S16 after that review; its screenshot and browser-level responsive/accessibility review are not yet recorded, and the old 40-capture result must not be read as covering S16.
 
 ## 9. Copy standards
 
@@ -249,7 +253,7 @@ System-metric charts stack below 768 px; the dashboard overview becomes one colu
 
 ## 10. Rubric (target 50/50)
 
-**Reviewed:** 2 Nov 2026 against the live Vite app, route/state tests, screenshot matrix and production-bundle performance evidence. The screenshot set is `docs/evidence/p5-ux-07/README.md` (40 PNGs plus `capture-diagnostics.json`); the P5-UX-08 LCP and bundle report is `docs/evidence/p5-ux-08/performance-report.md`. All 15 screens (S1–S15, including not-found) are captured at 390 × 844 and 1440 × 900 in every theme the screen supports: auth and public screens in light and dark; admin in dark only, as required by §1/§3. The captures use deterministic API fixtures and reduced motion. Every page rendered the intended theme, had zero browser page/console errors, and measured no horizontal overflow. This theme-aware matrix follows the actual product policy rather than inventing a light admin theme that the interface does not support.
+**Reviewed:** 2 Nov 2026 against the live Vite app, route/state tests, screenshot matrix and production-bundle performance evidence. The historical screenshot set is `docs/evidence/p5-ux-07/README.md` (40 PNGs plus `capture-diagnostics.json`); the P5-UX-08 LCP and bundle report is `docs/evidence/p5-ux-08/performance-report.md`. That review captured the then-existing 15 screens (S1–S15, including not-found) at 390 × 844 and 1440 × 900 in every theme each supported: auth and public screens in light and dark; admin in dark only, as required by §1/§3. P6-OPS-04 subsequently added S16 (outbound proxy), which is not in those captures. Its browser screenshot, rendered-overflow, and accessibility review remain open; the historical 49/50 P5 score is not a review score for S16. The historical captures use deterministic API fixtures and reduced motion; they recorded the intended theme, zero browser page/console errors, and no horizontal overflow for the screens they actually covered.
 
 | # | Criterion | Score | Review basis |
 |---|---|---:|---|
@@ -282,7 +286,7 @@ System-metric charts stack below 768 px; the dashboard overview becomes one colu
 
 ## 12. State coverage audit (P5-UX-01)
 
-**Reviewed:** 31 Oct 2026. The matrix covers every S1–S15 route. “N/A” is reserved for static/form-only screens with no asynchronous page data; the form’s own validation, pending, failure, and completion paths are still checked. “Placeholder” means the route intentionally has no page data implementation yet and is not represented as a completed data-screen audit. Source paths and component tests below are the evidence; interaction-level tests do not replace later screenshot, responsive, or accessibility sign-off (P5-UX-03/04/07).
+**Reviewed:** 31 Oct 2026 for the original S1–S15 routes. P6-OPS-04 adds the S16 row below from implementation and focused test evidence; it has not received browser screenshot/accessibility sign-off. “N/A” is reserved for static/form-only screens with no asynchronous page data; the form’s own validation, pending, failure, and completion paths are still checked. “Placeholder” means the route intentionally has no page data implementation yet and is not represented as a completed data-screen audit. Source paths and component tests below are the evidence; interaction-level tests do not replace later screenshot, responsive, or accessibility sign-off (P5-UX-03/04/07).
 
 | Screen | Loading / pending | Empty | Error + recovery | Success | Evidence / sign-off |
 |---|---|---|---|---|---|
@@ -300,9 +304,10 @@ System-metric charts stack below 768 px; the dashboard overview becomes one colu
 | S12 System | Placeholder only | N/A until a system page exists | N/A until a system page exists | Dashboard already surfaces system status; direct page is not built | `PlaceholderPage.vue`, route owner `P5-MON-02`. **Deferred: route owner task delivered API only; page needs explicit ownership before claiming UX-3 coverage.** |
 | S13 Settings | Loads safe API values; validated form and optimistic save | Not applicable: editable configuration form | Retryable load/save errors include request IDs; save failure rolls back the confirmed snapshot and retains the draft | Validated settings form, authoritative save response and success status | `SettingsPage.vue`, `settings-page.spec.ts`, `P5-ADM-02`. **Covered** |
 | S14 Audit | Responsive table/card skeleton; URL-backed action/page changes load a validated API page | Distinguishes a genuinely empty log from a filter with no matches; clear-filter action | Initial failure has retry and request ID; stale-page refresh errors preserve the last successful page | Safe actor/action/target/time details, expandable metadata, page navigation and current-page CSV download | `AuditPage.vue`, `audit-page.spec.ts`, `P5-ADM-03/04`. **Covered** |
+| S16 Outbound proxy | Loads current safe configuration; test/apply/remove announce pending state | No proxy configured means direct egress; health results appear only after a check | Load and operation failures are retryable and preserve request IDs; rejected drafts remain editable; failed post-apply checks stay visible while the configured proxy remains active | Current routing, five per-operation HTTP status/reason results, successful apply, and immediate remove-to-direct confirmation | `OutboundProxyPage.vue`, `outbound-proxy-page.spec.ts`, API/shared proxy tests, `P6-OPS-04`. **Interaction coverage; browser screenshot/a11y review pending** |
 | S15 Not found | N/A — static route result | N/A | Clear 404 guidance and public-catalog action | N/A — not a data screen | `NotFoundPage.vue`; `not-found-page.spec.ts`. **Checked** |
 
-**Audit result:** implemented data screens S2/S3/S5–S11 and S14 expose loading, empty, error/recovery, and success paths; S1 and static S4/S15 have appropriate form/static equivalents, and S13 has a validated configuration form with loading, error, save and rollback states. System is the only remaining direct-page follow-up gap: P5-MON-02 delivered its API but no System UI owner task is assigned; track it before phase UX sign-off.
+**Audit result:** implemented data screens S2/S3/S5–S11 and S14 expose loading, empty, error/recovery, and success paths; S1 and static S4/S15 have appropriate form/static equivalents, S13 has a validated configuration form, and S16 has test/apply/remove interaction coverage. System remains the deferred direct-page placeholder: P5-MON-02 delivered its API but no System UI owner task is assigned. S16's browser screenshot, rendered-overflow, and accessibility sign-off remains pending.
 
 **P5-UX-06 copy review:** reviewed visible route/component copy against §9. Job and interval states now use human labels, interval errors use safe mapped guidance rather than raw codes, and singular/plural country and job counts are grammatical. Import errors distinguish a rejected upload from an unconfirmed response and direct the reader to check Jobs before retrying; replacement prompts distinguish ready from failed prior versions. Login cooldowns use spelled-out durations, cancellation copy explains the wait and cleanup outcome, and request references consistently read “Request ID.” The incomplete System screen does not show internal task/screen IDs or route paths, and links back to the dashboard; Settings and Audit now render their task-owned pages. Focused regressions cover job labels/errors, interval outcomes, import retry/replacement copy, cooldown copy, unknown error-code fallback, and placeholder guidance.
 

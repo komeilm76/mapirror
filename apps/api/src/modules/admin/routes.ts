@@ -36,6 +36,7 @@ import { getIntervalRun, getIntervalRuns, postIntervalRun } from './interval-run
 import { getSystemMetrics, getSystemStatus } from './system-routes';
 import { getAdminSettings, patchAdminSettings } from './settings-route';
 import { listAuditLog } from './audit-route';
+import { applyProxy, getProxyConfiguration, removeProxy, testProxy } from './proxy-route';
 import { createCacheStorage } from '../storage/storage';
 import { readCacheOrphanReport } from '../system/storage-orphans';
 
@@ -58,10 +59,13 @@ export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, op
   });
   const importHandler = createImportHandler({ config: options.config });
   const cancelJob = createCancelJobHandler(options.config);
-  const source = createGeofabrikMapSource(options.config.geofabrikBaseUrl);
+  const source = createGeofabrikMapSource(options.config.geofabrikBaseUrl, {
+    fetchImpl: app.outboundProxy.fetch,
+  });
   const updateChecker = createUpdateChecker({
     database: app.db.db,
     source: createGeofabrikMapSource(options.config.geofabrikBaseUrl, {
+      fetchImpl: app.outboundProxy.fetch,
       pageTimeoutMs: UPDATE_CHECK_SOURCE_TIMEOUT_MS,
     }),
     log: app.log,
@@ -111,6 +115,12 @@ export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, op
   );
   app.get('/system/metrics', (request) => getSystemMetrics(request));
   app.get('/settings', (request) => getAdminSettings(request, options.config));
+  app.get('/network/proxy', () => getProxyConfiguration(app.outboundProxy));
+  app.post('/network/proxy/check', (request) =>
+    testProxy(request, options.config, app.outboundProxy),
+  );
+  app.put('/network/proxy', (request) => applyProxy(request, options.config, app.outboundProxy));
+  app.delete('/network/proxy', (request) => removeProxy(request, app.outboundProxy));
   app.get('/audit', listAuditLog);
   app.patch('/settings', (request) => patchAdminSettings(request, options.config));
   app.post('/jobs/:jobId/cancel', cancelJob);

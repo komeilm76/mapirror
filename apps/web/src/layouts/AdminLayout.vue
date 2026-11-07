@@ -36,7 +36,7 @@
  *    text and the breadcrumb separator as a decorative text chevron. The user-menu control retains its name.
  *    `tests/admin-layout.spec.ts` pins these labels and verifies no stray glyphs.
  *
- * The skip link (§7) is the shell's, and it is the first focusable element in the DOM so it is reachable before nine
+ * The skip link (§7) is the shell's, and it is the first focusable element in the DOM so it is reachable before ten
  * sidebar entries. Its "hidden until focused" styling is in `styles/shell.css`: a rule, not a token.
  *
  * @module layouts/AdminLayout

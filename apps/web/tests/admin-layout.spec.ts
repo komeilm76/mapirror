@@ -176,7 +176,7 @@ describe('the navigation is the router', () => {
     expect(navLinks(container).map((link) => link.textContent?.trim())).toEqual(
       ADMIN_NAV.map((item) => item.label),
     );
-    expect(navLinks(container)).toHaveLength(9);
+    expect(navLinks(container)).toHaveLength(10);
     // The list is the document's order: Dashboard first, Audit last, Jobs before System (§3's diagram).
     expect(ADMIN_NAV[0]?.label).toBe('Dashboard');
     expect(ADMIN_NAV.at(-1)?.label).toBe('Audit');

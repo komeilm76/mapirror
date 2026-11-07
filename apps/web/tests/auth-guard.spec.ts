@@ -48,9 +48,9 @@ const ADMIN_PAGES = APP_ROUTES.filter(
 
 describe('an unauthenticated visitor never sees an admin page', () => {
   it('walks a table large enough to mean something', () => {
-    // The dashboard at the root of the area plus nine pages under it. Without this, a refactor that narrowed the filter
+    // The dashboard at the root of the area plus ten pages under it. Without this, a refactor that narrowed the filter
     // above to nothing would leave the walk below passing vacuously.
-    expect(ADMIN_PAGES).toHaveLength(10);
+    expect(ADMIN_PAGES).toHaveLength(11);
   });
 
   it('sends every admin page to the login page, remembering where it was going', async () => {
@@ -230,6 +230,7 @@ describe('the app router ships with the guard already on', () => {
   it('renders an admin page for a visitor who has a session', async () => {
     // The other half of the guard: a stored token means the page renders rather than redirecting. Without this case,
     // a guard that refused every admin navigation would pass every test above.
+    await import('../src/layouts/AdminLayout.vue');
     sessionStorage.setItem(SESSION_TOKEN_KEY, 'token-from-a-login');
 
     const { container, router } = await mountAt(`${ADMIN_ROOT}/cache`);

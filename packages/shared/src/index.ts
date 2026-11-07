@@ -50,6 +50,7 @@ export * from './interval-time';
 export * from './interval-runs';
 export * from './jobs';
 export * from './pagination';
+export * from './proxy';
 export * from './public-catalog';
 export * from './public-country';
 export * from './public-download';

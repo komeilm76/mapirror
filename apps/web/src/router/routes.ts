@@ -6,7 +6,7 @@
  *
  * ## What each route carries
  *
- * Every route names the **screen** it is (`13-ui-ux.md` §4, S1…S15) and the **task** that builds it, in `meta`. The
+ * Every route names the **screen** it is (`13-ui-ux.md` §4, S1…S16) and the **task** that builds it, in `meta`. The
  * augmentation in `src/types/vue-router.d.ts` makes all three fields (`title`, `screen`, `owner`) required, so a route
  * added without them fails the typecheck rather than the review. That is the same trick the auth matrix uses for
  * verdicts (`P1-AUTH-08`): the table cannot fall behind the document without a compiler complaint.
@@ -16,7 +16,7 @@
  * The public catalog, country detail and API documentation render `HomePage.vue` (`P3-WEB-01`),
  * `CountryDetailPage.vue` (`P3-WEB-02/03`) and `ApiDocsPage.vue` (`P3-WEB-04`); admin dashboard/catalog/cache/import/
  * intervals/jobs render their task-owned pages (`P5-MON-04`, `P2-WEB-01/03/04`, `P4-IMP-05`, `P4-INT-08`,
- * `P2-WEB-06`); Settings renders `SettingsPage.vue` (`P5-ADM-02`), Audit renders `AuditPage.vue` (`P5-ADM-04`),
+ * `P2-WEB-06`); Settings renders `SettingsPage.vue` (`P5-ADM-02`), Audit renders `AuditPage.vue` (`P5-ADM-04`), Network renders the outbound-proxy admin page (`P6-OPS-04`),
  * System remains a `PlaceholderPage` until its UI task, and the not-found catch-all renders `NotFoundPage.vue`. A router
  * tree full of invented screens would be worse than one that names its own gaps.
  *
@@ -91,7 +91,7 @@ export const APP_ROUTES: readonly RouteRecordRaw[] = [
     meta: { title: 'API', screen: 'S4', owner: 'P3-WEB-04' },
   },
 
-  // ---- Admin (S5–S14). Guarded by path, not by a flag — see `guards.ts` ----
+  // ---- Admin (S5–S14 and S16). Guarded by path, not by a flag — see `guards.ts` ----
   {
     path: adminPagePaths.dashboard(),
     name: 'admin-dashboard',
@@ -146,6 +146,12 @@ export const APP_ROUTES: readonly RouteRecordRaw[] = [
     name: 'admin-settings',
     component: () => import('@/pages/admin/SettingsPage.vue'),
     meta: { title: 'Settings', screen: 'S13', owner: 'P5-ADM-02' },
+  },
+  {
+    path: adminPagePaths.proxy(),
+    name: 'admin-proxy',
+    component: () => import('@/pages/admin/OutboundProxyPage.vue'),
+    meta: { title: 'Outbound proxy', screen: 'S16', owner: 'P6-OPS-04' },
   },
   {
     path: adminPagePaths.audit(),

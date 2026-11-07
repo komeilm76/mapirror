@@ -40,5 +40,6 @@ export const adminPagePaths = {
   jobs: () => `${ADMIN_ROOT}/jobs`,
   system: () => `${ADMIN_ROOT}/system`,
   settings: () => `${ADMIN_ROOT}/settings`,
+  proxy: () => `${ADMIN_ROOT}/network`,
   audit: () => `${ADMIN_ROOT}/audit`,
 } as const;

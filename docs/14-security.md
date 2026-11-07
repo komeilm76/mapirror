@@ -81,6 +81,7 @@ Trust nothing from: HTTP clients, multipart uploads, Geofabrik HTML/JSON respons
 | Multipart abuse | Limits on parts/fields, temp file cleanup on abort, `proxy_request_buffering off` so bytes are not spooled twice, request timeout |
 | Oversized JSON | Body limit 1 MB, set as a Fastify instance option (uploads use multipart, with their own `MAX_UPLOAD_BYTES` cap); an oversized body answers `413 FILE_TOO_LARGE` |
 | SSRF via source URL | Source base URL is a config value, not client input; only paths derived from validated region ids |
+| Outbound proxy setting | Only Bearer-protected admins may change it; endpoint accepts HTTP(S)/SOCKS5 scheme + host/port only, rejects URL credentials and routing components, and every probe is bounded. Authenticated proxies are unsupported. A proxy host may be a private/loopback deployment sidecar by design; treat proxy configuration as a privileged infrastructure change and never grant admin access to an untrusted operator |
 | SQL injection | Kysely parameterized queries only; no string concatenation of user input |
 | XSS | Vue auto-escaping, **no `v-html`** anywhere (D-13); CSP header allows self + data: images |
 | CSRF | Not applicable for Bearer + JSON APIs (no cookies, no ambient credentials) |

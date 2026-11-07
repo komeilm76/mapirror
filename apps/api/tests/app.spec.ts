@@ -70,6 +70,24 @@ describe('the three API prefixes are registered', () => {
     }
   });
 
+  it('registers all outbound proxy routes behind the admin bearer guard', async () => {
+    const instance = await app();
+    for (const [method, url] of [
+      ['GET', '/_admin/api/network/proxy'],
+      ['POST', '/_admin/api/network/proxy/check'],
+      ['PUT', '/_admin/api/network/proxy'],
+      ['DELETE', '/_admin/api/network/proxy'],
+    ] as const) {
+      const response = await instance.inject({
+        method,
+        url,
+        payload: method === 'PUT' ? {} : undefined,
+      });
+      expect(response.statusCode, `${method} ${url}`).toBe(401);
+      expect(response.json<{ error: { code: string } }>().error.code).toBe('UNAUTHENTICATED');
+    }
+  });
+
   it('registers the multipart import route inside the protected admin namespace', async () => {
     const response = await (
       await app()

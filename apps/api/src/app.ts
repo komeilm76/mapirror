@@ -28,6 +28,7 @@ import { assertRouteLaw, installRouteLawHook } from './plugins/route-law';
 import type { LoginThrottle } from './modules/auth/login-throttle';
 import { loginThrottleFromConfig } from './modules/auth/login-throttle';
 import type { AuthVerify } from './plugins/auth-guard';
+import { OutboundProxy } from './modules/network/outbound-proxy';
 
 /** Options accepted by {@link buildApp}. */
 export interface BuildAppOptions {
@@ -91,6 +92,8 @@ export interface BuildAppOptions {
    * pipeline runs, because `onRoute` fires during boot and a hook added afterwards sees nothing.
    */
   routeObserver?: (route: { readonly url: string; readonly method: string | string[] }) => void;
+  /** Shared live outbound transport used by admin HTTP handlers and background workers. */
+  outboundProxy?: OutboundProxy;
 }
 
 /**
@@ -131,6 +134,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     // Uploads stream through multipart with their own cap, so this bounds JSON only (`P1-API-05`).
     bodyLimit: JSON_BODY_LIMIT_BYTES,
   });
+
+  const outboundProxy = options.outboundProxy ?? new OutboundProxy();
+  app.decorate('outboundProxy', outboundProxy);
+  app.addHook('onClose', async () => outboundProxy.close());
 
   const routeLaw = installRouteLawHook(app);
   const { routeObserver } = options;

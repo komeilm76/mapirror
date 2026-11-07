@@ -44,7 +44,7 @@ The only page outside `/_site/` is the login page, `/_auth/login` (D-19, ADR-024
 | 10 | [10-laws.md](10-laws.md) | Non-negotiable rules (most are test-enforced) |
 | 11 | [11-project-tree.md](11-project-tree.md) | Target repo tree, storage layout, naming |
 | 12 | [12-deployment.md](12-deployment.md) | Ubuntu 24.04 + Docker runbook, TLS, backup, upgrades |
-| 13 | [13-ui-ux.md](13-ui-ux.md) | Tokens, 14 screens + 404, component rules, 5/5 rubric |
+| 13 | [13-ui-ux.md](13-ui-ux.md) | Tokens, 15 screens + 404, component rules, 5/5 rubric |
 | 14 | [14-security.md](14-security.md) | Threat model + sign-off checklist |
 | 15 | [15-decisions.md](15-decisions.md) | ADRs (the *why*; the decision table lives in `PROMPT.md` §24) |
 | 16 | [16-changelog.md](16-changelog.md) | Review passes: what was found and fixed |

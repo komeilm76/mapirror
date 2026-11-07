@@ -131,8 +131,8 @@ describe('L1: every page lives under /_site/, except the one login page', () => 
 
   it('nests every admin page under /_site/admin', () => {
     const admin = PAGES.filter((route) => route.path.startsWith(ADMIN_ROOT));
-    // Ten screens (S5–S14); a table that lost one would otherwise make this walk vacuous.
-    expect(admin.length).toBe(10);
+    // Eleven admin routes (S5–S14 and S16); a table that lost one would otherwise make this walk vacuous.
+    expect(admin.length).toBe(11);
     for (const route of admin) {
       expect(
         route.path === `${ADMIN_ROOT}/` || route.path.startsWith(`${ADMIN_ROOT}/`),
@@ -193,9 +193,9 @@ describe('the router table and 13-ui-ux.md §4 are the same list', () => {
 
   it('has a route for every documented screen', () => {
     const screens = documentedScreens();
-    // Fifteen rows: S1–S14 pages plus S15, the unmatched case. A row lost to a parser change would make the walk below
+    // Sixteen rows: S1–S14 pages, S16 outbound proxy, and S15 unmatched. A row lost to a parser change would make the walk
     // silently narrower, so the count is asserted before it is used.
-    expect(screens.size).toBe(15);
+    expect(screens.size).toBe(16);
 
     for (const [id, screen] of screens) {
       expect(registered, `${id} ${screen.route} has no route`).toContain(comparable(screen.route));

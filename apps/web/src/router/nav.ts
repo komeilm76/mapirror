@@ -1,10 +1,10 @@
 /**
  * The admin panel's navigation, as data (`P1-WEB-07`).
  *
- * `13-ui-ux.md` §3 draws the sidebar and lists its nine entries; this module is that list, and the layout is a `v-for`
+ * `13-ui-ux.md` §3 draws the sidebar and lists its ten entries; this module is that list, and the layout is a `v-for`
  * over it. Two reasons the list is not written in the template:
  *
- * 1. **It can be checked against the router.** `tests/admin-nav.spec.ts` asserts that every admin screen in §4 (S5–S14)
+ * 1. **It can be checked against the router.** `tests/admin-nav.spec.ts` asserts that every navigable admin screen in §4 (S5–S14 and S16)
  *    has exactly one entry, that each entry names a route that exists, and that the two agree about the screen id — so a
  *    screen added to the router cannot quietly miss the sidebar, and a sidebar entry cannot point at a path that 404s.
  * 2. **"Where am I?" is a function of the path**, not of each item's own idea of itself. `isNavItemActive` and
@@ -62,6 +62,7 @@ export const ADMIN_NAV: readonly AdminNavItem[] = [
   { label: 'Jobs', name: 'admin-jobs', path: adminPagePaths.jobs(), screen: 'S11' },
   { label: 'System', name: 'admin-system', path: adminPagePaths.system(), screen: 'S12' },
   { label: 'Settings', name: 'admin-settings', path: adminPagePaths.settings(), screen: 'S13' },
+  { label: 'Network', name: 'admin-proxy', path: adminPagePaths.proxy(), screen: 'S16' },
   { label: 'Audit', name: 'admin-audit', path: adminPagePaths.audit(), screen: 'S14' },
 ] as const;
 

@@ -22,6 +22,9 @@ import { buildApp } from './app';
 import { ConfigError, parseEnv, type AppConfig, type EnvSource } from './config/env';
 import { startHousekeeping } from './lib/housekeeping';
 import { createGeofabrikMapSource } from './modules/geofabrik/map-source';
+import { ProxyEndpointSchema } from '@mapirror/shared';
+import { OUTBOUND_PROXY_SETTING_KEY } from './modules/admin/proxy-route';
+import { createOutboundTransport } from './modules/network/outbound-proxy';
 import { createCatalogSyncHandler } from './modules/jobs/catalog-sync-handler';
 import { createDownloadHandler } from './modules/jobs/download-handler';
 import { createImportHandler } from './modules/jobs/import-handler';
@@ -66,6 +69,49 @@ export interface ShutdownTarget {
 
 /** How the handler ends the process; injectable so a test does not have to kill the runner. */
 export type ExitFn = (code: number) => void;
+
+/** Validates the already-decoded JSONB value returned by Kysely, rejecting malformed or unsafe endpoints. */
+export function parseStoredOutboundProxyValue(value: unknown): string | null {
+  const parsed = ProxyEndpointSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+/** Activates the persisted endpoint before any source-backed worker starts. */
+async function activateStoredOutboundProxy(app: FastifyInstance): Promise<void> {
+  let setting;
+  try {
+    setting = await app.db.db
+      .selectFrom('settings')
+      .select('value')
+      .where('key', '=', OUTBOUND_PROXY_SETTING_KEY)
+      .executeTakeFirst();
+  } catch {
+    app.log.error(
+      { settingKey: OUTBOUND_PROXY_SETTING_KEY },
+      'stored outbound proxy could not be read; direct egress is active',
+    );
+    return;
+  }
+  if (setting === undefined) return;
+
+  const endpoint = parseStoredOutboundProxyValue(setting.value);
+  if (endpoint === null) {
+    app.log.error(
+      { settingKey: OUTBOUND_PROXY_SETTING_KEY },
+      'stored outbound proxy setting is invalid; direct egress is active',
+    );
+    return;
+  }
+
+  try {
+    app.outboundProxy.activate(createOutboundTransport(endpoint));
+  } catch {
+    app.log.error(
+      { settingKey: OUTBOUND_PROXY_SETTING_KEY },
+      'stored outbound proxy could not be activated; direct egress is active',
+    );
+  }
+}
 
 /**
  * Builds the signal handler: drain, then exit 0 — or exit 1 if closing fails or takes too long.
@@ -133,6 +179,7 @@ export async function start(
   const config = parseEnv(source);
 
   const app = await buildApp({ logger: { level: config.logLevel }, config });
+  await activateStoredOutboundProxy(app);
 
   // A shutdown drains background work before `app.close()` destroys its database pool.
   let stopBackgroundWork: (() => Promise<void>) | undefined;
@@ -150,10 +197,13 @@ export async function start(
   let stopWorkers: (() => Promise<void>) | undefined;
   if (config.workerEnabled) {
     // One concrete provider composition serves catalog synchronization and source-backed PBF downloads.
-    const source = createGeofabrikMapSource(config.geofabrikBaseUrl);
+    const source = createGeofabrikMapSource(config.geofabrikBaseUrl, {
+      fetchImpl: app.outboundProxy.fetch,
+    });
     const updateChecker = createUpdateChecker({
       database: app.db.db,
       source: createGeofabrikMapSource(config.geofabrikBaseUrl, {
+        fetchImpl: app.outboundProxy.fetch,
         pageTimeoutMs: UPDATE_CHECK_SOURCE_TIMEOUT_MS,
       }),
       log: app.log,
@@ -161,7 +211,11 @@ export async function start(
     const handlers: JobHandlers = {
       catalog_sync: createCatalogSyncHandler({ source }),
       update_check: createUpdateCheckHandler({ checker: updateChecker }),
-      download: createDownloadHandler({ source, cacheDirectory: config.cacheDir }),
+      download: createDownloadHandler({
+        source,
+        cacheDirectory: config.cacheDir,
+        fetchImpl: app.outboundProxy.fetch,
+      }),
       import: createImportHandler({ config }),
       prune: createPruneHandler({ cacheDirectory: config.cacheDir }),
     };
