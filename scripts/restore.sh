@@ -33,8 +33,12 @@ BACKUP_DIR="$1"
 read -r -a COMPOSE_CMD <<< "${COMPOSE:-docker compose}"
 compose() { "${COMPOSE_CMD[@]}" "$@"; }
 
-printf 'restore: building the API image before the destructive database step\n' >&2
-compose build api
+printf 'restore: building the API image for manifest validation\n' >&2
+compose build api >&2
+printf 'restore: validating cache manifest before changing database state\n' >&2
+compose run -i -T --rm --no-deps --entrypoint bun api scripts/cache-manifest.ts --validate-stdin \
+  < "$BACKUP_DIR/cache-manifest.json" > /dev/null
+
 printf 'restore: starting PostgreSQL service\n' >&2
 compose up -d db
 ready=0
@@ -59,7 +63,7 @@ compose exec -T db pg_restore --exit-on-error --no-owner --role=mapirror --dbnam
   < "$BACKUP_DIR/database.dump"
 
 printf 'restore: reconciling restored rows against the existing cache volume\n' >&2
-compose run --rm --no-deps api bun scripts/reconcile-cache.ts
+compose run -T --rm --no-deps --entrypoint bun api scripts/reconcile-cache.ts
 
 printf 'restore: starting API and waiting for readiness\n' >&2
 compose up -d api

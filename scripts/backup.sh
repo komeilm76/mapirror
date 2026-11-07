@@ -31,10 +31,17 @@ printf 'backup: dumping PostgreSQL database\n' >&2
   > "$TEMP_DIR/database.dump"
 [[ -s "$TEMP_DIR/database.dump" ]] || { printf 'error: PostgreSQL dump is empty\n' >&2; exit 1; }
 
+printf 'backup: building the API image for cache inventory\n' >&2
+"${COMPOSE_CMD[@]}" build api >&2
+
 printf 'backup: hashing cached map artifacts (this reads the cache volume)\n' >&2
-"${COMPOSE_CMD[@]}" run -T --rm --no-deps --build api bun scripts/cache-manifest.ts \
+"${COMPOSE_CMD[@]}" run -T --rm --no-deps --entrypoint bun api scripts/cache-manifest.ts \
   > "$TEMP_DIR/cache-manifest.json"
 [[ -s "$TEMP_DIR/cache-manifest.json" ]] || { printf 'error: cache manifest is empty\n' >&2; exit 1; }
+
+printf 'backup: validating cache manifest\n' >&2
+"${COMPOSE_CMD[@]}" run -i -T --rm --no-deps --entrypoint bun api scripts/cache-manifest.ts --validate-stdin \
+  < "$TEMP_DIR/cache-manifest.json" > /dev/null
 
 mv --no-clobber --no-target-directory "$TEMP_DIR" "$DESTINATION"
 if [[ -e "$TEMP_DIR" ]]; then

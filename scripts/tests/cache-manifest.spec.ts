@@ -1,13 +1,103 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { createCacheManifest } from '../cache-manifest';
+import { createCacheManifest, parseCacheManifest } from '../cache-manifest';
+
+const SCRIPT = resolve(dirname(fileURLToPath(import.meta.url)), '../cache-manifest.ts');
 
 describe('cache artifact manifest', () => {
+  const validArtifact = {
+    path: 'finland/261024/finland-261024.osm.pbf',
+    sizeBytes: '28',
+    md5: '0eb7416ae87ea97464a8920f6a08a2ab',
+  };
+  const validManifest = {
+    format: 'mapirror-cache-manifest',
+    version: 1,
+    generatedAt: '2026-11-07T00:00:00.000Z',
+    artifacts: [validArtifact],
+  };
+
+  it('accepts the exact version 1 manifest schema', () => {
+    expect(parseCacheManifest(JSON.stringify(validManifest))).toEqual(validManifest);
+  });
+
+  it.each([
+    ['malformed JSON', '{'],
+    ['a non-object root', JSON.stringify([])],
+    ['an unknown top-level field', JSON.stringify({ ...validManifest, extra: true })],
+    ['an unsupported format', JSON.stringify({ ...validManifest, format: 'other' })],
+    ['an unsupported version', JSON.stringify({ ...validManifest, version: 2 })],
+    ['a non-canonical timestamp', JSON.stringify({ ...validManifest, generatedAt: '2026-11-07' })],
+    ['a non-array artifacts field', JSON.stringify({ ...validManifest, artifacts: {} })],
+    [
+      'a path outside the slug/version/filename shape',
+      JSON.stringify({
+        ...validManifest,
+        artifacts: [{ ...validArtifact, path: '../outside/file.osm.pbf' }],
+      }),
+    ],
+    [
+      'a non-decimal artifact size',
+      JSON.stringify({
+        ...validManifest,
+        artifacts: [{ ...validArtifact, sizeBytes: '-1' }],
+      }),
+    ],
+    [
+      'an invalid MD5 digest',
+      JSON.stringify({ ...validManifest, artifacts: [{ ...validArtifact, md5: 'bad' }] }),
+    ],
+    [
+      'an unknown artifact field',
+      JSON.stringify({
+        ...validManifest,
+        artifacts: [{ ...validArtifact, extra: true }],
+      }),
+    ],
+    [
+      'duplicate artifact paths',
+      JSON.stringify({
+        ...validManifest,
+        artifacts: [...validManifest.artifacts, ...validManifest.artifacts],
+      }),
+    ],
+  ])('rejects %s', (_description, serialized) => {
+    expect(() => parseCacheManifest(serialized)).toThrow();
+  });
+
+  it('writes only valid JSON to stdout and validates stdin without extra output', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mapirror-cache-manifest-cli-'));
+    try {
+      await mkdir(join(root, 'finland', '261024'), { recursive: true });
+      await writeFile(join(root, 'finland', '261024', 'finland-261024.osm.pbf'), 'fixture');
+
+      const generated = spawnSync('bun', [SCRIPT], {
+        encoding: 'utf8',
+        env: { ...process.env, CACHE_DIR: root },
+      });
+      expect(generated.status, generated.stderr).toBe(0);
+      expect(generated.stderr).toBe('');
+      expect(parseCacheManifest(generated.stdout).artifacts).toHaveLength(1);
+
+      const validated = spawnSync('bun', [SCRIPT, '--validate-stdin'], {
+        encoding: 'utf8',
+        input: generated.stdout,
+        env: process.env,
+      });
+      expect(validated.status, validated.stderr).toBe(0);
+      expect(validated.stdout).toBe('');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('hashes eligible map files in stable order and ignores non-artifacts and symlinks', async () => {
     const root = await mkdtemp(join(tmpdir(), 'mapirror-cache-manifest-'));
     const outside = await mkdtemp(join(tmpdir(), 'mapirror-cache-outside-'));

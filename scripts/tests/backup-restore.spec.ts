@@ -17,6 +17,12 @@ import { describe, expect, it } from 'vitest';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const BACKUP = join(ROOT, 'scripts/backup.sh');
 const RESTORE = join(ROOT, 'scripts/restore.sh');
+const VALID_MANIFEST = JSON.stringify({
+  format: 'mapirror-cache-manifest',
+  version: 1,
+  generatedAt: '2026-11-02T00:00:00.000Z',
+  artifacts: [],
+});
 
 function fixture() {
   const directory = mkdtempSync(join(tmpdir(), 'mapirror-backup-restore-'));
@@ -33,13 +39,25 @@ function fixture() {
 set -euo pipefail
 printf '%s\\n' "$*" >> "$COMPOSE_LOG"
 case "$*" in
+  *'build api'*)
+    printf 'BuildKit progress must not enter the manifest\\n'
+    ;;
+  *--validate-stdin*)
+    input="$(cat)"
+    [[ "$input" == '{'* && "$input" == *'"format":"mapirror-cache-manifest"'* ]] || exit 20
+    [[ manifest-invalid != "\${FAIL_AT:-}" ]] || exit 19
+    ;;
   *pg_dump*)
     [[ pg_dump != "\${FAIL_AT:-}" ]] || exit 19
     printf 'test database dump\\n'
     ;;
   *cache-manifest.ts*)
     [[ cache-manifest != "\${FAIL_AT:-}" ]] || exit 19
-    printf '{"format":"mapirror-cache-manifest","version":1,"generatedAt":"2026-11-02T00:00:00.000Z","artifacts":[]}\\n'
+    if [[ manifest-invalid == "\${FAIL_AT:-}" ]]; then
+      printf 'migrations: already up to date\\nnot-json\\n'
+    else
+      printf '{"format":"mapirror-cache-manifest","version":1,"generatedAt":"2026-11-02T00:00:00.000Z","artifacts":[]}\\n'
+    fi
     ;;
   *pg_restore*)
     [[ pg_restore != "\${FAIL_AT:-}" ]] || exit 19
@@ -93,10 +111,24 @@ describe('host backup and restore scripts', () => {
         version: 1,
         artifacts: [],
       });
-      expect(readFileSync(state.log, 'utf8')).toContain('exec -T db pg_dump');
-      expect(readFileSync(state.log, 'utf8')).toContain(
-        'run -T --rm --no-deps --build api bun scripts/cache-manifest.ts',
+      const calls = readFileSync(state.log, 'utf8').trim().split('\n');
+      const index = (fragment: string) => calls.findIndex((call) => call.includes(fragment));
+      const validation = index(
+        'run -i -T --rm --no-deps --entrypoint bun api scripts/cache-manifest.ts --validate-stdin',
       );
+      expect(index('build api')).toBeLessThan(
+        index('run -T --rm --no-deps --entrypoint bun api scripts/cache-manifest.ts'),
+      );
+      expect(
+        index('run -T --rm --no-deps --entrypoint bun api scripts/cache-manifest.ts'),
+      ).toBeLessThan(validation);
+      expect(calls).toContain(
+        'exec -T db pg_dump --username=mapirror --dbname=mapirror --format=custom',
+      );
+      expect(calls).toContain(
+        'run -T --rm --no-deps --entrypoint bun api scripts/cache-manifest.ts',
+      );
+      expect(result.stdout).not.toContain('BuildKit progress');
     } finally {
       rmSync(state.directory, { recursive: true, force: true });
     }
@@ -146,12 +178,64 @@ describe('host backup and restore scripts', () => {
     }
   });
 
+  it('does not publish a backup when a non-empty manifest is malformed', () => {
+    const state = fixture();
+    const backupRoot = join(state.directory, 'archives');
+    try {
+      const result = spawnSync('bash', [BACKUP], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          COMPOSE: state.compose,
+          COMPOSE_LOG: state.log,
+          BACKUP_ROOT: backupRoot,
+          FAIL_AT: 'manifest-invalid',
+        },
+      });
+      const calls = readFileSync(state.log, 'utf8');
+      expect(result.status).not.toBe(0);
+      expect(result.stdout).not.toContain('backup complete');
+      expect(calls).toContain('--validate-stdin');
+      expect(readdirSync(backupRoot)).toEqual([]);
+    } finally {
+      rmSync(state.directory, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects an invalid manifest before starting PostgreSQL or changing the database', () => {
+    const state = fixture();
+    const backupDirectory = join(state.directory, 'backup');
+    mkdirSync(backupDirectory);
+    writeFileSync(join(backupDirectory, 'database.dump'), 'dump');
+    writeFileSync(
+      join(backupDirectory, 'cache-manifest.json'),
+      '{"format":"wrong","version":1,"generatedAt":"2026-11-02T00:00:00.000Z","artifacts":[]}',
+    );
+    try {
+      const result = spawnSync('bash', [RESTORE, backupDirectory], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        env: { ...process.env, COMPOSE: state.compose, COMPOSE_LOG: state.log },
+      });
+      const calls = readFileSync(state.log, 'utf8');
+
+      expect(result.status).not.toBe(0);
+      expect(calls).toContain('--validate-stdin');
+      for (const destructiveStep of ['up -d db', 'stop api', 'dropdb', 'createdb', 'pg_restore']) {
+        expect(calls).not.toContain(destructiveStep);
+      }
+    } finally {
+      rmSync(state.directory, { recursive: true, force: true });
+    }
+  });
+
   it('restores, reconciles before restart, and reports ready only after the API probe', () => {
     const state = fixture();
     const backupDirectory = join(state.directory, 'backup');
     mkdirSync(backupDirectory);
     writeFileSync(join(backupDirectory, 'database.dump'), 'dump');
-    writeFileSync(join(backupDirectory, 'cache-manifest.json'), '{"artifacts":[]}');
+    writeFileSync(join(backupDirectory, 'cache-manifest.json'), VALID_MANIFEST);
     try {
       const result = spawnSync('bash', [RESTORE, backupDirectory], {
         cwd: ROOT,
@@ -162,14 +246,18 @@ describe('host backup and restore scripts', () => {
       const index = (fragment: string) => calls.findIndex((call) => call.includes(fragment));
 
       expect(result.status, result.stderr).toBe(0);
-      expect(index('build api')).toBeLessThan(index('stop api'));
+      const validation = index(
+        'run -i -T --rm --no-deps --entrypoint bun api scripts/cache-manifest.ts --validate-stdin',
+      );
+      expect(index('build api')).toBeLessThan(validation);
+      expect(validation).toBeLessThan(index('up -d db'));
+      expect(index('up -d db')).toBeLessThan(index('stop api'));
       expect(index('stop api')).toBeLessThan(index('dropdb'));
-      expect(index('pg_restore')).toBeLessThan(
-        index('run --rm --no-deps api bun scripts/reconcile-cache.ts'),
+      const reconcile = index(
+        'run -T --rm --no-deps --entrypoint bun api scripts/reconcile-cache.ts',
       );
-      expect(index('run --rm --no-deps api bun scripts/reconcile-cache.ts')).toBeLessThan(
-        index('up -d api'),
-      );
+      expect(index('pg_restore')).toBeLessThan(reconcile);
+      expect(reconcile).toBeLessThan(index('up -d api'));
       expect(calls.at(-1)).toContain('127.0.0.1:3000/readyz');
       expect(result.stdout).toContain('restore complete');
     } finally {
@@ -182,7 +270,7 @@ describe('host backup and restore scripts', () => {
     const backupDirectory = join(state.directory, 'backup');
     mkdirSync(backupDirectory);
     writeFileSync(join(backupDirectory, 'database.dump'), 'dump');
-    writeFileSync(join(backupDirectory, 'cache-manifest.json'), '{"artifacts":[]}');
+    writeFileSync(join(backupDirectory, 'cache-manifest.json'), VALID_MANIFEST);
     try {
       const result = spawnSync('bash', [RESTORE, backupDirectory], {
         cwd: ROOT,
@@ -212,7 +300,7 @@ describe('host backup and restore scripts', () => {
     const backupDirectory = join(state.directory, 'backup');
     mkdirSync(backupDirectory);
     writeFileSync(join(backupDirectory, 'database.dump'), 'dump');
-    writeFileSync(join(backupDirectory, 'cache-manifest.json'), '{"artifacts":[]}');
+    writeFileSync(join(backupDirectory, 'cache-manifest.json'), VALID_MANIFEST);
     try {
       const result = spawnSync('bash', [RESTORE, backupDirectory], {
         cwd: ROOT,

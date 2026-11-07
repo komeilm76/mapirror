@@ -272,7 +272,7 @@ prove L1–L3.
 
 | ID | Task | Req | Dep | Status | Acceptance |
 |---|---|---|---|---|---|
-| P6-OPS-01 | Backup/restore script + drill (DB + cache manifest) | DOCK-5 | P1-DOCK-05 | 🟦 | Scripts and non-Docker tests pass; pending operator Docker restore drill before done |
+| P6-OPS-01 | Backup/restore script + drill (DB + cache manifest) | DOCK-5 | P1-DOCK-05 | 🟦 | Backup now bypasses the API bootstrap entrypoint, keeps build chatter off the manifest, and validates the strict v1 manifest schema; restore rejects invalid manifests before starting PostgreSQL or stopping the API. Non-Docker tests pass; pending owner-approved operator Docker restore drill before done |
 | P6-OPS-02 | Upgrade path documented + tested (migrations forward) | DOCK-5 | all | 🟦 | Migration integration test passed against ephemeral PostgreSQL 16.2; pending Docker Compose PostgreSQL run to verify vN → vN+1 data retention |
 | P6-OPS-03 | Disk-full + restart drills | DOCK-5 | P2-JOB-04 | 🟦 | Added isolated tmpfs ENOSPC and API/DB restart runbook; pending operator Docker drills |
 | P6-SEC-01 | Security checklist sign-off (`14-security.md`) | ENG-6 | all | 🟦 | 17/20 items evidence-backed; local PostgreSQL 16.2 covers token digest storage and public visibility matrix. Sign-off waits on Docker UID/restore drills and resolution or explicit acceptance of two moderate dev-only advisories (production audit is clean; P6-SEC-02 found no high/critical) |

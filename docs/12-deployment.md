@@ -490,8 +490,9 @@ docker compose up -d --build
 ```
 
 This rollback database restore is deliberately separate from `scripts/restore.sh`: that script restores a
-backup for the current code and runs the current release's migration/reconciliation path. For destructive
-recovery, see §6 `Restore`; the pre-upgrade dump is the only path that returns the schema to an older release.
+backup for the current code and runs the current release's cache reconciliation path, without applying an older
+schema migration. For destructive recovery, see §6 `Restore`; the pre-upgrade dump is the only path that returns the
+schema to an older release.
 
 ### Admin password reset
 
@@ -517,11 +518,13 @@ generated password to a secret store, for example); it refuses a terminal, where
 
 `scripts/backup.sh` writes `database.dump` and `cache-manifest.json` to
 `./backups/<UTC timestamp>/` (gitignored). The database is captured with `pg_dump --format=custom`;
-a disposable, freshly built API container scans the shared cache volume, and the manifest records each
-regular cached map file's relative path, byte size, and computed MD5. Hashing
-reads every cached artifact, so schedule it for a quiet period on large volumes. The map files themselves
-are not copied: they can be re-downloaded from Geofabrik if lost. A failed run removes its incomplete
-staging directory rather than leaving something that looks like a complete backup.
+the API image is built separately so build output cannot enter the manifest, then a one-off Bun invocation overrides
+the normal API entrypoint while scanning the shared cache volume. Its stdout contains only the manifest JSON, which is
+validated against the strict version 1 schema (format, timestamp, artifact paths, decimal byte sizes, and MD5 digests)
+before the backup directory is atomically published. The manifest records each regular cached map file's relative path,
+byte size, and computed MD5. Hashing reads every cached artifact, so schedule it for a quiet period on large volumes.
+The map files themselves are not copied: they can be re-downloaded from Geofabrik if lost. A failed run removes its
+incomplete staging directory rather than leaving something that looks like a complete backup.
 
 Recommended cron:
 
@@ -536,10 +539,10 @@ Recommended cron:
 # or: make restore BACKUP=backups/2026-10-24T021500Z
 ```
 
-The restore wrapper validates the backup files and builds the current API image before taking the API
-offline, then starts PostgreSQL if needed, stops the API, recreates the `mapirror` database, and restores
-the custom dump. It leaves the cache volume in place and runs the same missing-file reconciliation
-used by API housekeeping **before** restarting the API. Missing, empty, or unsafe files for `ready`
+The restore wrapper validates the backup files, builds the current API image, and parses the cache manifest against the
+strict version 1 schema before starting PostgreSQL or taking the API offline. It then stops the API, recreates the
+`mapirror` database, and restores the custom dump. It leaves the cache volume in place and invokes the missing-file
+reconciliation directly (without rerunning the API bootstrap entrypoint) **before** restarting the API. Missing, empty, or unsafe files for `ready`
 versions are marked `failed` with `VERSION_FILE_MISSING`; the admin UI then offers the re-download path.
 The manifest is an inventory, not a file backup, and restore does not compare its hashes with the cache or
 re-hash every file against database checksums. Re-download missing artifacts from the source.

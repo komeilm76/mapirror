@@ -206,6 +206,36 @@ describe('forward-only upgrade runbook (12-deployment.md ↔ 08-tasks.md)', () =
   });
 });
 
+describe('backup/restore manifest contract (scripts ↔ 12-deployment.md)', () => {
+  it('publishes only schema-validated manifests and rejects bad restore input before database changes', () => {
+    const backup = read('scripts/backup.sh');
+    const restore = read('scripts/restore.sh');
+    const manifest = read('scripts/cache-manifest.ts');
+    const deployment = read('docs/12-deployment.md');
+    const backupDocs = deployment.slice(
+      deployment.indexOf('### Backup'),
+      deployment.indexOf('### Restore'),
+    );
+    const restoreDocs = deployment.slice(
+      deployment.indexOf('### Restore'),
+      deployment.indexOf('### Download throughput'),
+    );
+
+    expect(backup).toContain('build api >&2');
+    expect(backup).toContain('--entrypoint bun api scripts/cache-manifest.ts');
+    expect(backup).toContain('--validate-stdin');
+    expect(backup.indexOf('--validate-stdin')).toBeLessThan(backup.indexOf('mv --no-clobber'));
+    expect(manifest).toContain('export function parseCacheManifest');
+    expect(manifest).toContain('cache manifest does not match the supported version 1 schema');
+    expect(restore).toContain('--entrypoint bun api scripts/cache-manifest.ts --validate-stdin');
+    expect(restore.indexOf('--validate-stdin')).toBeLessThan(restore.indexOf('compose up -d db'));
+    expect(restore).toContain('--entrypoint bun api scripts/reconcile-cache.ts');
+    expect(backupDocs).toContain('validated against the strict version 1 schema');
+    expect(restoreDocs).toContain('before starting PostgreSQL or taking the API offline');
+    expect(restoreDocs).toContain('without rerunning the API bootstrap entrypoint');
+  });
+});
+
 describe('disk-full and restart drills (12-deployment.md / 02-architecture.md ↔ Compose)', () => {
   it('matches the readiness probe, disk states, restart policy and recovery timing', () => {
     const compose = read('compose.yaml');
