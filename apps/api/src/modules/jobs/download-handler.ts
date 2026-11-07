@@ -225,6 +225,7 @@ async function runDownload(
     }
 
     assertNotAborted(context.signal);
+    await context.reportProgress({ progressBytes: size, totalBytes: size, phase: 'installing' });
     // The pending slot for (country,version) serializes installation; storage verifies both paths and renames on CACHE_DIR.
     await storage.installPart(prepared.partFile, prepared.storageFile);
     partMayBeKept = false;
@@ -236,7 +237,6 @@ async function runDownload(
       prepared,
       size,
     );
-    await context.reportProgress({ progressBytes: size, totalBytes: size, phase: 'installing' });
     return { versionId, version: prepared.version };
   } catch (error) {
     if (context.signal.aborted || isCancellation(error) || isNoSpace(error)) partMayBeKept = false;

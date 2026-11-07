@@ -68,6 +68,7 @@ async function mountJobs(
   app.mount(container);
   const router = routerOf(app);
   await router.isReady();
+  await vi.waitFor(() => expect(container.querySelector('h1')?.textContent).toBe('Jobs'));
   await flushPromises();
   await flushPromises();
   return { app, container, router };
@@ -101,7 +102,10 @@ function responseFor(
         if (url.searchParams.get('status') === 'running') {
           return jsonResponse({ data: [], meta: { page: 1, limit: 1, total: 1, totalPages: 1 } });
         }
-        return jsonResponse({ data: [JOB], meta: { page: 1, limit: 25, total: 1, totalPages: 1 } });
+        return jsonResponse({
+          data: [jobView()],
+          meta: { page: 1, limit: 25, total: 1, totalPages: 1 },
+        });
       }
       return jsonResponse({ data: [], meta: { page: 1, limit: 25, total: 0, totalPages: 0 } });
     }),
@@ -220,6 +224,49 @@ describe('admin job queue and persistent progress drawer', () => {
     expect(
       calls.mock.calls.filter(([input]) => requestUrl(input).pathname === detailPath).length,
     ).toBeGreaterThan(requestsBeforePoll);
+  });
+
+  it('shows an indeterminate finalization state without a false percentage or zero ETA', async () => {
+    const installing: JobView = {
+      ...JOB,
+      phase: 'installing',
+      progressBytes: 20_480,
+      totalBytes: 20_480,
+      speedBps: 0,
+      etaSeconds: null,
+    };
+    const { container } = await mountJobs(responseFor(vi.fn<typeof fetch>(), () => installing));
+    expect(
+      container.querySelector(
+        '.mm-jobs-table .v-progress-linear[aria-label="Download installation progress"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '.mm-jobs-mobile-progress .v-progress-linear[aria-label="Download installation progress"]',
+      ),
+    ).not.toBeNull();
+    expect(container.textContent).toContain('Finalizing verified file in cache');
+
+    const openProgress = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.includes('View progress'),
+    );
+    expect(openProgress).toBeDefined();
+    openProgress!.click();
+
+    await vi.waitFor(() =>
+      expect(
+        document.body.querySelector<HTMLElement>('.mm-job-progress-card')?.textContent,
+      ).toContain('Finalizing verified file in cache'),
+    );
+    const card = document.body.querySelector<HTMLElement>('.mm-job-progress-card');
+    expect(card?.textContent).toContain('Finalizing installation');
+    expect(card?.textContent).toContain('Finishing…');
+    expect(card?.textContent).toContain('no byte-level progress or reliable ETA');
+    expect(card?.querySelector('[aria-label="Installation progress"]')).not.toBeNull();
+    expect(card?.textContent).not.toContain('%');
+    expect(card?.textContent).not.toContain('B/s');
+    expect(card?.textContent).not.toContain('0 sec');
   });
 
   it('shows a retryable error when the first tracked-job projection cannot be loaded', async () => {

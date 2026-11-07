@@ -191,7 +191,15 @@ describe('download handler', () => {
     const setup = makeDatabase();
     const partFile = makeFile(`.partial/${JOB_ID}.part`);
     const storageFile = makeFile('finland/261101/finland-261101.osm.pbf');
-    const installPart = vi.fn(() => Promise.resolve());
+    const phaseOrder: string[] = [];
+    const reportProgress = vi.fn((update: { phase?: string }) => {
+      if (update.phase === 'installing') phaseOrder.push('installing');
+      return Promise.resolve();
+    });
+    const installPart = vi.fn(() => {
+      phaseOrder.push('rename');
+      return Promise.resolve();
+    });
     const cacheStorage = {
       partFile: vi.fn(() => partFile),
       versionFile: vi.fn(() => storageFile),
@@ -200,7 +208,6 @@ describe('download handler', () => {
     } as unknown as CacheStorage;
     mocks.createCacheStorage.mockReturnValue(cacheStorage);
     const source = makeSource();
-    const reportProgress = vi.fn(() => Promise.resolve());
     const handler = createDownloadHandler({ source, cacheDirectory: '/unused' });
     const context = {
       database: setup.database,
@@ -236,6 +243,7 @@ describe('download handler', () => {
     );
     expect(mocks.hashFile).toHaveBeenCalledWith(partFile, context.signal);
     expect(installPart.mock.calls[0]).toEqual([partFile, storageFile]);
+    expect(phaseOrder).toEqual(['installing', 'rename']);
     expect(setup.updateQuery.set.mock.calls.map(([values]) => values)).toEqual(
       expect.arrayContaining([expect.objectContaining({ status: 'ready', checksum_md5: MD5 })]),
     );

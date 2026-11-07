@@ -552,7 +552,8 @@ for `type: "update_check"` these legacy-named fields represent countries checked
 second, respectively. When known, `phase` is `fetching_index`, `downloading`, `verifying`, or `installing`;
 update-check clients use the job type/status label. Progress fields preserve large PostgreSQL integers as decimal
 strings instead of rounding. `etaSeconds` is derived from progress and speed, only shown for a running job that is not
-canceling, and is `null` when unknown, stale on queued work, or beyond 30 days. `payload` is a type-specific allow-list
+canceling, and is `null` when unknown, stale on queued work, during the non-byte-countable install/finalization phase,
+or beyond 30 days. `payload` is a type-specific allow-list
 (unknown fields are omitted), and `updateCheckResult` is either `null` or a schema-validated safe aggregate for bulk
 update checks. `error` contains only the safe `JOB_HANDLER_FAILED` or `WORKER_LOST` message, and worker ownership or
 raw exception text is never returned. A missing detail id returns `404` with `NOT_FOUND`.

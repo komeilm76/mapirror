@@ -22,10 +22,12 @@ import { useRoute, useRouter } from 'vue-router';
 import { ApiError } from '@/api/errors';
 import { useApi } from '@/composables/useApi';
 import {
-  formatEta,
   formatJobDate,
   isJobActive,
+  isJobInstalling,
   jobActivityLabel,
+  jobEtaLabel,
+  jobPhaseDetail,
   jobProgressLabel,
   jobRateLabel,
   jobStatusLabel,
@@ -315,7 +317,17 @@ onUnmounted(() => {
                   ><span class="mm-job-phase">{{ jobActivityLabel(job) }}</span>
                 </td>
                 <td class="mm-jobs-progress">
-                  <template v-if="job.totalBytes !== null">
+                  <template v-if="isJobInstalling(job)">
+                    <v-progress-linear
+                      :aria-label="`${jobTypeLabel(job.type)} installation progress`"
+                      color="primary"
+                      indeterminate
+                      height="6"
+                      rounded
+                    />
+                    <span>{{ jobProgressLabel(job) }}</span>
+                  </template>
+                  <template v-else-if="job.totalBytes !== null">
                     <v-progress-linear
                       :model-value="progressPercent(job) ?? 0"
                       :aria-label="`${jobTypeLabel(job.type)} progress`"
@@ -336,9 +348,12 @@ onUnmounted(() => {
                     />
                     <span>{{ jobProgressLabel(job) }}</span>
                   </template>
+                  <small v-if="jobPhaseDetail(job)" class="mm-job-phase-detail">{{
+                    jobPhaseDetail(job)
+                  }}</small>
                 </td>
                 <td>{{ jobRateLabel(job) }}</td>
-                <td>{{ isJobActive(job.status) ? formatEta(job.etaSeconds) : '—' }}</td>
+                <td>{{ jobEtaLabel(job) }}</td>
                 <td>{{ formatJobDate(job.createdAt) }}</td>
                 <td>
                   <v-btn size="small" variant="tonal" @click="jobProgress.track(job.id)"
@@ -364,7 +379,15 @@ onUnmounted(() => {
             <span class="mm-jobs-id mm-mono">{{ job.id }}</span>
             <div class="mm-jobs-mobile-progress">
               <v-progress-linear
-                v-if="job.totalBytes !== null"
+                v-if="isJobInstalling(job)"
+                :aria-label="`${jobTypeLabel(job.type)} installation progress`"
+                color="primary"
+                indeterminate
+                height="6"
+                rounded
+              />
+              <v-progress-linear
+                v-else-if="job.totalBytes !== null"
                 :model-value="progressPercent(job) ?? 0"
                 :aria-label="`${jobTypeLabel(job.type)} progress`"
                 color="primary"
@@ -380,6 +403,9 @@ onUnmounted(() => {
                 rounded
               />
               <span class="mm-caption">{{ jobProgressLabel(job) }}</span>
+              <small v-if="jobPhaseDetail(job)" class="mm-job-phase-detail">{{
+                jobPhaseDetail(job)
+              }}</small>
             </div>
             <dl class="mm-jobs-mobile-meta">
               <div>
@@ -388,7 +414,7 @@ onUnmounted(() => {
               </div>
               <div>
                 <dt>ETA</dt>
-                <dd>{{ isJobActive(job.status) ? formatEta(job.etaSeconds) : '—' }}</dd>
+                <dd>{{ jobEtaLabel(job) }}</dd>
               </div>
               <div>
                 <dt>Created</dt>

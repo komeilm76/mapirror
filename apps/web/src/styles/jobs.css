@@ -188,6 +188,13 @@
   white-space: nowrap;
 }
 
+.mm-job-phase-detail {
+  display: block;
+  margin-top: var(--mm-space-1);
+  color: rgb(var(--v-theme-text-secondary));
+  font-size: var(--mm-text-caption-compact);
+}
+
 .mm-job-status {
   display: inline-block;
   padding: var(--mm-space-1) var(--mm-space-2);

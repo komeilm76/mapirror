@@ -206,7 +206,7 @@ function toJobView(row: JobViewRow): JobView {
     totalBytes: row.total_bytes === null ? null : jsonInteger(row.total_bytes),
     speedBps: row.speed_bps === null ? null : jsonInteger(row.speed_bps),
     etaSeconds:
-      row.status === 'running' && !row.cancel_requested
+      row.status === 'running' && !row.cancel_requested && phase !== 'installing'
         ? estimateJobEtaSeconds(row.progress_bytes, row.total_bytes, row.speed_bps)
         : null,
     payload: safeJobPayload(row.type, row.payload),

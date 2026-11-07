@@ -26,7 +26,7 @@ const PHASE_LABELS: Record<NonNullable<JobView['phase']>, string> = {
   fetching_index: 'Finding available files',
   downloading: 'Downloading',
   verifying: 'Verifying file',
-  installing: 'Installing',
+  installing: 'Finalizing installation',
 };
 
 /** Label a job type without exposing internal enum spelling. */
@@ -46,17 +46,41 @@ export function jobPhaseLabel(phase: JobView['phase']): string {
 
 /** Label update-check work and terminal states without calling country counts bytes. */
 export function jobActivityLabel(job: Pick<JobView, 'type' | 'status' | 'phase'>): string {
-  if (job.type !== 'update_check') return jobPhaseLabel(job.phase);
+  if (job.type === 'update_check') {
+    if (job.status === 'queued') return 'Waiting to start';
+    if (job.status === 'running') return 'Checking updates';
+    if (job.status === 'succeeded') return 'Update check complete';
+    if (job.status === 'failed') return 'Update check failed';
+    return 'Update check canceled';
+  }
   if (job.status === 'queued') return 'Waiting to start';
-  if (job.status === 'running') return 'Checking updates';
-  if (job.status === 'succeeded') return 'Update check complete';
-  if (job.status === 'failed') return 'Update check failed';
-  return 'Update check canceled';
+  if (job.status === 'running') return jobPhaseLabel(job.phase);
+  if (job.status === 'succeeded') return 'Finished';
+  if (job.status === 'failed') return 'Failed';
+  return 'Canceled';
 }
 
 /** Whether the job is still eligible for cancellation. */
 export function isJobActive(status: JobView['status']): boolean {
   return status === 'queued' || status === 'running';
+}
+
+/** Whether a running job is in the non-byte-countable atomic install/finalization step. */
+export function isJobInstalling(job: Pick<JobView, 'status' | 'phase'>): boolean {
+  return job.status === 'running' && job.phase === 'installing';
+}
+
+/** Explain why the final install stage has no byte progress or reliable ETA. */
+export function jobPhaseDetail(job: Pick<JobView, 'status' | 'phase'>): string | null {
+  return isJobInstalling(job)
+    ? 'The verified file is being committed to cache. This final step has no byte-level progress or reliable ETA.'
+    : null;
+}
+
+/** Show a meaningful final-stage message instead of a misleading zero or calculating ETA. */
+export function jobEtaLabel(job: Pick<JobView, 'status' | 'phase' | 'etaSeconds'>): string {
+  if (!isJobActive(job.status)) return '—';
+  return isJobInstalling(job) ? 'Finishing…' : formatEta(job.etaSeconds);
 }
 
 /** Format a non-negative JSON bigint without losing precision. */
@@ -114,8 +138,12 @@ export function progressPercent(job: Pick<JobView, 'progressBytes' | 'totalBytes
 
 /** Human progress text, using country counts for update-check jobs and bytes for transfers. */
 export function jobProgressLabel(
-  job: Pick<JobView, 'type' | 'progressBytes' | 'totalBytes'>,
+  job: Pick<JobView, 'type' | 'progressBytes' | 'totalBytes'> &
+    Partial<Pick<JobView, 'phase' | 'status'>>,
 ): string {
+  if (job.phase === 'installing' && (job.status === undefined || job.status === 'running')) {
+    return 'Finalizing verified file in cache';
+  }
   if (job.type === 'update_check') {
     const checkedValue = BigInt(job.progressBytes);
     const checked = checkedValue.toLocaleString();
@@ -133,8 +161,10 @@ export function jobProgressLabel(
 }
 
 /** Rate text for count-based update checks; transfer jobs retain byte units. */
-export function jobRateLabel(job: Pick<JobView, 'type' | 'speedBps'>): string {
-  if (job.speedBps === null) return '—';
+export function jobRateLabel(
+  job: Pick<JobView, 'type' | 'speedBps'> & Partial<Pick<JobView, 'phase'>>,
+): string {
+  if (job.phase === 'installing' || job.speedBps === null) return '—';
   if (job.type !== 'update_check') return formatSpeed(job.speedBps);
   const count = BigInt(job.speedBps);
   return `${count.toLocaleString()} ${count === 1n ? 'country' : 'countries'}/s`;

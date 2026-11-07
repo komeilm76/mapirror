@@ -140,6 +140,24 @@ describe('admin job read handlers', () => {
     expect(response.meta).toEqual({ page: 2, limit: 10, total: 1, totalPages: 1 });
   });
 
+  it('does not report a zero ETA while the verified file is being installed', async () => {
+    const setup = makeRequest({
+      row: makeJob({
+        phase: 'installing',
+        progress_bytes: '100',
+        total_bytes: '100',
+        speed_bps: '0',
+      }),
+    });
+
+    await expect(getJob(setup.request)).resolves.toMatchObject({
+      phase: 'installing',
+      progressBytes: 100,
+      totalBytes: 100,
+      etaSeconds: null,
+    });
+  });
+
   it('returns safe nulls for malformed payloads and unknown phase/error values', async () => {
     const setup = makeRequest({
       rows: [

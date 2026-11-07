@@ -5,7 +5,10 @@ import {
   formatEta,
   formatSpeed,
   isJobActive,
+  isJobInstalling,
   jobActivityLabel,
+  jobEtaLabel,
+  jobPhaseDetail,
   jobPhaseLabel,
   jobProgressLabel,
   jobRateLabel,
@@ -39,6 +42,27 @@ describe('job progress presentation', () => {
     expect(jobPhaseLabel(null)).toBe('Waiting to start');
     expect(isJobActive('queued')).toBe(true);
     expect(isJobActive('succeeded')).toBe(false);
+  });
+
+  it('presents install as active finalization without a fake percentage, speed, ETA, or stale terminal phase', () => {
+    const installing = {
+      type: 'download' as const,
+      status: 'running' as const,
+      phase: 'installing' as const,
+      progressBytes: 100,
+      totalBytes: 100,
+      speedBps: 0,
+      etaSeconds: null,
+    };
+    expect(isJobInstalling(installing)).toBe(true);
+    expect(jobActivityLabel(installing)).toBe('Finalizing installation');
+    expect(jobProgressLabel(installing)).toBe('Finalizing verified file in cache');
+    expect(jobPhaseDetail(installing)).toContain('no byte-level progress or reliable ETA');
+    expect(jobRateLabel(installing)).toBe('—');
+    expect(jobEtaLabel(installing)).toBe('Finishing…');
+    const completed = { ...installing, status: 'succeeded' as const };
+    expect(jobActivityLabel(completed)).toBe('Finished');
+    expect(jobProgressLabel(completed)).toBe('100 B / 100 B · 100%');
   });
 
   it('presents update-check work in countries and shows only safe aggregate counts', () => {

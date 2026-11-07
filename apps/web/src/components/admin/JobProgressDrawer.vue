@@ -24,10 +24,12 @@ import { errorCopyFor } from '@/api/error-copy';
 import { ApiError } from '@/api/errors';
 import { useApi } from '@/composables/useApi';
 import {
-  formatEta,
   formatJobDate,
   isJobActive,
+  isJobInstalling,
   jobActivityLabel,
+  jobEtaLabel,
+  jobPhaseDetail,
   jobProgressLabel,
   jobRateLabel,
   jobStatusLabel,
@@ -302,7 +304,19 @@ onUnmounted(() => {
 
           <p class="mm-mono mm-job-id">{{ jobId }}</p>
 
-          <template v-if="job.totalBytes !== null">
+          <template v-if="isJobInstalling(job)">
+            <v-progress-linear
+              aria-label="Installation progress"
+              color="primary"
+              indeterminate
+              height="8"
+              rounded
+            />
+            <p class="mm-job-progress-label mm-caption mb-0">
+              {{ jobProgressLabel(job) }}
+            </p>
+          </template>
+          <template v-else-if="job.totalBytes !== null">
             <v-progress-linear
               :model-value="progressPercent(job) ?? 0"
               :aria-label="`${jobTypeLabel(job.type)} progress`"
@@ -327,6 +341,12 @@ onUnmounted(() => {
               {{ jobProgressLabel(job) }}
             </p>
           </template>
+          <p
+            v-if="jobPhaseDetail(job)"
+            class="mm-job-progress-label mm-job-phase-detail mm-caption mb-0"
+          >
+            {{ jobPhaseDetail(job) }}
+          </p>
 
           <p
             v-if="updateCheckResultLabel(job.updateCheckResult) !== null"
@@ -342,7 +362,7 @@ onUnmounted(() => {
             </div>
             <div>
               <dt>ETA</dt>
-              <dd>{{ isJobActive(job.status) ? formatEta(job.etaSeconds) : '—' }}</dd>
+              <dd>{{ jobEtaLabel(job) }}</dd>
             </div>
             <div>
               <dt>Attempt</dt>
