@@ -24,6 +24,7 @@ vi.mock('../../src/db/repositories/catalog', () => ({
 }));
 
 import { createCatalogRegionHandlers } from '../../src/modules/admin/catalog-region-route';
+import { GeofabrikRegionPageHttpError } from '../../src/modules/geofabrik/region-page-client';
 
 const COUNTRY_ID = '00000000-0000-4000-8000-000000000001';
 const VERSION_ID = '00000000-0000-4000-8000-000000000002';
@@ -208,6 +209,25 @@ describe('admin catalog region handlers', () => {
         sizeBytes: null,
         checksumMd5: null,
         cached: false,
+      },
+    ]);
+  });
+
+  it('returns the upstream HTTP status so the admin can distinguish a missing region page', async () => {
+    const { handlers } = makeHandlers({
+      snapshotsError: new GeofabrikRegionPageHttpError(404),
+    });
+    const response = await handlers.getSnapshots(makeRequest('andalucia').request);
+    expect(response.sourceReachable).toBe(false);
+    expect(response.sourceHttpStatus).toBe(404);
+    expect(response.latest).toBeNull();
+    expect(response.data).toEqual([
+      {
+        version: '261101',
+        dataTimestamp: NOW.toISOString(),
+        sizeBytes: 123,
+        checksumMd5: DIGEST,
+        cached: true,
       },
     ]);
   });

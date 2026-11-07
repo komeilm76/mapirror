@@ -49,6 +49,71 @@ describe('Geofabrik region-page client', () => {
     ).rejects.toThrow('response size limit');
   });
 
+  it('follows bounded same-origin redirects while rejecting redirects outside the configured source path', async () => {
+    const requested: { url: URL; redirect?: RequestInit['redirect'] }[] = [];
+    const page = await fetchGeofabrikRegionPage('https://download.example/base', 'europe/finland', {
+      fetchImpl: (url, init) => {
+        requested.push({ url, redirect: init?.redirect });
+        return requested.length === 1
+          ? Promise.resolve(
+              new Response(null, {
+                status: 302,
+                headers: { location: '/base/europe/finland/index.html' },
+              }),
+            )
+          : Promise.resolve(new Response(finlandPage, { status: 200 }));
+      },
+    });
+
+    expect(page.snapshots[0]?.version).toBe('261023');
+    expect(requested).toEqual([
+      {
+        url: new URL('https://download.example/base/europe/finland.html'),
+        redirect: 'manual',
+      },
+      {
+        url: new URL('https://download.example/base/europe/finland/index.html'),
+        redirect: 'manual',
+      },
+    ]);
+    await expect(
+      fetchGeofabrikRegionPage('https://download.example/base', 'europe/finland', {
+        fetchImpl: () =>
+          Promise.resolve(
+            new Response(null, {
+              status: 302,
+              headers: { location: 'https://other.example/region.html' },
+            }),
+          ),
+      }),
+    ).rejects.toThrow('outside its configured source path');
+
+    let redirectCalls = 0;
+    await expect(
+      fetchGeofabrikRegionPage('https://download.example/base', 'europe/finland', {
+        fetchImpl: () => {
+          redirectCalls += 1;
+          return Promise.resolve(
+            new Response(null, {
+              status: 302,
+              headers: { location: '/base/europe/finland.html' },
+            }),
+          );
+        },
+      }),
+    ).rejects.toThrow('invalid or excessive redirect');
+    expect(redirectCalls).toBe(6);
+  });
+
+  it('accepts region-history pages larger than the former 2 MiB default within the 8 MiB cap', async () => {
+    const largePage = `${'<p>Data up to 2026-10-24</p>'}${' '.repeat(2 * 1024 * 1024)}`;
+    await expect(
+      fetchGeofabrikRegionPage('https://download.example', 'europe/finland', {
+        fetchImpl: () => Promise.resolve(new Response(largePage, { status: 200 })),
+      }),
+    ).resolves.toMatchObject({ snapshots: [] });
+  });
+
   it('rejects upstream HTTP errors and bounds a fetch that stalls', async () => {
     await expect(
       fetchGeofabrikRegionPage('https://download.example', 'europe/finland', {

@@ -12,7 +12,7 @@ export interface GeofabrikRegionPageOptions {
   readonly fetchImpl?: (input: URL, init?: RequestInit) => Promise<Response>;
   /** Deadline in milliseconds; defaults to 10 seconds and is capped at 30 seconds. */
   readonly timeoutMs?: number;
-  /** Maximum decoded HTML body size; defaults to 2 MiB and is capped at 8 MiB. */
+  /** Maximum decoded HTML body size; defaults to 8 MiB and is capped at 8 MiB. */
   readonly maxBytes?: number;
   /** Optional caller cancellation, honored during both the request and bounded body read. */
   readonly signal?: AbortSignal;
@@ -28,8 +28,10 @@ export class GeofabrikRegionPageHttpError extends Error {
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_TIMEOUT_MS = 30_000;
-const DEFAULT_MAX_BYTES = 2 * 1024 * 1024;
+const DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
 const MAX_MAX_BYTES = 8 * 1024 * 1024;
+const MAX_REDIRECTS = 5;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 /** Builds a source page URL without allowing a database identity to escape the configured base path. */
 export function geofabrikRegionPageUrl(baseUrl: string, regionId: string): URL {
@@ -93,12 +95,12 @@ export async function fetchGeofabrikRegionPage(
     timeoutMs,
   );
   try {
-    const response = await (options.fetchImpl ?? fetch)(url, {
-      method: 'GET',
-      headers: { accept: 'text/html' },
-      redirect: 'error',
-      signal: controller.signal,
-    });
+    const response = await fetchRegionPageWithSafeRedirects(
+      url,
+      baseUrl,
+      options.fetchImpl ?? fetch,
+      controller.signal,
+    );
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
       throw new GeofabrikRegionPageHttpError(response.status);
@@ -144,6 +146,61 @@ export async function fetchGeofabrikRegionPage(
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener('abort', abortFromCaller);
+  }
+}
+
+/** Follows only bounded redirects that remain on the configured Geofabrik origin and base path. */
+async function fetchRegionPageWithSafeRedirects(
+  initialUrl: URL,
+  baseUrl: string,
+  fetchImpl: (input: URL, init?: RequestInit) => Promise<Response>,
+  signal: AbortSignal,
+): Promise<Response> {
+  const base = new URL(baseUrl);
+  const basePath = base.pathname.replace(/\/+$/u, '');
+  let currentUrl = initialUrl;
+  let redirects = 0;
+
+  while (true) {
+    const response = await fetchImpl(currentUrl, {
+      method: 'GET',
+      headers: { accept: 'text/html' },
+      redirect: 'manual',
+      signal,
+    });
+    if (!REDIRECT_STATUSES.has(response.status)) return response;
+
+    const location = response.headers.get('location');
+    if (location === null || redirects >= MAX_REDIRECTS) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error('Geofabrik region page returned an invalid or excessive redirect');
+    }
+
+    let destination: URL;
+    try {
+      destination = new URL(location, currentUrl);
+    } catch {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error('Geofabrik region page returned an invalid redirect location');
+    }
+
+    const pathIsWithinBase =
+      basePath === '' ||
+      destination.pathname === basePath ||
+      destination.pathname.startsWith(`${basePath}/`);
+    if (
+      destination.origin !== base.origin ||
+      destination.username !== '' ||
+      destination.password !== '' ||
+      !pathIsWithinBase
+    ) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error('Geofabrik region page redirected outside its configured source path');
+    }
+
+    await response.body?.cancel().catch(() => undefined);
+    currentUrl = destination;
+    redirects += 1;
   }
 }
 

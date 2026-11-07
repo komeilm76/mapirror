@@ -258,7 +258,8 @@ Geofabrik cannot be reached; `sourceReachable` is `false` and locally cached ver
 
 #### `GET /_admin/api/catalog/regions/:slug/snapshots`
 
-Lists what the source offers **right now** (GEO-4):
+Reads the region page with a bounded 8 MiB body and follows at most five redirects restricted to the configured Geofabrik
+origin and base path. Lists what the source offers **right now** (GEO-4):
 
 ```json
 200 {
@@ -270,13 +271,16 @@ Lists what the source offers **right now** (GEO-4):
   ],
   "latest": { "version": "261024", "sizeBytes": 774000000 },
   "fetchedAt": "2026-10-24T09:12:00.000Z",
-  "sourceReachable": true
+  "sourceReachable": true,
+  "sourceHttpStatus": null
 }
 ```
 
 `sourceReachable: false` ⇒ UI shows a warning and offers only already-cached versions. In that case `data` contains the
 ready, locally cached Geofabrik versions (uploads are not source snapshots), `latest` is `null`, and the response is
 still `200`; when reachable, `data` contains the current source offers and `cached` indicates which are ready locally.
+`sourceHttpStatus` is `null` when no HTTP response was received, or the upstream status (for example, `404`) when
+Geofabrik answered but did not provide that region page.
 A cached MD5 is included when the upstream page does not advertise one. `fetchedAt` is the completion time of the
 upstream attempt. Missing valid slugs return `404 NOT_FOUND`; malformed slugs return `400 VALIDATION_ERROR`.
 

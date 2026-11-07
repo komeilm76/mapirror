@@ -527,7 +527,7 @@ describe('admin catalog page', () => {
     ).toBe(false);
   });
 
-  it('explains an upstream outage and disables downloads when only cached offers remain', async () => {
+  it('explains a missing Geofabrik region page and keeps uncached downloads disabled', async () => {
     const unreachable: CatalogRegionSnapshotsResponse = {
       data: [
         {
@@ -541,6 +541,7 @@ describe('admin catalog page', () => {
       latest: null,
       fetchedAt: '2026-10-24T09:12:00.000Z',
       sourceReachable: false,
+      sourceHttpStatus: 404,
     };
     let snapshotCalls = 0;
     const fetchMock = makeFetch((url) => {
@@ -556,13 +557,9 @@ describe('admin catalog page', () => {
     await vi.waitFor(() => expect(container.textContent).toContain('Finland'));
     container.querySelector<HTMLButtonElement>('.mm-catalog-download-button')?.click();
     await vi.waitFor(() => expect(container.querySelector('[role="dialog"]')).not.toBeNull());
-    expect(container.textContent).toContain('The server cannot reach Geofabrik');
+    expect(container.textContent).toContain('Geofabrik returned HTTP 404');
     expect(container.textContent).toContain('Already cached');
-    expect(
-      container
-        .querySelector<HTMLAnchorElement>('[role="dialog"] .mm-catalog-source-warning a')
-        ?.getAttribute('href'),
-    ).toBe(adminPagePaths.proxy());
+    expect(container.querySelector('[role="dialog"] .mm-catalog-source-warning a')).toBeNull();
     const queueButton = container.querySelector<HTMLButtonElement>(
       '[role="dialog"] .mm-catalog-dialog-actions button:last-child',
     );
@@ -571,6 +568,37 @@ describe('admin catalog page', () => {
     container.querySelector<HTMLButtonElement>('.mm-catalog-source-actions button')?.click();
     await vi.waitFor(() => expect(container.textContent).toContain('Latest · 261024'));
     expect(snapshotCalls).toBe(2);
+  });
+
+  it('directs connection failures to outbound network settings and offers a retry', async () => {
+    const unavailable: CatalogRegionSnapshotsResponse = {
+      data: [],
+      latest: null,
+      fetchedAt: '2026-10-24T09:12:00.000Z',
+      sourceReachable: false,
+      sourceHttpStatus: null,
+    };
+    const fetchMock = makeFetch((url) => {
+      if (url.pathname === '/_admin/api/catalog') return jsonResponse(TWO_ROWS);
+      if (url.pathname.endsWith('/snapshots')) return jsonResponse(unavailable);
+      throw new Error(`Unexpected request: ${url.pathname}`);
+    });
+    const { container } = await mountCatalog(fetchMock);
+
+    await vi.waitFor(() => expect(container.textContent).toContain('Finland'));
+    container.querySelector<HTMLButtonElement>('.mm-catalog-download-button')?.click();
+    await vi.waitFor(() =>
+      expect(container.querySelector('[role="dialog"] .mm-catalog-source-warning')).not.toBeNull(),
+    );
+    expect(container.textContent).toContain('The server cannot reach Geofabrik');
+    expect(
+      container
+        .querySelector<HTMLAnchorElement>('[role="dialog"] .mm-catalog-source-warning a')
+        ?.getAttribute('href'),
+    ).toBe(adminPagePaths.proxy());
+    expect(
+      container.querySelector('[role="dialog"] .mm-catalog-source-actions button')?.textContent,
+    ).toContain('Retry source list');
   });
 
   it('syncs Geofabrik from the admin page and displays newly listed regions after the job completes', async () => {

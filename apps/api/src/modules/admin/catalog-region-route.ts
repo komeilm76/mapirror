@@ -18,6 +18,7 @@ import {
   listCachedRegionVersions,
 } from '../../db/repositories/catalog';
 import { AppError } from '../../lib/errors';
+import { GeofabrikRegionPageHttpError } from '../geofabrik/region-page-client';
 import type { MapSource, SourceRegionDetail, SourceSnapshot } from '../geofabrik/source';
 
 const MAX_SAFE_JSON_INTEGER = BigInt(Number.MAX_SAFE_INTEGER);
@@ -92,9 +93,11 @@ export function createCatalogRegionHandlers(
         });
 
       let snapshots: SourceSnapshot[] | null = null;
+      let sourceHttpStatus: number | null = null;
       try {
         snapshots = await source.listSnapshots(local.country.source_id);
       } catch (error) {
+        if (error instanceof GeofabrikRegionPageHttpError) sourceHttpStatus = error.status;
         request.log.warn({ err: error, slug }, 'Geofabrik snapshots are unavailable');
       }
 
@@ -136,6 +139,7 @@ export function createCatalogRegionHandlers(
         latest,
         fetchedAt: new Date().toISOString(),
         sourceReachable,
+        sourceHttpStatus,
       });
     },
   };

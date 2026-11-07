@@ -1127,12 +1127,28 @@ async function queueDownload(): Promise<void> {
         </div>
         <template v-else-if="snapshots !== null">
           <div v-if="!snapshots.sourceReachable" class="mm-catalog-source-warning" role="status">
-            <p>
+            <p v-if="snapshots.sourceHttpStatus === 404">
+              Geofabrik returned HTTP 404 for this region's version page. Check that the region is
+              listed in the Geofabrik catalog, then retry.
+            </p>
+            <p
+              v-else-if="
+                snapshots.sourceHttpStatus !== null && snapshots.sourceHttpStatus !== undefined
+              "
+            >
+              Geofabrik returned HTTP {{ snapshots.sourceHttpStatus }} for this region's version
+              page. Check the Network health results, then retry.
+            </p>
+            <p v-else>
               The server cannot reach Geofabrik, so only cached versions are available. Check the
               outbound proxy and Geofabrik health checks under Network, then retry.
             </p>
             <div class="mm-catalog-source-actions">
-              <router-link class="mm-catalog-button" :to="adminPagePaths.proxy()">
+              <router-link
+                v-if="snapshots.sourceHttpStatus !== 404"
+                class="mm-catalog-button"
+                :to="adminPagePaths.proxy()"
+              >
                 Check network settings
               </router-link>
               <button class="mm-catalog-button" type="button" @click="loadSnapshots">

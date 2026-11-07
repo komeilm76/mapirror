@@ -95,6 +95,7 @@ export const CatalogRegionSnapshotsResponseSchema = z
     latest: CatalogRegionLatestSnapshotSchema.nullable(),
     fetchedAt: z.iso.datetime(),
     sourceReachable: z.boolean(),
+    sourceHttpStatus: z.int().min(100).max(599).nullable().optional(),
   })
   .strict();
 
