@@ -38,6 +38,10 @@ function fixture() {
     `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "$COMPOSE_LOG"
+if [[ "\${ONLY_MAPIRROR_ROLE:-}" == 1 && "$*" == *'--username=postgres'* ]]; then
+  printf 'FATAL: role postgres does not exist\\n' >&2
+  exit 28
+fi
 case "$*" in
   *'build api'*)
     printf 'BuildKit progress must not enter the manifest\\n'
@@ -230,7 +234,7 @@ describe('host backup and restore scripts', () => {
     }
   });
 
-  it('restores, reconciles before restart, and reports ready only after the API probe', () => {
+  it('restores with only the configured mapirror superuser, then reconciles before API readiness', () => {
     const state = fixture();
     const backupDirectory = join(state.directory, 'backup');
     mkdirSync(backupDirectory);
@@ -240,12 +244,24 @@ describe('host backup and restore scripts', () => {
       const result = spawnSync('bash', [RESTORE, backupDirectory], {
         cwd: ROOT,
         encoding: 'utf8',
-        env: { ...process.env, COMPOSE: state.compose, COMPOSE_LOG: state.log },
+        env: {
+          ...process.env,
+          COMPOSE: state.compose,
+          COMPOSE_LOG: state.log,
+          ONLY_MAPIRROR_ROLE: '1',
+        },
       });
       const calls = readFileSync(state.log, 'utf8').trim().split('\n').filter(Boolean);
       const index = (fragment: string) => calls.findIndex((call) => call.includes(fragment));
 
       expect(result.status, result.stderr).toBe(0);
+      expect(calls).toContain('exec -T db pg_isready --username=mapirror --dbname=mapirror');
+      expect(calls).toContain('exec -T db dropdb --if-exists --force --username=mapirror mapirror');
+      expect(calls).toContain('exec -T db createdb --username=mapirror --owner=mapirror mapirror');
+      expect(calls).toContain(
+        'exec -T db pg_restore --exit-on-error --no-owner --username=mapirror --role=mapirror --dbname=mapirror',
+      );
+      expect(calls.some((call) => call.includes('--username=postgres'))).toBe(false);
       const validation = index(
         'run -i -T --rm --no-deps --entrypoint bun api scripts/cache-manifest.ts --validate-stdin',
       );

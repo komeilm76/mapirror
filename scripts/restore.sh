@@ -43,7 +43,7 @@ printf 'restore: starting PostgreSQL service\n' >&2
 compose up -d db
 ready=0
 for _ in {1..60}; do
-  if compose exec -T db pg_isready --username=postgres >/dev/null 2>&1; then
+  if compose exec -T db pg_isready --username=mapirror --dbname=mapirror >/dev/null 2>&1; then
     ready=1
     break
   fi
@@ -57,9 +57,9 @@ fi
 # Keep the API down until the database is restored and the explicit reconciliation has completed.
 compose stop api
 printf 'restore: replacing the mapirror database\n' >&2
-compose exec -T db dropdb --if-exists --force --username=postgres mapirror
-compose exec -T db createdb --username=postgres --owner=mapirror mapirror
-compose exec -T db pg_restore --exit-on-error --no-owner --role=mapirror --dbname=mapirror \
+compose exec -T db dropdb --if-exists --force --username=mapirror mapirror
+compose exec -T db createdb --username=mapirror --owner=mapirror mapirror
+compose exec -T db pg_restore --exit-on-error --no-owner --username=mapirror --role=mapirror --dbname=mapirror \
   < "$BACKUP_DIR/database.dump"
 
 printf 'restore: reconciling restored rows against the existing cache volume\n' >&2
