@@ -258,8 +258,9 @@ Geofabrik cannot be reached; `sourceReachable` is `false` and locally cached ver
 
 #### `GET /_admin/api/catalog/regions/:slug/snapshots`
 
-Reads the region page with a bounded 8 MiB body and follows at most five redirects restricted to the configured Geofabrik
-origin and base path. Lists what the source offers **right now** (GEO-4):
+Resolves the raw Geofabrik index ID through its PBF URL (the index ID is not necessarily the hierarchical URL path),
+then reads the region page with a bounded 8 MiB body and follows at most five redirects restricted to the configured
+Geofabrik origin and base path. Lists what the source offers **right now** (GEO-4):
 
 ```json
 200 {

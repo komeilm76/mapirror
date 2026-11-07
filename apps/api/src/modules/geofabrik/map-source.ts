@@ -1,8 +1,9 @@
 /**
  * Concrete Geofabrik {@link MapSource} composition for catalog reads and queued downloads (`P2-API-04`).
  *
- * Page and file metadata remain bounded by their dedicated clients; this module only connects them to the small
- * provider contract. It never downloads or stores the PBF body.
+ * Page and file metadata remain bounded by their dedicated clients; this module connects them to the small provider
+ * contract and resolves raw index IDs to their hierarchical paths from the index PBF URLs. It never downloads or stores
+ * the PBF body.
  *
  * @module modules/geofabrik/map-source
  */
@@ -15,11 +16,12 @@ import {
 } from './file-metadata';
 import {
   fetchGeofabrikRegionPage,
+  geofabrikRegionPathFromPbfUrl,
   geofabrikRegionPbfUrl,
   createGeofabrikRegionPageSource,
   GeofabrikRegionPageHttpError,
 } from './region-page-client';
-import type { MapSource, ResolvedDownload } from './source';
+import type { MapSource, ResolvedDownload, SourceRegion } from './source';
 
 /** An explicit dated source version that Geofabrik no longer offers. */
 export class GeofabrikSnapshotGoneError extends Error {
@@ -33,7 +35,7 @@ export class GeofabrikSnapshotGoneError extends Error {
 export interface GeofabrikMapSourceOptions {
   /** Fetch implementation shared by the index, HTML page, HEAD, and checksum clients. */
   readonly fetchImpl?: GeofabrikFetch;
-  /** Per-request deadline for the region page; defaults and maximum follow the page client. */
+  /** Per-request deadline for region-page reads and index-based path lookups; defaults and maximum follow their clients. */
   readonly pageTimeoutMs?: number;
   /** Per-request deadline for HEAD metadata; defaults and maximum follow the metadata client. */
   readonly metadataTimeoutMs?: number;
@@ -62,15 +64,66 @@ export function createGeofabrikMapSource(
     ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
     ...(options.pageTimeoutMs === undefined ? {} : { timeoutMs: options.pageTimeoutMs }),
   };
-  const pageSource = createGeofabrikRegionPageSource(baseUrl, pageOptions);
+  const indexOptions = {
+    ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+    ...(options.pageTimeoutMs === undefined ? {} : { timeoutMs: options.pageTimeoutMs }),
+  };
+  let regionPaths: ReadonlyMap<string, string> | undefined;
+  let regionPathsExpiresAt = 0;
+  let regionPathsRequest: Promise<ReadonlyMap<string, string>> | undefined;
+
+  const rememberRegionPaths = (regions: readonly SourceRegion[]): ReadonlyMap<string, string> => {
+    const paths = new Map<string, string>();
+    for (const region of regions) {
+      if (region.pbfUrl === null) continue;
+      try {
+        paths.set(region.id, geofabrikRegionPathFromPbfUrl(region.pbfUrl, baseUrl));
+      } catch {
+        // A region with a non-standard or malformed PBF URL cannot be used for page or extract requests.
+      }
+    }
+    regionPaths = paths;
+    regionPathsExpiresAt = Date.now() + 5 * 60_000;
+    return paths;
+  };
+
+  const getRegionPaths = async (signal?: AbortSignal): Promise<ReadonlyMap<string, string>> => {
+    if (regionPaths !== undefined && Date.now() < regionPathsExpiresAt) return regionPaths;
+    if (signal !== undefined) {
+      return fetchGeofabrikRegions(baseUrl, { ...indexOptions, signal }).then(rememberRegionPaths);
+    }
+    if (regionPathsRequest !== undefined) return regionPathsRequest;
+    regionPathsRequest = fetchGeofabrikRegions(baseUrl, indexOptions)
+      .then(rememberRegionPaths)
+      .finally(() => {
+        regionPathsRequest = undefined;
+      });
+    return regionPathsRequest;
+  };
+
+  const resolveRegionPath = async (regionId: string, signal?: AbortSignal): Promise<string> => {
+    // Keep compatibility with callers that already have the full path from an older catalog or explicit source ID.
+    if (regionId.includes('/')) return regionId;
+    const regionPath = (await getRegionPaths(signal)).get(regionId);
+    if (regionPath === undefined) {
+      throw new Error('Geofabrik index does not provide a PBF path for this region');
+    }
+    return regionPath;
+  };
+
+  const pageSource = createGeofabrikRegionPageSource(baseUrl, pageOptions, resolveRegionPath);
 
   return {
     id: 'geofabrik',
-    listRegions: (signal) =>
-      fetchGeofabrikRegions(baseUrl, {
-        ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl }),
+    listRegions: async (signal) => {
+      const regions = await fetchGeofabrikRegions(baseUrl, {
+        ...indexOptions,
         ...(signal === undefined ? {} : { signal }),
-      }),
+      });
+      rememberRegionPaths(regions);
+      return regions;
+    },
+
     getRegionDetail: pageSource.getRegionDetail,
     listSnapshots: pageSource.listSnapshots,
     async resolveDownload(regionId, requestedVersion, signal): Promise<ResolvedDownload> {
@@ -78,9 +131,10 @@ export function createGeofabrikMapSource(
         throw new TypeError('Geofabrik snapshot version must be a six-digit date or latest');
       }
 
+      const regionPath = await resolveRegionPath(regionId, signal);
       let page;
       try {
-        page = await fetchGeofabrikRegionPage(baseUrl, regionId, {
+        page = await fetchGeofabrikRegionPage(baseUrl, regionPath, {
           ...pageOptions,
           ...(signal === undefined ? {} : { signal }),
         });
@@ -99,7 +153,7 @@ export function createGeofabrikMapSource(
         throw new GeofabrikSnapshotGoneError(requestedVersion);
       }
 
-      const url = geofabrikRegionPbfUrl(baseUrl, regionId, requestedVersion).href;
+      const url = geofabrikRegionPbfUrl(baseUrl, regionPath, requestedVersion).href;
       let metadata;
       try {
         metadata = await fetchGeofabrikHeadMetadata(url, {

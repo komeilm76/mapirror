@@ -14,7 +14,7 @@ const indexFixture = {
     {
       type: 'Feature',
       properties: {
-        id: 'europe/finland',
+        id: 'finland',
         parent: 'europe',
         name: 'Finland',
         'iso3166-1:alpha2': ['FI'],
@@ -35,7 +35,7 @@ describe('parseGeofabrikIndex', () => {
   it('validates and maps source fields into the MapSource region contract', () => {
     expect(parseGeofabrikIndex(indexFixture)).toEqual([
       {
-        id: 'europe/finland',
+        id: 'finland',
         parentId: 'europe',
         name: 'Finland',
         isoAlpha2: ['FI'],
@@ -112,7 +112,7 @@ describe('fetchGeofabrikRegions', () => {
         accept: 'application/json',
       },
     ]);
-    expect(regions[0]?.id).toBe('europe/finland');
+    expect(regions[0]?.id).toBe('finland');
   });
 
   it('rejects non-success status without echoing the configured URL', async () => {

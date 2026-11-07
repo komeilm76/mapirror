@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 import {
   fetchGeofabrikRegionPage,
   geofabrikRegionPageUrl,
+  geofabrikRegionPathFromPbfUrl,
   geofabrikRegionPbfUrl,
+  createGeofabrikRegionPageSource,
 } from '../src/modules/geofabrik/region-page-client';
 
 const finlandPage = readFileSync(
@@ -23,6 +25,21 @@ describe('Geofabrik region-page client', () => {
     );
     expect(geofabrikRegionPbfUrl('https://download.example', 'europe/finland', 'latest').href).toBe(
       'https://download.example/europe/finland-latest.osm.pbf',
+    );
+  });
+
+  it('derives nested region paths from the full PBF URL in the source index', () => {
+    expect(
+      geofabrikRegionPathFromPbfUrl('https://download.geofabrik.de/asia/iran-latest.osm.pbf'),
+    ).toBe('asia/iran');
+    expect(
+      geofabrikRegionPathFromPbfUrl(
+        'https://download.geofabrik.de/geofabrik/asia/iran-latest.osm.pbf',
+        'https://mirror.example/geofabrik',
+      ),
+    ).toBe('asia/iran');
+    expect(() => geofabrikRegionPathFromPbfUrl('https://download.example/iran.osm.pbf')).toThrow(
+      'must end in -latest.osm.pbf',
     );
   });
 
@@ -47,6 +64,26 @@ describe('Geofabrik region-page client', () => {
         maxBytes: 32,
       }),
     ).rejects.toThrow('response size limit');
+  });
+
+  it('uses the resolved hierarchical path for source-region page requests', async () => {
+    const requested: URL[] = [];
+    const source = createGeofabrikRegionPageSource(
+      'https://download.example',
+      {
+        fetchImpl: (url) => {
+          requested.push(url);
+          return Promise.resolve(new Response(finlandPage, { status: 200 }));
+        },
+      },
+      (regionId) => {
+        expect(regionId).toBe('iran');
+        return Promise.resolve('asia/iran');
+      },
+    );
+
+    await expect(source.listSnapshots('iran')).resolves.toHaveLength(2);
+    expect(requested).toEqual([new URL('https://download.example/asia/iran.html')]);
   });
 
   it('follows bounded same-origin redirects while rejecting redirects outside the configured source path', async () => {

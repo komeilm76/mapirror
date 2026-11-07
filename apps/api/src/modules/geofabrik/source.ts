@@ -6,9 +6,9 @@
  * hooks, generic transport layer or plugin mechanism. A later provider can implement this contract when there is a
  * concrete need for one.
  *
- * All identifiers are source identifiers (for example `europe/finland`), never local catalog slugs. Dates are parsed
- * instants, and byte sizes are non-negative safe integers when known; unavailable upstream metadata is `null` rather
- * than a guessed value.
+ * Region identifiers are the raw Geofabrik index `id` values (often a leaf such as `finland`); hierarchy and URL path
+ * are separate facts supplied by `parentId` and `pbfUrl`. They are never local catalog slugs. Dates are parsed instants,
+ * and byte sizes are non-negative safe integers when known; unavailable upstream metadata is `null` rather than guessed.
  *
  * @module modules/geofabrik/source
  */

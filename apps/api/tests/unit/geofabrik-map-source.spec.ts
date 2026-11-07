@@ -12,6 +12,11 @@ vi.mock('../../src/modules/geofabrik/index-client', () => ({
 }));
 vi.mock('../../src/modules/geofabrik/region-page-client', () => ({
   fetchGeofabrikRegionPage: mocks.fetchRegionPage,
+  geofabrikRegionPathFromPbfUrl: (pbfUrl: string) => {
+    const segments = new URL(pbfUrl).pathname.split('/').filter((segment) => segment.length > 0);
+    const filename = segments.pop() ?? '';
+    return [...segments, filename.replace(/-latest\.osm\.pbf$/u, '')].join('/');
+  },
   geofabrikRegionPbfUrl: mocks.regionPbfUrl,
   createGeofabrikRegionPageSource: mocks.createPageSource,
   GeofabrikRegionPageHttpError: class GeofabrikRegionPageHttpError extends Error {
@@ -89,6 +94,7 @@ describe('Geofabrik MapSource composition', () => {
     expect(mocks.fetchRegions).toHaveBeenCalledWith('https://download.example.test/europe', {
       fetchImpl,
       signal: controller.signal,
+      timeoutMs: 4321,
     });
     await source.resolveDownload('europe/finland', 'latest', controller.signal);
     expect(mocks.fetchRegionPage).toHaveBeenCalledWith(
@@ -106,6 +112,27 @@ describe('Geofabrik MapSource composition', () => {
         signal: controller.signal,
       },
     );
+  });
+
+  it('resolves leaf-only source ids through the index PBF path before reading pages and downloads', async () => {
+    const baseUrl = 'https://download.example.test';
+    mocks.fetchRegions.mockResolvedValue([
+      {
+        id: 'iran',
+        parentId: 'asia',
+        name: 'Iran',
+        isoAlpha2: ['IR'],
+        isoOther: [],
+        pbfUrl: 'https://download.geofabrik.de/asia/iran-latest.osm.pbf',
+      },
+    ]);
+    const source = createGeofabrikMapSource(baseUrl);
+
+    await source.resolveDownload('iran', 'latest');
+
+    expect(mocks.fetchRegions).toHaveBeenCalledWith(baseUrl, {});
+    expect(mocks.fetchRegionPage).toHaveBeenCalledWith(baseUrl, 'asia/iran', {});
+    expect(mocks.regionPbfUrl).toHaveBeenCalledWith(baseUrl, 'asia/iran', 'latest');
   });
 
   it('exposes page detail methods and omits undefined optional request options', async () => {

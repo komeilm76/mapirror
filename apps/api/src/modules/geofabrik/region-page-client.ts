@@ -48,7 +48,31 @@ export function geofabrikRegionPageUrl(baseUrl: string, regionId: string): URL {
   return base;
 }
 
-/** Builds the normal or moving-latest extract URL from a Geofabrik source id. */
+/** Derives a safe hierarchical region path from the full PBF URL supplied by Geofabrik's index. */
+export function geofabrikRegionPathFromPbfUrl(pbfUrl: string, baseUrl?: string): string {
+  const url = new URL(pbfUrl);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new TypeError('Geofabrik PBF URL must use HTTP or HTTPS');
+  }
+  let segments = url.pathname.split('/').filter((segment) => segment.length > 0);
+  if (baseUrl !== undefined) {
+    const base = new URL(baseUrl);
+    const baseSegments = base.pathname.split('/').filter((segment) => segment.length > 0);
+    if (baseSegments.every((segment, index) => segments[index] === segment)) {
+      segments = segments.slice(baseSegments.length);
+    }
+  }
+  const filename = segments.pop();
+  if (filename === undefined || !filename.endsWith('-latest.osm.pbf')) {
+    throw new TypeError('Geofabrik index PBF URL must end in -latest.osm.pbf');
+  }
+  const regionLeaf = filename.slice(0, -'-latest.osm.pbf'.length);
+  const regionId = [...segments, regionLeaf].join('/');
+  sourceIdSegments(regionId);
+  return regionId;
+}
+
+/** Builds the normal or moving-latest extract URL from a Geofabrik source path. */
 export function geofabrikRegionPbfUrl(baseUrl: string, regionId: string, version: string): URL {
   const segments = sourceIdSegments(regionId);
   if (version !== 'latest' && !/^\d{6}$/u.test(version)) {
@@ -204,14 +228,22 @@ async function fetchRegionPageWithSafeRedirects(
   }
 }
 
+/** Resolves an upstream source identity to its hierarchical region-page path. */
+export type GeofabrikRegionPathResolver = (
+  regionId: string,
+  signal?: AbortSignal,
+) => Promise<string>;
+
 /** Creates the Geofabrik region-page methods consumed by the admin catalog endpoints. */
 export function createGeofabrikRegionPageSource(
   baseUrl: string,
   options: GeofabrikRegionPageOptions = {},
+  resolveRegionPath: GeofabrikRegionPathResolver = (regionId) => Promise.resolve(regionId),
 ): Pick<MapSource, 'getRegionDetail' | 'listSnapshots'> {
   return {
     async getRegionDetail(regionId: string): Promise<SourceRegionDetail> {
-      const page = await fetchGeofabrikRegionPage(baseUrl, regionId, options);
+      const regionPath = await resolveRegionPath(regionId);
+      const page = await fetchGeofabrikRegionPage(baseUrl, regionPath, options);
       const newest = page.snapshots[0];
       return {
         version: newest?.version ?? null,
@@ -222,7 +254,8 @@ export function createGeofabrikRegionPageSource(
       };
     },
     async listSnapshots(regionId: string): Promise<SourceSnapshot[]> {
-      return (await fetchGeofabrikRegionPage(baseUrl, regionId, options)).snapshots;
+      const regionPath = await resolveRegionPath(regionId);
+      return (await fetchGeofabrikRegionPage(baseUrl, regionPath, options)).snapshots;
     },
   };
 }
