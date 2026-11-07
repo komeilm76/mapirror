@@ -22,9 +22,9 @@ import vue from '@vitejs/plugin-vue';
 import vuetify from 'vite-plugin-vuetify';
 import { defineConfig } from 'vitest/config';
 
-import { SRC_ALIAS } from './apps/web/alias';
-
-import { TEST_INCLUDE, TEST_PROJECTS } from './vitest.projects';
+// Vite's native config loader requires explicit TypeScript extensions for local config imports.
+import { SRC_ALIAS } from './apps/web/alias.ts';
+import { TEST_INCLUDE, TEST_PROJECTS } from './vitest.projects.ts';
 
 export default defineConfig({
   test: {
