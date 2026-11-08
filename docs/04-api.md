@@ -502,11 +502,11 @@ Errors: `400 VALIDATION_ERROR` (missing/invalid fields), `409 VERSION_DUPLICATE`
 the version already exists, asks "replace?" *before* sending any bytes. `409 VERSION_DUPLICATE` includes
 `details.replaceAllowed`: when true, a second request with `replace="true"` confirms replacement; false means the
 conflict is active or pending and cannot be replaced. Active `latest` downloads are also treated as conflicts for that
-country. A confirmed replacement stages and installs a new artifact first, then atomically deletes/recreates the
-`map_versions` row and refreshes cache totals; the old ready version
-remains available until that transaction commits, and a failed replacement preserves it. The old file is unlinked
-after commit. Multipart field order is not guaranteed, so a conflict may be found only after the body was drained;
-the final transactional duplicate check is authoritative.
+country. The admin form sends `countryId`, `version`, and `replace` before the file so the API can reject invalid
+metadata before opening a staging file; other clients may send parts in any order. A confirmed replacement stages and
+installs a new artifact first, then atomically deletes/recreates the `map_versions` row and refreshes cache totals; the
+old ready version remains available until that transaction commits, and a failed replacement preserves it. The old file
+is unlinked after commit. The server always drains the multipart body and repeats duplicate checks transactionally.
 
 ```bash
 curl -X POST http://localhost:8080/_admin/api/imports \

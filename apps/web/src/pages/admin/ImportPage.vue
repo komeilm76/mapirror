@@ -152,6 +152,7 @@ watch(countryId, (value) => {
 void loadCountries('');
 
 function setFile(next: File | null): void {
+  if (submitting.value) return;
   file.value = next;
   fieldErrors.value.file = null;
   requestError.value = null;
@@ -167,6 +168,7 @@ function onFileChange(event: Event): void {
 
 function onDrop(event: DragEvent): void {
   isDragging.value = false;
+  if (submitting.value) return;
   const dropped = event.dataTransfer?.files.item(0);
   if (dropped !== undefined) setFile(dropped);
 }
@@ -269,10 +271,10 @@ async function submitImport(): Promise<void> {
 async function sendImport(replace: boolean): Promise<void> {
   if (file.value === null) return;
   const body = new FormData();
-  body.append('file', file.value, file.value.name);
   body.append('countryId', countryId.value);
   body.append('version', version.value.trim());
-  if (replace) body.append('replace', 'true');
+  body.append('replace', replace ? 'true' : 'false');
+  body.append('file', file.value, file.value.name);
 
   const controller = new AbortController();
   uploadRequest = controller;
@@ -410,6 +412,7 @@ onUnmounted(() => {
           ref="fileInput"
           class="mm-import-file-input"
           type="file"
+          :disabled="submitting"
           accept=".osm.pbf,application/octet-stream,application/x-protobuf,application/protobuf,application/x-osm-pbf"
           aria-describedby="mm-file-hint mm-file-error"
           @change="onFileChange"
@@ -545,7 +548,12 @@ onUnmounted(() => {
 
       <footer class="mm-import-actions">
         <p class="mm-caption ma-0">Required fields: file, country and version</p>
-        <v-btn type="submit" color="primary" :loading="submitting" :disabled="countryLoading">
+        <v-btn
+          type="submit"
+          color="primary"
+          :loading="submitting"
+          :disabled="countryLoading || submitting"
+        >
           {{ submitting ? 'Checking and uploading…' : 'Upload map' }}
         </v-btn>
       </footer>

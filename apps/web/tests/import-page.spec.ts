@@ -104,6 +104,7 @@ async function mountImport(
     readonly versions?: unknown;
     readonly uploadFailure?: boolean;
     readonly uploadMalformedSuccess?: boolean;
+    readonly uploadDelayMs?: number;
     readonly fetchImpl?: typeof fetch;
     readonly country?: CatalogListItem;
   } = {},
@@ -140,6 +141,9 @@ async function mountImport(
         if (options.uploadFailure === true) throw new TypeError('offline');
         if (!(init.body instanceof ReadableStream)) throw new Error('upload body was not streamed');
         uploadBodies.push(await new Response(init.body).text());
+        if (options.uploadDelayMs !== undefined) {
+          await new Promise<void>((resolve) => setTimeout(resolve, options.uploadDelayMs));
+        }
         if (options.uploadMalformedSuccess === true)
           return new Response('Unreadable response', { status: 202 });
         return jsonResponse({ uploadId: UPLOAD_ID, jobId: JOB_ID, version: '261030' }, 202);
@@ -181,8 +185,8 @@ async function chooseCountry(container: HTMLElement): Promise<void> {
   await flushPromises();
 }
 
-function chooseFile(container: HTMLElement): File {
-  const file = new File([new Uint8Array([1, 2, 3])], 'finland.osm.pbf', {
+function chooseFile(container: HTMLElement, name = 'finland.osm.pbf'): File {
+  const file = new File([new Uint8Array([1, 2, 3])], name, {
     type: 'application/octet-stream',
   });
   const input = container.querySelector<HTMLInputElement>('#mm-import-file');
@@ -269,8 +273,51 @@ describe('admin import form', () => {
 
     await vi.waitFor(() => expect(container.textContent).toContain('Import queued'));
     expect(uploadBodies).toHaveLength(1);
-    expect(uploadBodies[0]).toContain(`name="countryId"\r\n\r\n${COUNTRY_ID}`);
+    const body = uploadBodies[0] ?? '';
+    expect(body).toContain(`name="countryId"\r\n\r\n${COUNTRY_ID}`);
+    expect(body).toContain('name="version"\r\n\r\n261030');
+    expect(body).toContain('name="replace"\r\n\r\nfalse');
+    expect(body.indexOf('name="countryId"')).toBeLessThan(body.indexOf('name="file"'));
+    expect(body.indexOf('name="version"')).toBeLessThan(body.indexOf('name="file"'));
+    expect(body.indexOf('name="replace"')).toBeLessThan(body.indexOf('name="file"'));
     expect(requestPaths).not.toContain(`/_admin/api/cache/${COUNTRY_ID}/versions`);
+  });
+
+  it('keeps the in-flight upload selection and progress when another file is dropped', async () => {
+    const { container } = await mountImport({ uploadDelayMs: 350 });
+    chooseFile(container);
+    await chooseCountry(container);
+    const versionInput = container.querySelector<HTMLInputElement>('#mm-import-version');
+    if (versionInput === null) throw new Error('version input missing');
+    versionInput.value = '261030';
+    versionInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await flushPromises();
+    container.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
+
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain('Upload sent; waiting for acceptance…'),
+    );
+    const dropzone = container.querySelector<HTMLElement>('.mm-import-dropzone');
+    if (dropzone === null) throw new Error('file dropzone missing');
+    const drop = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, 'dataTransfer', {
+      value: {
+        files: {
+          item: () =>
+            new File(['new'], 'replacement.osm.pbf', { type: 'application/octet-stream' }),
+        },
+      },
+    });
+    dropzone.dispatchEvent(drop);
+
+    expect(container.querySelector<HTMLInputElement>('#mm-import-file')?.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(
+      true,
+    );
+    expect(container.textContent).toContain('finland.osm.pbf');
+    expect(container.textContent).toContain('Upload sent; waiting for acceptance…');
+    await vi.waitFor(() => expect(container.textContent).toContain('Import queued'));
+    expect(container.textContent).toContain('finland.osm.pbf');
   });
 
   it('checks for a queued job when the server accepts an upload but returns unreadable data', async () => {
@@ -357,11 +404,13 @@ describe('admin import form', () => {
     await vi.waitFor(() => expect(container.textContent).toContain('Import queued'));
     expect(container.textContent).toContain('Job ID:');
     expect(container.textContent).toContain('Upload ID:');
-    expect(uploadBodies[0]).toContain(`name="countryId"\r\n\r\n${COUNTRY_ID}`);
-    expect(uploadBodies[0]).toContain('name="version"\r\n\r\n261030');
-    expect(uploadBodies[0]).toContain('name="replace"\r\n\r\ntrue');
-    expect(uploadBodies[0]).toContain('name="file"; filename="finland.osm.pbf"');
-    expect(uploadBodies[0]).toContain('\u0001\u0002\u0003');
+    const body = uploadBodies[0] ?? '';
+    expect(body).toContain(`name="countryId"\r\n\r\n${COUNTRY_ID}`);
+    expect(body).toContain('name="version"\r\n\r\n261030');
+    expect(body).toContain('name="replace"\r\n\r\ntrue');
+    expect(body).toContain('name="file"; filename="finland.osm.pbf"');
+    expect(body.indexOf('name="replace"')).toBeLessThan(body.indexOf('name="file"'));
+    expect(body).toContain('\u0001\u0002\u0003');
     expect(container.textContent).toContain('100%');
     expect(document.body.textContent).toContain('Job progress');
     expect(document.body.querySelector('#mm-job-progress-drawer')).not.toBeNull();
