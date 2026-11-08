@@ -105,20 +105,28 @@ async function mountImport(
     readonly uploadFailure?: boolean;
     readonly uploadMalformedSuccess?: boolean;
     readonly fetchImpl?: typeof fetch;
+    readonly country?: CatalogListItem;
   } = {},
-): Promise<{ app: VueApp<Element>; container: HTMLElement; uploadBodies: string[] }> {
+): Promise<{
+  app: VueApp<Element>;
+  container: HTMLElement;
+  uploadBodies: string[];
+  requestPaths: string[];
+}> {
   installFileStreamPolyfill();
   sessionStorage.setItem(SESSION_TOKEN_KEY, 'mm_import_test');
   window.history.replaceState({}, '', adminPagePaths.import());
   const uploadBodies: string[] = [];
+  const requestPaths: string[] = [];
   const fetchImpl =
     options.fetchImpl ??
     vi.fn<typeof fetch>(async (input, init) => {
       const url = requestUrl(input);
+      requestPaths.push(url.pathname);
       if (url.pathname === '/_auth/api/me') return jsonResponse(ME);
       if (url.pathname === '/_admin/api/catalog') {
         return jsonResponse({
-          data: [COUNTRY],
+          data: [options.country ?? COUNTRY],
           meta: { page: 1, limit: 100, total: 1, totalPages: 1 },
           catalogSyncedAt: CREATED_AT,
         });
@@ -151,9 +159,10 @@ async function mountImport(
   await (
     app.config.globalProperties as unknown as { $router: { isReady(): Promise<void> } }
   ).$router.isReady();
+  await vi.waitFor(() => expect(container.querySelector('h1')?.textContent).toBe('Import a map'));
   await flushPromises();
   await flushPromises();
-  return { app, container, uploadBodies };
+  return { app, container, uploadBodies, requestPaths };
 }
 
 async function chooseCountry(container: HTMLElement): Promise<void> {
@@ -239,6 +248,29 @@ describe('admin import form', () => {
       'Check Jobs before uploading again; if no import appears, try again.',
     );
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  it('submits directly for an uncached catalog country without a guaranteed cache-version 404', async () => {
+    const uncachedCountry: CatalogListItem = {
+      ...COUNTRY,
+      cache: { ...COUNTRY.cache, cached: false, versionsReady: 0, totalSizeBytes: 0 },
+    };
+    const { container, uploadBodies, requestPaths } = await mountImport({
+      country: uncachedCountry,
+    });
+    chooseFile(container);
+    await chooseCountry(container);
+    const versionInput = container.querySelector<HTMLInputElement>('#mm-import-version');
+    if (versionInput === null) throw new Error('version input missing');
+    versionInput.value = '261030';
+    versionInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await flushPromises();
+    container.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
+
+    await vi.waitFor(() => expect(container.textContent).toContain('Import queued'));
+    expect(uploadBodies).toHaveLength(1);
+    expect(uploadBodies[0]).toContain(`name="countryId"\r\n\r\n${COUNTRY_ID}`);
+    expect(requestPaths).not.toContain(`/_admin/api/cache/${COUNTRY_ID}/versions`);
   });
 
   it('checks for a queued job when the server accepts an upload but returns unreadable data', async () => {

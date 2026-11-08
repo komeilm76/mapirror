@@ -220,6 +220,12 @@ async function submitImport(): Promise<void> {
   const controller = new AbortController();
   preflightRequest = controller;
   try {
+    // An uncached catalog country has no cache-version resource; avoid a guaranteed 404 and let the import API
+    // perform the authoritative country/version checks when accepting the upload.
+    if (selectedCountry.value?.cache.cached === false) {
+      await sendImport(false);
+      return;
+    }
     const existingStatus = await findExistingVersion(
       countryId.value,
       version.value.trim(),
